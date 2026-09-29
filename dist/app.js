@@ -62,8 +62,14 @@ const app = (0, express_1.default)();
 // Security and Middleware
 app.use((0, helmet_1.default)());
 app.use((0, cors_1.default)({
-    origin: env_1.env.FRONTEND_URL,
-    credentials: true
+    origin: [
+        env_1.env.FRONTEND_URL,
+        'http://localhost:3000',
+        'https://lgpsm-frontend.vercel.app',
+    ],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+    credentials: true,
 }));
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));

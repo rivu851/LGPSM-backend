@@ -27,8 +27,14 @@ const app = express();
 // Security and Middleware
 app.use(helmet());
 app.use(cors({
-  origin: env.FRONTEND_URL,
-  credentials: true
+  origin: [
+    env.FRONTEND_URL,
+    'http://localhost:3000',
+    'https://lgpsm-frontend.vercel.app',
+  ],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Authorization', 'Content-Type'],
+  credentials: true,
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
