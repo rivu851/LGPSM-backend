@@ -82,7 +82,7 @@ export const invitationCardService = {
     const logoHref = getLogoBase64();
 
     // 3. Process Event Title
-    const fullTitle = (data.event.title || 'TECH SUMMIT 2026').trim();
+    const fullTitle = (data.event.title || '').trim();
     const titleWords = fullTitle.split(' ');
     let mainTitlePart = fullTitle;
     let yearPart = '';
@@ -91,24 +91,19 @@ export const invitationCardService = {
       mainTitlePart = titleWords.join(' ');
     }
 
-    const subtitleText = data.event.subtitle || 'INNOVATE  |  COLLABORATE  |  LEAD';
-    const dateMain = data.event.date || '15 OCT 2026';
-    const dateSub = data.event.dayOfWeek || 'THURSDAY';
-    const timeMain = data.event.startTime || '09:00 AM';
+    const subtitleText = data.event.subtitle || '';
+    const dateMain = data.event.date || '';
+    const dateSub = data.event.dayOfWeek || '';
+    const timeMain = data.event.startTime || '';
     const timeSub = data.event.timeSub || 'ONWARDS';
-    const venueMain = data.event.venue || 'RCCIIT AUDITORIUM';
-    const venueSub = data.event.locationSub || 'KOLKATA, WB';
-    const inviteeName = data.invitee.name || 'Valued Guest';
-    const companyName = data.invitee.companyName || 'LGPSM';
+    const venueMain = data.event.venue || 'Venue to be announced';
+    const venueSub = data.event.locationSub || '';
+    const inviteeName = data.invitee.name || 'Guest';
+    const companyName = data.invitee.companyName || '';
 
     // 4. Process Sessions
-    const sessions = data.sessions && data.sessions.length > 0
-      ? data.sessions
-      : [
-          { name: 'Opening Ceremony', startTime: '10:00 AM', endTime: '11:00 AM' },
-          { name: 'Technical Session', startTime: '11:30 AM', endTime: '01:00 PM' },
-          { name: 'Networking Session', startTime: '02:00 PM', endTime: '03:30 PM' }
-        ];
+    // Only the invitee's real sessions are printed; none means no session cards
+    const sessions = data.sessions || [];
 
     // Session Cards rendering
     const sessionCount = sessions.length;

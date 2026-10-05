@@ -6,8 +6,8 @@ export const templateService = {
     return await templateRepository.create(data);
   },
 
-  async getTemplates(categoryId?: string): Promise<ITemplate[]> {
-    return await templateRepository.findAll(categoryId);
+  async getTemplates(categoryId?: string, includeDrafts = false): Promise<ITemplate[]> {
+    return await templateRepository.findAll(categoryId, includeDrafts);
   },
 
   async getTemplateById(id: string): Promise<ITemplate> {

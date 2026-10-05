@@ -5,6 +5,8 @@ import app from '../src/app';
 import { User, Role } from '../src/models/User';
 import { Event } from '../src/models/Event';
 import { Invitee } from '../src/models/Invitee';
+import { Category } from '../src/models/Category';
+import { Template } from '../src/models/Template';
 import { CheckIn, CheckInMethod } from '../src/models/CheckIn';
 import { generateAccessToken, generatePasswordResetToken } from '../src/utils/token';
 import { Session } from '../src/models/Session';
@@ -49,7 +51,8 @@ describe('Auth & RBAC regression', () => {
   it('limits organizers to managing SYSTEM_USER accounts', async () => {
     const admin = await User.create({ fullName: 'Root', email: 'root@example.com', role: Role.ADMIN });
     const organizer = await User.create({ fullName: 'Org', email: 'org.rbac@example.com', role: Role.ORGANIZER });
-    const staff = await User.create({ fullName: 'Staff', email: 'staff.rbac@example.com', role: Role.SYSTEM_USER });
+    const staff = await User.create({ fullName: 'Staff', email: 'staff.rbac@example.com', role: Role.SYSTEM_USER, createdBy: organizer._id });
+    const otherStaff = await User.create({ fullName: 'Other Staff', email: 'other.staff.rbac@example.com', role: Role.SYSTEM_USER });
     const organizerToken = generateAccessToken((organizer._id as any).toString(), Role.ORGANIZER);
 
     const editAdmin = await request(app)
@@ -74,11 +77,18 @@ describe('Auth & RBAC regression', () => {
       .set('Authorization', `Bearer ${organizerToken}`);
     expect(list.status).toBe(200);
     expect(list.body.data.every((u: any) => u.role === Role.SYSTEM_USER)).toBe(true);
+    // Staff created by someone else (and not on this organizer's events) is invisible and unmanageable
+    expect(list.body.data.some((u: any) => u.email === 'other.staff.rbac@example.com')).toBe(false);
+    const editOther = await request(app)
+      .patch(`/api/users/${otherStaff._id}`)
+      .set('Authorization', `Bearer ${organizerToken}`)
+      .send({ phone: '+919999999990' });
+    expect(editOther.status).toBe(404);
   });
 
   it('rejects unknown fields and weak passwords on user update', async () => {
     const organizer = await User.create({ fullName: 'Org2', email: 'org2.rbac@example.com', role: Role.ORGANIZER });
-    const staff = await User.create({ fullName: 'Staff2', email: 'staff2.rbac@example.com', role: Role.SYSTEM_USER });
+    const staff = await User.create({ fullName: 'Staff2', email: 'staff2.rbac@example.com', role: Role.SYSTEM_USER, createdBy: organizer._id });
     const token = generateAccessToken((organizer._id as any).toString(), Role.ORGANIZER);
 
     const res = await request(app)
@@ -196,5 +206,32 @@ describe('System user session access regression', () => {
     const outsiderToken = generateAccessToken((outsider._id as any).toString(), Role.SYSTEM_USER);
     const denied = await request(app).get(`/api/v1/events/${event._id}/sessions`).set('Authorization', `Bearer ${outsiderToken}`);
     expect(denied.status).toBe(404);
+  });
+});
+
+describe('Event detail read model', () => {
+  it('resolves category, subcategory and template for display without changing stored ids', async () => {
+    const organizer = await User.create({ fullName: 'Org7', email: 'org7@example.com', role: Role.ORGANIZER });
+    const token = generateAccessToken((organizer._id as any).toString(), Role.ORGANIZER);
+    const category = await Category.create({ name: 'Corporate Detail', subcategories: [{ name: 'Conference' }] });
+    const template = await Template.create({ name: 'Gala Card', categoryId: category._id, previewImageKey: '/img/gala.png' });
+    const event = await Event.create({
+      organizerId: organizer._id, title: 'Detail Event', description: 'd', categoryId: category._id,
+      subcategoryId: (category as any).subcategories[0]._id, templateId: template._id,
+      format: 'PHYSICAL', schedule: { start: new Date(), end: new Date(Date.now() + 3600e3) }
+    });
+
+    const res = await request(app).get(`/api/v1/events/${event._id}`).set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.categoryId.name).toBe('Corporate Detail');
+    expect(res.body.data.subcategory.name).toBe('Conference');
+    expect(res.body.data.templateId.name).toBe('Gala Card');
+    expect(res.body.data.templateId.previewImageKey).toBe('/img/gala.png');
+
+    // Updates still work against the raw references
+    const upd = await request(app).patch(`/api/v1/events/${event._id}`).set('Authorization', `Bearer ${token}`).send({ title: 'Detail Event 2' });
+    expect(upd.status).toBe(200);
+    const stored = await Event.findById(event._id);
+    expect(String(stored?.templateId)).toBe(String(template._id));
   });
 });

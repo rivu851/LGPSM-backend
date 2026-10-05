@@ -38,7 +38,7 @@ export const updateSessionSchema = z.object({
     }).optional(),
     accessControl: z.nativeEnum(AccessControl).optional(),
     validateAgainstOtherSessions: z.boolean().optional(),
-    // inviteeSource and sourceSessionId are typically not updated after creation,
-    // but if needed, we can allow them to be updated.
+    inviteeSource: z.nativeEnum(InviteeSource).optional(),
+    sourceSessionId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid session ID').nullable().optional()
   })
 });

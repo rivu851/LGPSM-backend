@@ -79,6 +79,25 @@ class EventService {
         }
         return event;
     }
+    // Read model for detail screens: resolves the related category, subcategory and template for display
+    async getEventDetails(eventId, organizerId, role) {
+        const event = await this.getEventById(eventId, organizerId, role);
+        await event.populate([
+            { path: 'categoryId', select: 'name subcategories' },
+            { path: 'templateId', select: 'name previewImageKey isActive' },
+        ]);
+        const json = event.toJSON();
+        // subcategoryId references an embedded subcategory of the category; expose its name alongside the id
+        const category = json.categoryId;
+        if (json.subcategoryId && category && Array.isArray(category.subcategories)) {
+            const sub = category.subcategories.find((s) => String(s._id) === String(json.subcategoryId));
+            if (sub)
+                json.subcategory = { _id: sub._id, name: sub.name };
+        }
+        if (category && typeof category === 'object')
+            delete category.subcategories;
+        return json;
+    }
     async updateEvent(eventId, organizerId, updateData) {
         // Check if event exists
         const existingEvent = await this.getEventById(eventId, organizerId);

@@ -3,15 +3,11 @@ import { ISystemUserAssignment } from '../models/SystemUserAssignment';
 import { Event } from '../models/Event';
 import { User, Role } from '../models/User';
 import { Session } from '../models/Session';
+import { staffVisibleToOrganizer } from './user.service';
+import { findManageableEvent, getUserRole } from '../utils/eventAccess';
 import mongoose from 'mongoose';
 
-async function findAccessibleEvent(eventId: string, organizerId: string) {
-  const requestingUser = await User.findById(organizerId);
-  if (requestingUser?.role === Role.ADMIN) {
-    return await Event.findById(eventId);
-  }
-  return await Event.findOne({ _id: eventId, organizerId });
-}
+const findAccessibleEvent = (eventId: string, actorId: string) => findManageableEvent(eventId, actorId);
 
 export const systemUserAssignmentService = {
   async createAssignment(eventId: string, organizerId: string, data: { userId: string; sessionIds: string[] }): Promise<ISystemUserAssignment> {
@@ -23,6 +19,11 @@ export const systemUserAssignmentService = {
     const targetUser = await User.findById(data.userId);
     if (!targetUser || !targetUser.isActive || targetUser.role !== Role.SYSTEM_USER) {
       throw new Error('INVALID_USER');
+    }
+    // Organizers can only assign their own staff
+    if ((await getUserRole(organizerId)) === Role.ORGANIZER) {
+      const visible = await staffVisibleToOrganizer(organizerId);
+      if (!visible.some((id) => String(id) === data.userId)) throw new Error('INVALID_USER');
     }
 
     const existing = await systemUserAssignmentRepository.findByUserAndEvent(data.userId, eventId);

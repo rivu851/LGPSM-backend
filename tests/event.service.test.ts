@@ -7,6 +7,16 @@ import mongoose from 'mongoose';
 jest.mock('../src/repositories/event.repository');
 jest.mock('../src/models/Category');
 jest.mock('../src/models/Template');
+jest.mock('../src/services/platformSettings.service', () => ({
+  platformSettingsService: {
+    applyEventFeatureRules: jest.fn(async (data: unknown) => data),
+    currentRateSnapshot: jest.fn(async () => ({ ratePerInvitee: 2, currency: 'USD', lockedAt: new Date() }))
+  }
+}));
+jest.mock('../src/services/alert.service', () => ({ alertService: { notifyAdmins: jest.fn(), notifyUser: jest.fn() } }));
+jest.mock('../src/utils/eventAccess', () => ({
+  findManageableEvent: jest.fn(async (eventId: string) => ({ _id: eventId, organizerId: 'owner-id' }))
+}));
 
 describe('Event Service', () => {
   const mockOrganizerId = new mongoose.Types.ObjectId().toString();
@@ -46,7 +56,7 @@ describe('Event Service', () => {
 
     const result = await eventService.deactivateEvent('event123', mockOrganizerId);
     
-    expect(eventRepository.softDeleteByIdAndOrganizer).toHaveBeenCalledWith('event123', mockOrganizerId);
+    expect(eventRepository.softDeleteByIdAndOrganizer).toHaveBeenCalledWith('event123', 'owner-id');
     expect(result.status).toBe('CANCELLED');
   });
 });

@@ -7,7 +7,7 @@ export const inviteeController = {
       const organizerId = (req as any).user.userId;
       const eventId = req.params.eventId as string;
       
-      const invitee = await inviteeService.createInvitee(eventId, organizerId, req.body);
+      const invitee = await inviteeService.createInvitee(eventId, organizerId, req.body, (req as any).user.role);
       
       res.status(201).json({ success: true, data: invitee });
     } catch (error: any) {
@@ -155,7 +155,15 @@ export const inviteeController = {
         return;
       }
 
-      const result = await inviteeService.processExcelImport(eventId, organizerId, req.file.buffer);
+      const rawSessionId = (req.body?.sessionId || req.query.sessionId || '') as string;
+      if (rawSessionId && !/^[0-9a-fA-F]{24}$/.test(rawSessionId)) {
+        res.status(400).json({ success: false, message: 'Invalid sessionId format' });
+        return;
+      }
+      const result = await inviteeService.processExcelImport(eventId, organizerId, req.file.buffer, {
+        sessionId: rawSessionId || undefined,
+        role: (req as any).user.role
+      });
       
       res.status(200).json({ success: true, data: result });
     } catch (error: any) {

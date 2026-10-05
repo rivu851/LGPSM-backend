@@ -1,7 +1,22 @@
 import { Request, Response } from 'express';
 import { reportService } from '../services/report.service';
 
+const parseDate = (v: unknown) => {
+  if (typeof v !== 'string' || !v) return undefined;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? undefined : d;
+};
+
 export const reportController = {
+  async getEarnings(req: Request, res: Response) {
+    try {
+      const data = await reportService.getEarnings({ from: parseDate(req.query.from), to: parseDate(req.query.to) });
+      return res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  },
+
   async getDashboardStats(req: Request, res: Response) {
     try {
       const user = {

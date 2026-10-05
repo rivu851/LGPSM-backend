@@ -52,6 +52,8 @@ export interface IEvent extends Document {
     bannerKey?: string;
   };
   status: EventStatus;
+  // Per-invitee rate locked when the event was created (null when no rate was configured then)
+  pricing?: { ratePerInvitee: number | null; currency: string; lockedAt: Date };
   operationalDataCleared?: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -98,6 +100,11 @@ const EventSchema: Schema = new Schema(
       bannerKey: { type: String }
     },
     status: { type: String, enum: Object.values(EventStatus), default: EventStatus.DRAFT, required: true },
+    pricing: {
+      ratePerInvitee: { type: Number, default: null },
+      currency: { type: String },
+      lockedAt: { type: Date }
+    },
     operationalDataCleared: { type: Boolean, default: false }
   },
   {

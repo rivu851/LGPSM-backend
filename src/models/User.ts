@@ -19,6 +19,7 @@ export interface IUser extends Document {
   authProvider: AuthProvider;
   role: Role;
   profile?: Record<string, any>;
+  createdBy?: mongoose.Types.ObjectId;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -33,6 +34,8 @@ const UserSchema: Schema = new Schema(
     authProvider: { type: String, enum: Object.values(AuthProvider), default: AuthProvider.LOCAL },
     role: { type: String, enum: Object.values(Role), default: Role.ORGANIZER },
     profile: { type: Schema.Types.Mixed },
+    // Who created this account (admins/organizers create staff); scopes which organizer sees it
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
     isActive: { type: Boolean, default: true }
   },
   {

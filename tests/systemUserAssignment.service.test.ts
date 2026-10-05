@@ -8,6 +8,15 @@ jest.mock('../src/repositories/systemUserAssignment.repository');
 jest.mock('../src/models/Event');
 jest.mock('../src/models/User');
 jest.mock('../src/models/Session');
+jest.mock('../src/utils/eventAccess', () => ({
+  findManageableEvent: jest.fn(async (eventId: string) => ({ _id: eventId })),
+  getUserRole: jest.fn(async () => 'ORGANIZER')
+}));
+jest.mock('../src/services/user.service', () => ({
+  // The organizer created/owns the staff account used in these tests
+  staffVisibleToOrganizer: jest.fn(async () => [])
+}));
+import { staffVisibleToOrganizer } from '../src/services/user.service';
 
 describe('SystemUserAssignment Service', () => {
   const mockOrganizerId = new mongoose.Types.ObjectId().toString();
@@ -16,6 +25,7 @@ describe('SystemUserAssignment Service', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (staffVisibleToOrganizer as jest.Mock).mockResolvedValue([new mongoose.Types.ObjectId(mockUserId)]);
   });
 
   it('should create an assignment successfully', async () => {

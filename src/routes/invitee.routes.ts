@@ -11,10 +11,13 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || file.mimetype === 'application/vnd.ms-excel') {
+    const excelMime = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'].includes(file.mimetype);
+    // Some browsers send spreadsheets as a generic binary; the parser still validates the content
+    const excelByName = file.mimetype === 'application/octet-stream' && /\.(xlsx|xls)$/i.test(file.originalname);
+    if (excelMime || excelByName) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type'));
+      cb(new Error('Upload an Excel file (.xlsx or .xls)'));
     }
   }
 });

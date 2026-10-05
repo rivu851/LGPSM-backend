@@ -21,6 +21,7 @@ import auditLogRoutes from './routes/auditLog.routes';
 import reportRoutes from './routes/report.routes';
 import { eventTicketTierRoutes, ticketTierRoutes } from './routes/ticketTier.routes';
 import paymentRoutes from './routes/payment.routes';
+import platformSettingsRoutes from './routes/platformSettings.routes';
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.use(cors({
   ],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Authorization', 'Content-Type'],
+  exposedHeaders: ['X-Invitation-Qr'],
   credentials: true,
 }));
 app.use(express.json());
@@ -73,6 +75,7 @@ app.use('/api/v1/invoices/:id', requireObjectIdParam('id'));
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/v1/events', eventRoutes);
+app.use('/api/v1/media/:id', requireObjectIdParam('id', ['presign', 'upload']));
 app.use('/api/v1/media', mediaRoutes);
 app.use('/api/v1/events/:eventId/sessions', eventSessionRoutes);
 app.use('/api/v1/sessions', sessionRoutes);
@@ -91,6 +94,7 @@ app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/templates', templateRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);
+app.use('/api/v1/settings', platformSettingsRoutes);
 app.use('/api/v1/reports', reportRoutes);
 app.use('/api/v1/events/:eventId/tickets', eventTicketTierRoutes);
 app.use('/api/v1/tickets', ticketTierRoutes);

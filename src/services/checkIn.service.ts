@@ -7,6 +7,32 @@ import { User, Role } from '../models/User';
 import { SystemUserAssignment } from '../models/SystemUserAssignment';
 import { checkInRepository } from '../repositories/checkIn.repository';
 import { hashToken } from '../utils/invitation.util';
+import { Invitation } from '../models/Invitation';
+import { parseInvitationQrPayload } from '../utils/qrPayload';
+import { inviteeAllowedInSession } from '../utils/sessionAccess';
+
+/**
+ * Core service for event check-in operations (QR scanning and manual entry).
+ *
+ * Security & Access Rules:
+ * - Admin/Organizer: Full check-in access for owned events.
+ * - System User (Staff): Allowed only if assigned to the event and specific session.
+ * - Token Validation: Parses QR payloads securely using `parseInvitationQrPayload` and hashes tokens
+ *   to query MongoDB (`qrTokenHash`). Superseded tokens from older invitation resends are rejected (`QR_TOKEN_SUPERSEDED`).
+ * - RSVP Eligibility: Rejects guests with DECLINED/PENDING status based on event RSVP settings.
+ * - Access Control:
+ *   - ONLY_ONCE: Allows only one check-in per session (`ONLY_ONCE_VIOLATION`).
+ *   - NO_RESTRICTION: Logs check-ins but rejects duplicate attempts if already recorded.
+ *   - Primary Session Rule: When primary session `validateAgainstOtherSessions` is active, guests must
+ *     check in to the primary session first before entering secondary sessions (`PRIMARY_SESSION_CHECKIN_REQUIRED`).
+ */
+
+const QR_REJECTIONS = {
+  EMPTY: 'QR_PAYLOAD_REQUIRED',
+  UNSUPPORTED_FORMAT: 'QR_FORMAT_UNSUPPORTED',
+  UNTRUSTED_URL: 'QR_URL_UNTRUSTED',
+  PREVIEW_SAMPLE: 'QR_PREVIEW_SAMPLE',
+} as const;
 
 export interface ScanCheckInDto {
   qrCode: string;
@@ -30,16 +56,22 @@ export interface GetCheckInsOptions {
 }
 
 export const checkInService = {
+  /**
+   * Processes a QR scan check-in attempt.
+   * Validates QR payload, token hash lookup, staff assignment, RSVP eligibility, and session access rules.
+   */
   async scanCheckIn(actor: { userId: string; role: Role }, dto: ScanCheckInDto) {
-    const rawToken = this.extractRawToken(dto.qrCode);
-    if (!rawToken) {
-      throw new Error('INVALID_QR_TOKEN');
+    const parsed = parseInvitationQrPayload(dto.qrCode);
+    if (!parsed.ok) {
+      throw new Error(QR_REJECTIONS[parsed.reason]);
     }
 
-    const tokenHash = hashToken(rawToken);
+    const tokenHash = hashToken(parsed.token);
     const invitee = await Invitee.findOne({ qrTokenHash: tokenHash });
     if (!invitee) {
-      throw new Error('INVALID_QR_TOKEN');
+      // A token from an earlier send/resend is replaced by the newest one
+      const superseded = await Invitation.exists({ tokenHash });
+      throw new Error(superseded ? 'QR_TOKEN_SUPERSEDED' : 'INVALID_QR_TOKEN');
     }
 
     const eventId = invitee.eventId.toString();
@@ -207,21 +239,6 @@ export const checkInService = {
   },
 
   // Helper Methods
-  extractRawToken(qrCode: string): string {
-    if (!qrCode || typeof qrCode !== 'string') return '';
-    const trimmed = qrCode.trim();
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      try {
-        const url = new URL(trimmed);
-        const segments = url.pathname.split('/').filter(Boolean);
-        return segments[segments.length - 1] || '';
-      } catch (err) {
-        return trimmed;
-      }
-    }
-    return trimmed;
-  },
-
   async validateActorAndEvent(actor: { userId: string; role: Role }, eventId: string) {
     const event = await Event.findById(eventId);
     if (!event) {
@@ -280,17 +297,9 @@ export const checkInService = {
       throw new Error('SESSION_NOT_FOUND');
     }
 
-    // Invitee session permissions check
-    if (invitee.sessionAccess && invitee.sessionAccess.length > 0) {
-      const accessEntry = invitee.sessionAccess.find(sa => sa.sessionId.toString() === sessionId);
-      if (accessEntry) {
-        if (!accessEntry.allowed) {
-          throw new Error('INVITEE_SESSION_DENIED');
-        }
-      } else {
-        // Invitee has explicit session access rules defined, but this session is missing
-        throw new Error('INVITEE_SESSION_DENIED');
-      }
+    // Invitee session permissions (sessions that keep another session's invitees use that list)
+    if (!inviteeAllowedInSession(invitee, session)) {
+      throw new Error('INVITEE_SESSION_DENIED');
     }
 
     // AccessControl (ONLY_ONCE / NO_RESTRICTION) check
@@ -304,11 +313,13 @@ export const checkInService = {
       throw new Error('DUPLICATE_CHECKIN');
     }
 
-    // Cross-session validation check
-    if (session.validateAgainstOtherSessions) {
-      const otherCheckIns = await checkInRepository.findOtherSessionCheckIns((invitee._id as any).toString(), eventId, sessionId);
-      if (otherCheckIns.length > 0) {
-        throw new Error('CROSS_SESSION_CONFLICT');
+    // "Consider access session validation on other session access" is configured on the primary
+    // (first) session: when enabled, guests must have checked in to it before entering other sessions.
+    const primary = await Session.findOne({ eventId }).sort({ _id: 1 });
+    if (primary && String(primary._id) !== String(session._id) && primary.validateAgainstOtherSessions) {
+      const primaryCheckIn = await checkInRepository.findByInviteeAndSession((invitee._id as any).toString(), String(primary._id));
+      if (!primaryCheckIn) {
+        throw new Error('PRIMARY_SESSION_CHECKIN_REQUIRED');
       }
     }
 

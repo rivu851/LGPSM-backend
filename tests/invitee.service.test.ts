@@ -5,6 +5,11 @@ import mongoose from 'mongoose';
 
 jest.mock('../src/repositories/invitee.repository');
 jest.mock('../src/models/Event');
+// Event access resolves the caller's role from the user record
+jest.mock('../src/models/User', () => {
+  const actual = jest.requireActual('../src/models/User');
+  return { ...actual, User: { findById: jest.fn(() => ({ select: () => ({ lean: async () => ({ role: 'ORGANIZER' }) }) })) } };
+});
 jest.mock('../src/models/Session');
 
 describe('Invitee Service', () => {

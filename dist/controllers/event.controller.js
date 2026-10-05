@@ -54,7 +54,7 @@ exports.eventController = {
         try {
             const organizerId = req.user.userId;
             const eventId = req.params.eventId;
-            const event = await event_service_1.eventService.getEventById(eventId, organizerId, req.user.role);
+            const event = await event_service_1.eventService.getEventDetails(eventId, organizerId, req.user.role);
             res.status(200).json({ success: true, data: event });
         }
         catch (error) {

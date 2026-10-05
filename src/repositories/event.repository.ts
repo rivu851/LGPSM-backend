@@ -1,3 +1,4 @@
+import { Invitee } from '../models/Invitee';
 import { Event, IEvent, EventStatus } from '../models/Event';
 import mongoose from 'mongoose';
 
@@ -31,6 +32,7 @@ export class EventRepository {
 
     const [events, total] = await Promise.all([
       Event.find(query)
+        .populate(LIST_POPULATE)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(pagination.limit)
@@ -38,7 +40,7 @@ export class EventRepository {
       Event.countDocuments(query)
     ]);
 
-    return { events, total };
+    return { events: await withInvitationCounts(events), total };
   }
 
   // Admin-wide listing, optionally narrowed to one organizer
@@ -55,7 +57,7 @@ export class EventRepository {
 
     const [events, total] = await Promise.all([
       Event.find(query)
-        .populate('organizerId', 'fullName email')
+        .populate(LIST_POPULATE)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(pagination.limit)
@@ -63,7 +65,7 @@ export class EventRepository {
       Event.countDocuments(query)
     ]);
 
-    return { events, total };
+    return { events: await withInvitationCounts(events), total };
   }
 
   async findByIdAndOrganizer(eventId: string, organizerId: string | mongoose.Types.ObjectId): Promise<IEvent | null> {
@@ -85,6 +87,33 @@ export class EventRepository {
       { new: true }
     ).exec();
   }
+}
+
+// List rows show the organisation, category and whether invitations went out
+const LIST_POPULATE = [
+  { path: 'organizerId', select: 'fullName email profile.organizationName profile.logoKey' },
+  { path: 'categoryId', select: 'name subcategories' }
+];
+
+// Number of invitees per event who were sent an invitation (or a send was attempted)
+async function withInvitationCounts(events: IEvent[]): Promise<any[]> {
+  if (events.length === 0) return [];
+  const counts = await Invitee.aggregate([
+    { $match: { eventId: { $in: events.map((e) => e._id) }, invitationStatus: { $ne: 'PENDING' } } },
+    { $group: { _id: '$eventId', count: { $sum: 1 } } }
+  ]);
+  const byEvent = new Map(counts.map((c) => [String(c._id), c.count as number]));
+  return events.map((e) => {
+    const json: any = e.toJSON();
+    const category: any = json.categoryId;
+    if (json.subcategoryId && category && Array.isArray(category.subcategories)) {
+      const sub = category.subcategories.find((x: any) => String(x._id) === String(json.subcategoryId));
+      if (sub) json.subcategory = { _id: sub._id, name: sub.name };
+    }
+    if (category) delete category.subcategories;
+    json.invitationsSent = byEvent.get(String(e._id)) || 0;
+    return json;
+  });
 }
 
 export const eventRepository = new EventRepository();

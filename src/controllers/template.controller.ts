@@ -14,7 +14,8 @@ export const templateController = {
   async getTemplates(req: Request, res: Response) {
     try {
       const categoryId = req.query.categoryId as string;
-      const templates = await templateService.getTemplates(categoryId);
+      const isAdmin = (req as any).user?.role === 'ADMIN';
+      const templates = await templateService.getTemplates(categoryId, isAdmin);
       return res.status(200).json({ success: true, data: templates });
     } catch (error: any) {
       return res.status(500).json({ error: 'Internal Server Error', message: error.message });

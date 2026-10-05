@@ -35,7 +35,9 @@ describe('Public Invitation & RSVP Endpoints', () => {
       categoryId: new mongoose.Types.ObjectId(),
       format: 'PHYSICAL' as any,
       location: { type: 'Point', address: 'Convention Hall, City', coordinates: [0, 0] } as any,
-      schedule: { start: new Date(), end: new Date() }
+      // RSVP is only accepted while the event has it enabled and before it closes
+      schedule: { start: new Date(), end: new Date(Date.now() + 86400e3) },
+      rsvp: { enabled: true, allowAllInvited: true, allowNotResponded: false, allowDeclined: false }
     });
     eventId = (event as any)._id as mongoose.Types.ObjectId;
 

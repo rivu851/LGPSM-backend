@@ -10,6 +10,7 @@ import { SystemUserAssignment } from '../src/models/SystemUserAssignment';
 import { CheckIn } from '../src/models/CheckIn';
 import { generateAccessToken } from '../src/utils/token';
 import { generateSecureToken, hashToken } from '../src/utils/invitation.util';
+import { invitationUrlFor } from '../src/utils/qrPayload';
 
 describe('Phase 6 — Step 12: Check-in, Access Validation & Logs', () => {
   let mongoServer: MongoMemoryServer;
@@ -197,8 +198,18 @@ describe('Phase 6 — Step 12: Check-in, Access Validation & Logs', () => {
       expect(checkInRecord?.checkedInBy.toString()).toBe(organizer._id.toString());
     });
 
+    it('should reject QR URLs that point at a host other than the invitation site', async () => {
+      const res = await request(app)
+        .post('/api/v1/checkins/scan')
+        .set('Authorization', `Bearer ${staffToken}`)
+        .send({ qrCode: `https://myapp.com/invitation/${rawToken1}`, sessionId: session1._id.toString() });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body.code).toBe('QR_URL_UNTRUSTED');
+    });
+
     it('should extract raw token from QR URL format correctly', async () => {
-      const qrUrl = `https://myapp.com/invitation/${rawToken1}`;
+      const qrUrl = invitationUrlFor(rawToken1);
       const res = await request(app)
         .post('/api/v1/checkins/scan')
         .set('Authorization', `Bearer ${staffToken}`)
@@ -221,7 +232,7 @@ describe('Phase 6 — Step 12: Check-in, Access Validation & Logs', () => {
 
       expect(res.statusCode).toBe(404);
       expect(res.body.success).toBe(false);
-      expect(res.body.message).toBe('Invalid or unknown QR token');
+      expect(res.body.code).toBe('INVALID_QR_TOKEN');
     });
 
     it('should reject scan if specified eventId does not match QR token event', async () => {
@@ -401,29 +412,35 @@ describe('Phase 6 — Step 12: Check-in, Access Validation & Logs', () => {
       expect(res2.body.message).toContain('ONLY_ONCE rule');
     });
 
-    it('should reject check-in to session3 when validateAgainstOtherSessions is true and invitee checked into another session', async () => {
-      // Check in to session1 first
-      await CheckIn.create({
-        eventId: event1._id,
-        inviteeId: invitee1._id,
-        sessionId: session1._id,
-        checkInMethod: 'QR',
-        checkedInBy: organizer._id,
-        checkInAt: new Date()
-      });
+    it('requires a check-in to the primary session when it has access validation enabled', async () => {
+      // The flag lives on the primary (first-created) session
+      await Session.updateOne({ _id: session1._id }, { validateAgainstOtherSessions: true });
+      try {
+        const denied = await request(app)
+          .post('/api/v1/checkins/scan')
+          .set('Authorization', `Bearer ${organizerToken}`)
+          .send({ qrCode: rawToken1, sessionId: session3CrossSession._id.toString() });
+        expect(denied.statusCode).toBe(409);
+        expect(denied.body.success).toBe(false);
+        expect(denied.body.message).toContain('first session');
 
-      // Attempt check-in to session3 (validateAgainstOtherSessions = true)
-      const res = await request(app)
-        .post('/api/v1/checkins/scan')
-        .set('Authorization', `Bearer ${organizerToken}`)
-        .send({
-          qrCode: rawToken1,
-          sessionId: session3CrossSession._id.toString()
+        await CheckIn.create({
+          eventId: event1._id,
+          inviteeId: invitee1._id,
+          sessionId: session1._id,
+          checkInMethod: 'QR',
+          checkedInBy: organizer._id,
+          checkInAt: new Date()
         });
 
-      expect(res.statusCode).toBe(409);
-      expect(res.body.success).toBe(false);
-      expect(res.body.message).toContain('Cross-session conflict');
+        const allowed = await request(app)
+          .post('/api/v1/checkins/scan')
+          .set('Authorization', `Bearer ${organizerToken}`)
+          .send({ qrCode: rawToken1, sessionId: session3CrossSession._id.toString() });
+        expect(allowed.statusCode).toBe(201);
+      } finally {
+        await Session.updateOne({ _id: session1._id }, { validateAgainstOtherSessions: false });
+      }
     });
 
     it('should enforce database-level unique index constraint to prevent concurrent duplicate inserts', async () => {

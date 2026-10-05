@@ -58,7 +58,7 @@ export const eventController = {
       const organizerId = (req as any).user.userId;
       const eventId = req.params.eventId as string;
       
-      const event = await eventService.getEventById(eventId, organizerId, (req as any).user.role);
+      const event = await eventService.getEventDetails(eventId, organizerId, (req as any).user.role);
       
       res.status(200).json({ success: true, data: event });
     } catch (error) {
@@ -75,7 +75,7 @@ export const eventController = {
       const organizerId = (req as any).user.userId;
       const eventId = req.params.eventId as string;
       
-      const event = await eventService.updateEvent(eventId, organizerId, req.body);
+      const event = await eventService.updateEvent(eventId, organizerId, req.body, (req as any).user.role);
       
       res.status(200).json({ success: true, data: event });
     } catch (error) {
@@ -94,7 +94,7 @@ export const eventController = {
       const organizerId = (req as any).user.userId;
       const eventId = req.params.eventId as string;
       
-      const event = await eventService.deactivateEvent(eventId, organizerId);
+      const event = await eventService.deactivateEvent(eventId, organizerId, (req as any).user.role);
       
       res.status(200).json({ success: true, data: { eventId: (event as any)._id, status: event.status } });
     } catch (error) {

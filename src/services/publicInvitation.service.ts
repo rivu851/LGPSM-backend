@@ -1,3 +1,4 @@
+import { alertService } from './alert.service';
 import { Invitee, RsvpStatus } from '../models/Invitee';
 import { Event } from '../models/Event';
 import { hashToken } from '../utils/invitation.util';
@@ -45,12 +46,30 @@ export const publicInvitationService = {
       throw new Error('INVITATION_NOT_FOUND');
     }
 
+    // RSVP follows the event's own rules
+    const event = await Event.findById(invitee.eventId).select('title status organizerId rsvp schedule');
+    if (!event || event.status === 'CANCELLED') throw new Error('EVENT_CANCELLED');
+    if (!event.rsvp?.enabled) throw new Error('RSVP_DISABLED');
+    const closesAt = event.rsvp.acceptanceLastDate || event.schedule?.end;
+    if (closesAt && new Date(closesAt) < new Date()) throw new Error('RSVP_CLOSED');
+
+    const previous = invitee.rsvpStatus;
     invitee.rsvpStatus = rsvpStatus;
     if (dietaryPreference !== undefined) {
       invitee.dietaryPreference = dietaryPreference;
     }
 
     await invitee.save();
+
+    if (previous !== rsvpStatus && rsvpStatus !== RsvpStatus.PENDING) {
+      await alertService.notifyUser(event.organizerId, {
+        type: 'RSVP',
+        title: 'RSVP received',
+        message: `${invitee.name} ${rsvpStatus === RsvpStatus.ACCEPTED ? 'accepted' : 'declined'} your invitation to "${event.title}".`,
+        entityType: 'Event',
+        entityId: event._id
+      });
+    }
 
     return {
       message: 'RSVP submitted successfully',

@@ -5,8 +5,10 @@ export const templateRepository = {
     return await Template.create(data);
   },
 
-  async findAll(categoryId?: string): Promise<ITemplate[]> {
+  async findAll(categoryId?: string, includeDrafts = false): Promise<ITemplate[]> {
     const query: any = { isActive: true };
+    // Templates created before the publish flag existed count as published
+    if (!includeDrafts) query.isPublished = { $ne: false };
     if (categoryId) query.categoryId = categoryId;
     return await Template.find(query).populate('categoryId').sort({ createdAt: -1 });
   },

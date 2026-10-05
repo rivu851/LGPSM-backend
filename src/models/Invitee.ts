@@ -29,6 +29,7 @@ export interface IInvitee extends Document {
   company?: string;
   sessionAccess: ISessionAccess[];
   qrTokenHash?: string;
+  qrTokenCipher?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -60,7 +61,9 @@ const InviteeSchema: Schema = new Schema(
     companyName: { type: String, trim: true },
     company: { type: String, trim: true },
     sessionAccess: { type: [SessionAccessSchema], default: [] },
-    qrTokenHash: { type: String }
+    qrTokenHash: { type: String },
+    // Encrypted copy of the current token (see utils/tokenCipher); never returned by default
+    qrTokenCipher: { type: String, select: false }
   },
   {
     timestamps: true

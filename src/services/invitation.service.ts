@@ -1,3 +1,5 @@
+import { buildInvitationContent } from '../utils/invitationContent';
+import { alertService } from './alert.service';
 import mongoose from 'mongoose';
 import { Event } from '../models/Event';
 import { Invitee, InvitationStatus } from '../models/Invitee';
@@ -6,10 +8,11 @@ import { Session } from '../models/Session';
 import { Role } from '../models/User';
 import { generateSecureToken, hashToken } from '../utils/invitation.util';
 import { generateQRCodeDataURL } from '../utils/qr.util';
+import { invitationUrlFor, previewSampleUrl } from '../utils/qrPayload';
+import { decryptToken, encryptToken } from '../utils/tokenCipher';
 import { sendEmail } from '../utils/email.provider';
 import { whatsappService } from './whatsapp.service';
 import { invitationCardService } from './invitationCard.service';
-import { env } from '../config/env';
 
 function buildFormalInvitationEmailHTML(params: {
   eventTitle: string;
@@ -169,7 +172,6 @@ export const invitationService = {
     if (invitees.length === 0) throw new Error('INVALID_INVITEES');
 
     const results = [];
-    const baseUrl = process.env.INVITATION_BASE_URL || `${env.FRONTEND_URL}/invitation`;
 
     const shouldSendEmail = channel === DeliveryChannel.EMAIL || channel === DeliveryChannel.BOTH;
     const shouldSendWhatsApp = channel === DeliveryChannel.WHATSAPP || channel === DeliveryChannel.BOTH;
@@ -181,7 +183,7 @@ export const invitationService = {
       // Core Rule: Generate ONE secure token & ONE QR per event/invitee per send batch
       const rawToken = generateSecureToken();
       const tokenHash = hashToken(rawToken);
-      const invitationUrl = `${baseUrl}/${rawToken}`;
+      const invitationUrl = invitationUrlFor(rawToken);
       
       const qrDataUrl = await generateQRCodeDataURL(invitationUrl);
       const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '');
@@ -207,48 +209,11 @@ export const invitationService = {
       let emailErrReason = '';
       let whatsappErrReason = '';
 
-      const eventStartDate = event.schedule?.start ? new Date(event.schedule.start) : null;
+      // Event/session details for this invitee, rendered in the platform time zone
 
-      const eventDate = eventStartDate
-        ? eventStartDate.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: '2-digit',
-          }).toUpperCase()
-        : '15 OCT 2026';
+      const { eventDate, dayOfWeek, eventTime, venue, locationSub, sessions: assignedSessions } =
 
-      const dayOfWeek = eventStartDate
-        ? eventStartDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase()
-        : 'THURSDAY';
-
-      const eventTime = eventStartDate
-        ? eventStartDate.toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-          })
-        : '09:00 AM';
-
-      const venue = event.format === 'VIRTUAL'
-        ? 'VIRTUAL EVENT'
-        : (event.location?.address || 'RCCIIT AUDITORIUM');
-
-      const locationSub = event.format === 'VIRTUAL'
-        ? 'ONLINE'
-        : ((event.location as any)?.city || (event.location as any)?.state || 'KOLKATA, WB');
-
-      // Filter eligible sessions for this invitee
-      const assignedSessions = allSessions
-        .filter((s: any) => {
-          if (!invitee.sessionAccess || invitee.sessionAccess.length === 0) return true;
-          const access = invitee.sessionAccess.find((sa: any) => sa.sessionId.toString() === s._id.toString());
-          return access ? access.allowed !== false : false;
-        })
-        .map((s: any) => ({
-          id: s._id.toString(),
-          name: s.name,
-          startTime: s.schedule?.start ? new Date(s.schedule.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '10:00 AM',
-          endTime: s.schedule?.end ? new Date(s.schedule.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : undefined
-        }));
+        buildInvitationContent(event as any, allSessions as any, invitee as any);
 
       // Render canonical personalized invitation card PNG
       let cardBuffer: Buffer;
@@ -359,6 +324,7 @@ export const invitationService = {
 
         // Save active token and status on Invitee model
         invitee.qrTokenHash = tokenHash;
+        invitee.qrTokenCipher = encryptToken(rawToken);
         invitee.invitationStatus = InvitationStatus.SENT;
       } else {
         invitation.status = InvitationDeliveryStatus.FAILED;
@@ -398,6 +364,18 @@ export const invitationService = {
       });
     }
 
+    const failedCount = results.filter((r: any) => r.status === 'FAILED').length;
+    if (failedCount > 0) {
+      const content = {
+        type: 'INVITATION',
+        title: 'Invitation delivery failed',
+        message: `${failedCount} of ${results.length} invitation(s) for "${event.title}" could not be delivered. Open the invitees list to see the reasons and resend.`,
+        entityType: 'Event',
+        entityId: event._id
+      };
+      await alertService.notifyUser(event.organizerId, content);
+      await alertService.notifyAdmins('invitationSendFailed', content);
+    }
     return results;
   },
 
@@ -426,7 +404,6 @@ export const invitationService = {
     if (invitations.length === 0) throw new Error('INVALID_INVITATIONS');
 
     const results = [];
-    const baseUrl = process.env.INVITATION_BASE_URL || `${env.FRONTEND_URL}/invitation`;
 
     for (const invitation of invitations) {
       const invitee = invitation.inviteeId as any;
@@ -440,7 +417,7 @@ export const invitationService = {
 
       const rawToken = generateSecureToken();
       const tokenHash = hashToken(rawToken);
-      const invitationUrl = `${baseUrl}/${rawToken}`;
+      const invitationUrl = invitationUrlFor(rawToken);
 
       const qrDataUrl = await generateQRCodeDataURL(invitationUrl);
       const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '');
@@ -464,51 +441,11 @@ export const invitationService = {
       let emailErrReason = '';
       let whatsappErrReason = '';
 
-      const eventStartDate = event.schedule?.start ? new Date(event.schedule.start) : null;
+      // Event/session details for this invitee, rendered in the platform time zone
 
-      const eventDate = eventStartDate
-        ? eventStartDate.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: '2-digit',
-          }).toUpperCase()
-        : '15 OCT 2026';
+      const { eventDate, dayOfWeek, eventTime, venue, locationSub, sessions: assignedSessions } =
 
-      const dayOfWeek = eventStartDate
-        ? eventStartDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase()
-        : 'THURSDAY';
-
-      const eventTime = eventStartDate
-        ? eventStartDate.toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-          })
-        : '09:00 AM';
-
-      const venue = event.format === 'VIRTUAL'
-        ? 'VIRTUAL EVENT'
-        : (event.location?.address || 'RCCIIT AUDITORIUM');
-
-      const locationSub = event.format === 'VIRTUAL'
-        ? 'ONLINE'
-        : ((event.location as any)?.city || (event.location as any)?.state || 'KOLKATA, WB');
-
-      // Filter eligible sessions for this invitee
-      const inviteeSessionAccess = invitee.sessionAccess || [];
-      const assignedSessions = allSessions
-        .filter((s: any) => {
-          if (inviteeSessionAccess.length === 0) return true;
-          const access = inviteeSessionAccess.find(
-            (sa: any) => String(sa.sessionId?._id || sa.sessionId) === String(s._id)
-          );
-          return access ? access.allowed !== false : true;
-        })
-        .map((s: any) => ({
-          id: s._id.toString(),
-          name: s.name,
-          startTime: s.schedule?.start ? new Date(s.schedule.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '10:00 AM',
-          endTime: s.schedule?.end ? new Date(s.schedule.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : undefined
-        }));
+        buildInvitationContent(event as any, allSessions as any, invitee as any);
 
       // Render canonical personalized invitation card PNG
       let cardBuffer: Buffer;
@@ -615,6 +552,7 @@ export const invitationService = {
         resendInvitation.failureReason = undefined;
 
         invitee.qrTokenHash = tokenHash;
+        invitee.qrTokenCipher = encryptToken(rawToken);
         invitee.invitationStatus = InvitationStatus.SENT;
       } else {
         resendInvitation.status = InvitationDeliveryStatus.FAILED;
@@ -644,6 +582,18 @@ export const invitationService = {
       });
     }
 
+    const failedCount = results.filter((r: any) => r.status === 'FAILED').length;
+    if (failedCount > 0) {
+      const content = {
+        type: 'INVITATION',
+        title: 'Invitation delivery failed',
+        message: `${failedCount} of ${results.length} invitation(s) for "${event.title}" could not be delivered. Open the invitees list to see the reasons and resend.`,
+        entityType: 'Event',
+        entityId: event._id
+      };
+      await alertService.notifyUser(event.organizerId, content);
+      await alertService.notifyAdmins('invitationSendFailed', content);
+    }
     return results;
   },
 
@@ -684,7 +634,7 @@ export const invitationService = {
     };
   },
 
-  async previewInvitationCard(eventId: string, userOrOrganizerId: any, inviteeId?: string): Promise<Buffer> {
+  async previewInvitationCard(eventId: string, userOrOrganizerId: any, inviteeId?: string): Promise<{ png: Buffer; qr: "ISSUED" | "SAMPLE" }> {
     const isUserObj = typeof userOrOrganizerId === 'object' && userOrOrganizerId !== null;
     const organizerId = isUserObj ? userOrOrganizerId.userId : userOrOrganizerId;
     const userRole = isUserObj ? userOrOrganizerId.role : undefined;
@@ -697,57 +647,29 @@ export const invitationService = {
     }
     if (!event) throw new Error('EVENT_NOT_FOUND');
 
-    let inviteeName = 'Subrata Saha';
-    let sessionAccessList: any[] = [];
-    let inviteeCompanyName = 'LGPSM';
-
+    // Without a specific invitee the preview shows a neutral placeholder guest
+    let inviteeName = 'Guest Name';
+    let inviteeCompanyName = '';
+    let invitee: any = null;
     if (inviteeId && mongoose.Types.ObjectId.isValid(inviteeId)) {
-      const invitee = await Invitee.findOne({ _id: inviteeId, eventId });
+      invitee = await Invitee.findOne({ _id: inviteeId, eventId }).select('+qrTokenCipher');
       if (invitee) {
         inviteeName = invitee.name;
-        sessionAccessList = invitee.sessionAccess || [];
         inviteeCompanyName = invitee.companyName || '';
       }
     }
 
     const allSessions = await Session.find({ eventId }).sort({ 'schedule.start': 1 }).lean();
+    const { eventDate, dayOfWeek, eventTime, venue, locationSub, sessions: assignedSessions } =
+      buildInvitationContent(event as any, allSessions as any, invitee);
 
-    const assignedSessions = allSessions
-      .filter((s: any) => {
-        if (!sessionAccessList || sessionAccessList.length === 0) return true;
-        const access = sessionAccessList.find((sa: any) => sa.sessionId.toString() === s._id.toString());
-        return access ? access.allowed !== false : false;
-      })
-      .map((s: any) => ({
-        id: s._id.toString(),
-        name: s.name,
-        startTime: s.schedule?.start ? new Date(s.schedule.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '10:00 AM',
-        endTime: s.schedule?.end ? new Date(s.schedule.end).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : undefined
-      }));
-
-    const baseUrl = process.env.INVITATION_BASE_URL || `${env.FRONTEND_URL}/invitation`;
-    const sampleToken = generateSecureToken();
-    const invitationUrl = `${baseUrl}/${sampleToken}`;
+    // A guest who has been sent an invitation gets their current, check-in-valid QR. Otherwise the
+    // card carries a clearly marked sample QR that check-in recognises and rejects.
+    const issuedToken = invitee ? currentIssuedToken(invitee) : null;
+    const invitationUrl = issuedToken ? invitationUrlFor(issuedToken) : previewSampleUrl();
     const qrDataUrl = await generateQRCodeDataURL(invitationUrl);
 
-    const eventStartDate = event.schedule?.start ? new Date(event.schedule.start) : null;
-
-    const eventDate = eventStartDate
-      ? eventStartDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' }).toUpperCase()
-      : '15 OCT 2026';
-
-    const dayOfWeek = eventStartDate
-      ? eventStartDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase()
-      : 'THURSDAY';
-
-    const eventTime = eventStartDate
-      ? eventStartDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-      : '09:00 AM';
-
-    const venue = event.format === 'VIRTUAL' ? 'VIRTUAL EVENT' : (event.location?.address || 'RCCIIT AUDITORIUM');
-    const locationSub = event.format === 'VIRTUAL' ? 'ONLINE' : ((event.location as any)?.city || (event.location as any)?.state || 'KOLKATA, WB');
-
-    return invitationCardService.generateInvitationCardPNG({
+    const png = await invitationCardService.generateInvitationCardPNG({
       invitee: { name: inviteeName, companyName: inviteeCompanyName },
       event: {
         title: event.title,
@@ -762,6 +684,12 @@ export const invitationService = {
       qrDataUrl,
       invitationUrl
     });
+    return { png, qr: issuedToken ? ('ISSUED' as const) : ('SAMPLE' as const) };
   }
 };
+
+function currentIssuedToken(invitee: { qrTokenHash?: string; qrTokenCipher?: string }): string | null {
+  const token = decryptToken(invitee.qrTokenCipher);
+  return token && invitee.qrTokenHash && hashToken(token) === invitee.qrTokenHash ? token : null;
+}
 

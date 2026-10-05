@@ -10,4 +10,15 @@ export const createCategorySchema = z.object({
   isActive: z.boolean().optional()
 });
 
-export const updateCategorySchema = createCategorySchema.partial();
+export const updateCategorySchema = createCategorySchema.extend({
+  // Existing subcategories must be sent with their _id so their identity is preserved
+  subcategories: z.array(z.object({
+    _id: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
+    name: z.string().min(1),
+    isActive: z.boolean().optional()
+  })).optional()
+}).partial();
+
+export const addSubcategorySchema = z.object({
+  name: z.string().trim().min(1, 'Subcategory name is required').max(100)
+});

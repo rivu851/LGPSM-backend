@@ -1,4 +1,8 @@
+import { inviteesAllowedFilter } from '../utils/sessionAccess';
+import { startOfTodayInAppZone } from '../utils/invitationContent';
 import mongoose from 'mongoose';
+import { platformSettingsService } from './platformSettings.service';
+import { PlatformSettings } from '../models/PlatformSettings';
 import { Event } from '../models/Event';
 import { Invitee, RsvpStatus, InvitationStatus } from '../models/Invitee';
 import { CheckIn } from '../models/CheckIn';
@@ -108,19 +112,15 @@ export const reportService = {
 
     // Sessions breakdown
     const sessions = await Session.find({ eventId: eventObjId }).sort({ 'schedule.start': 1 });
+    const todayStart = startOfTodayInAppZone();
     const sessionReports = await Promise.all(
       sessions.map(async (sess) => {
-        const [count, sessionAttendees, invitedCount] = await Promise.all([
+        const [count, sessionAttendees, invitedCount, checkInsToday] = await Promise.all([
           CheckIn.countDocuments({ eventId: eventObjId, sessionId: sess._id }),
           CheckIn.distinct('inviteeId', { eventId: eventObjId, sessionId: sess._id }),
           // Invitees with no explicit session rules may attend every session
-          Invitee.countDocuments({
-            eventId: eventObjId,
-            $or: [
-              { sessionAccess: { $size: 0 } },
-              { sessionAccess: { $elemMatch: { sessionId: sess._id, allowed: true } } }
-            ]
-          })
+          Invitee.countDocuments({ eventId: eventObjId, ...inviteesAllowedFilter(sess) }),
+          CheckIn.countDocuments({ eventId: eventObjId, sessionId: sess._id, checkInAt: { $gte: todayStart } })
         ]);
         // Staff with no session restriction cover every session
         const systemUsers = assignments.filter((a: any) =>
@@ -132,6 +132,7 @@ export const reportService = {
           checkInCount: count,
           attendeeCount: sessionAttendees.length,
           invitedCount,
+          checkInsToday,
           systemUsers,
           accessControl: sess.accessControl,
           schedule: sess.schedule
@@ -158,6 +159,58 @@ export const reportService = {
       deliverySummary,
       checkInMethods,
       sessionReports
+    };
+  },
+
+  // Platform earnings per event: invitations sent x the event's locked per-invitee rate.
+  // Events created before rates were locked use the rate that was in effect when they were created.
+  async getEarnings(filter: { from?: Date; to?: Date } = {}) {
+    const query: any = { status: { $ne: 'CANCELLED' } };
+    if (filter.from || filter.to) {
+      query['schedule.start'] = {};
+      if (filter.from) query['schedule.start'].$gte = filter.from;
+      if (filter.to) query['schedule.start'].$lte = filter.to;
+    }
+    const events = await Event.find(query)
+      .select('title schedule createdAt organizerId pricing status')
+      .populate('organizerId', 'fullName email profile')
+      .sort({ 'schedule.start': -1 })
+      .lean();
+
+    const sentCounts = await Invitee.aggregate([
+      { $match: { eventId: { $in: events.map((e) => e._id) }, invitationStatus: InvitationStatus.SENT } },
+      { $group: { _id: '$eventId', count: { $sum: 1 } } }
+    ]);
+    const sentByEvent = new Map(sentCounts.map((c) => [String(c._id), c.count as number]));
+    const settings = await PlatformSettings.findOne({ key: 'global' }).lean();
+    const currency = settings?.pricing?.currency || 'USD';
+
+    const rows = await Promise.all(events.map(async (e: any) => {
+      const locked = e.pricing && e.pricing.lockedAt;
+      const rate: number | null = locked ? e.pricing.ratePerInvitee ?? null : await platformSettingsService.rateInEffectAt(new Date(e.createdAt));
+      const invites = sentByEvent.get(String(e._id)) || 0;
+      const org = e.organizerId || {};
+      return {
+        eventId: String(e._id),
+        eventName: e.title,
+        organizerId: org._id ? String(org._id) : null,
+        organizerName: org.profile?.organizationName || org.fullName || '',
+        eventStart: e.schedule?.start,
+        createdAt: e.createdAt,
+        invitesSent: invites,
+        ratePerInvitee: rate,
+        rateSource: locked ? 'locked' : rate === null ? 'unset' : 'historical',
+        amount: rate === null ? null : Math.round(invites * rate * 100) / 100
+      };
+    }));
+
+    return {
+      currency,
+      currentRate: settings?.pricing?.ratePerInvitee ?? null,
+      totalAmount: Math.round(rows.reduce((sum, r) => sum + (r.amount || 0), 0) * 100) / 100,
+      totalInvitesSent: rows.reduce((sum, r) => sum + r.invitesSent, 0),
+      eventsWithoutRate: rows.filter((r) => r.ratePerInvitee === null).length,
+      events: rows
     };
   }
 };

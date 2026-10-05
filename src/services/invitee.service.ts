@@ -4,10 +4,14 @@ import { Event } from '../models/Event';
 import { Session } from '../models/Session';
 import mongoose from 'mongoose';
 import * as xlsx from 'xlsx';
+import { findManageableEvent } from '../utils/eventAccess';
+import { InviteeSource } from '../models/Session';
+import { InvitationStatus, RsvpStatus } from '../models/Invitee';
+import { CheckIn } from '../models/CheckIn';
 
 export const inviteeService = {
-  async createInvitee(eventId: string, organizerId: string, data: Partial<IInvitee>): Promise<IInvitee> {
-    const event = await Event.findOne({ _id: eventId, organizerId });
+  async createInvitee(eventId: string, organizerId: string, data: Partial<IInvitee>, role?: string): Promise<IInvitee> {
+    const event = await findManageableEvent(eventId, organizerId, role);
     if (!event) {
       throw new Error('EVENT_NOT_FOUND');
     }
@@ -37,9 +41,7 @@ export const inviteeService = {
     invitationStatus?: string;
     search?: string;
   } = {}, role?: string) {
-    const event = role === 'ADMIN'
-      ? await Event.findById(eventId)
-      : await Event.findOne({ _id: eventId, organizerId });
+    const event = await findManageableEvent(eventId, organizerId, role);
     if (!event) {
       throw new Error('EVENT_NOT_FOUND');
     }
@@ -78,7 +80,7 @@ export const inviteeService = {
       throw new Error('INVITEE_NOT_FOUND');
     }
 
-    const event = await Event.findOne({ _id: invitee.eventId, organizerId });
+    const event = await findManageableEvent(invitee.eventId.toString(), organizerId);
     if (!event) {
       throw new Error('INVITEE_NOT_FOUND');
     }
@@ -148,7 +150,7 @@ export const inviteeService = {
   },
 
   async bulkUpdateSessionAccess(eventId: string, organizerId: string, inviteeIds: string[], sessionAccess: { sessionId: string; allowed: boolean }[]) {
-    const event = await Event.findOne({ _id: eventId, organizerId });
+    const event = await findManageableEvent(eventId, organizerId);
     if (!event) {
       throw new Error('EVENT_NOT_FOUND');
     }
@@ -193,223 +195,237 @@ export const inviteeService = {
     return deleted;
   },
 
-  async processExcelImport(eventId: string, organizerId: string, fileBuffer: Buffer) {
-    const event = await Event.findOne({ _id: eventId, organizerId });
+  // Imports an invitee sheet. The latest upload is authoritative for the not-yet-invited ("staged")
+  // list: staged invitees missing from the new file are dropped (event-wide upload) or lose access to
+  /**
+   * Processes Excel import for an event or session.
+   *
+   * Product Staging vs History Preservation Rule:
+   * - Unsent / Staging Data: Invitee records that are still PENDING (not yet sent an invitation pass)
+   *   and have no check-in logs are replaced by a new Excel upload if omitted from the new file.
+   * - Historical Data Preservation: Guests with active delivery history (SENT, FAILED), RSVP responses
+   *   (ACCEPTED, DECLINED), or recorded Check-Ins are NEVER deleted or reset. Their contact details
+   *   and session access are safely updated/expanded without wiping their invitation or check-in state.
+   */
+  async processExcelImport(eventId: string, organizerId: string, fileBuffer: Buffer, options: { sessionId?: string; role?: string } = {}) {
+    const event = await findManageableEvent(eventId, organizerId, options.role);
     if (!event) {
       throw new Error('EVENT_NOT_FOUND');
     }
 
     const eventSessions = await Session.find({ eventId });
-    const sessionNameMap = new Map(eventSessions.map(s => [s.name.toLowerCase(), s._id]));
+    let targetSession: (typeof eventSessions)[number] | undefined;
+    if (options.sessionId) {
+      targetSession = eventSessions.find((s) => String(s._id) === options.sessionId);
+      if (!targetSession) throw { statusCode: 400, message: 'The session does not belong to this event' };
+      if (targetSession.inviteeSource === InviteeSource.COPY_SESSION) {
+        throw { statusCode: 400, message: `"${targetSession.name}" keeps the same invitees as another session; upload the list to that session instead` };
+      }
+    }
 
-    const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    
-    const rowsRaw = xlsx.utils.sheet_to_json<any[]>(sheet, { header: 1 }) || [];
-    
-    // Helper function to cleanse formula errors & invalid cell objects
+    let workbook: xlsx.WorkBook;
+    try {
+      workbook = xlsx.read(fileBuffer, { type: 'buffer' });
+    } catch {
+      throw { statusCode: 400, message: 'The file could not be read as an Excel sheet' };
+    }
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rowsRaw = (sheet ? xlsx.utils.sheet_to_json<any[]>(sheet, { header: 1 }) : []) || [];
+
+    // Formula errors and stringified objects are treated as empty cells
     const cleanCellValue = (val: any): string => {
       if (val === null || val === undefined) return '';
       const str = String(val).trim();
       if (!str) return '';
-      const formulaErrors = ['#VALUE!', '#N/A', '#REF!', '#DIV/0!', '#NAME?', '#NUM!', '#NULL!', '[OBJECT OBJECT]', 'NAN', 'UNDEFINED', 'NULL'];
-      if (formulaErrors.some(err => str.toUpperCase().includes(err))) {
-        return '';
-      }
+      const formulaErrors = ['#VALUE!', '#N/A', '#REF!', '#DIV/0!', '#NAME?', '#NUM!', '#NULL!', '[OBJECT OBJECT]'];
+      if (formulaErrors.some(err => str.toUpperCase().includes(err))) return '';
       return str;
     };
-
-    const isValidEmailFormat = (emailStr: string): boolean => {
-      if (!emailStr) return false;
-      return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(emailStr);
-    };
-
-    const isValidMobileFormat = (mobileStr: string): boolean => {
-      if (!mobileStr) return false;
-      const digits = mobileStr.replace(/\D/g, '');
+    const isValidEmailFormat = (v: string) => /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(v);
+    const isValidMobileFormat = (v: string) => {
+      const digits = v.replace(/\D/g, '');
       return digits.length >= 7 && digits.length <= 15;
     };
 
-    // Filter out completely blank rows
-    const nonBlankRows = rowsRaw.filter(
-      r => Array.isArray(r) && r.some(cell => cleanCellValue(cell) !== '')
-    );
-
-    if (nonBlankRows.length === 0) {
-      return { totalRows: 0, imported: 0, updated: 0, rejected: 0, duplicateCount: 0, errors: [] };
-    }
-
-    // Smart header column matching
-    let nameColIdx = -1;
-    let emailColIdx = -1;
-    let mobileColIdx = -1;
-    let companyColIdx = -1;
-    let dietaryColIdx = -1;
-    const sessionColMap = new Map<number, string>();
-
-    const firstRowCols = nonBlankRows[0].map((c: any) => cleanCellValue(c).toLowerCase());
-    const isHeaderPresent = firstRowCols.some(
-      col => col.includes('name') || col.includes('email') || col.includes('mobile') || col.includes('phone') || col.includes('company')
-    );
-
-    if (isHeaderPresent) {
-      firstRowCols.forEach((colStr: string, colIdx: number) => {
-        if (!colStr) return;
-        if (colStr.includes('name') && !colStr.includes('company')) nameColIdx = colIdx;
-        else if (colStr.includes('email') || colStr.includes('mail')) emailColIdx = colIdx;
-        else if (colStr.includes('mobile') || colStr.includes('phone') || colStr.includes('contact') || colStr.includes('whatsapp')) mobileColIdx = colIdx;
-        else if (colStr.includes('company') || colStr.includes('organization') || colStr.includes('org')) companyColIdx = colIdx;
-        else if (colStr.includes('diet') || colStr.includes('food') || colStr.includes('meal') || colStr.includes('veg') || colStr.includes('dietary')) dietaryColIdx = colIdx;
-
-        // Check session column match dynamically
-        for (const session of eventSessions) {
-          if (colStr === session.name.toLowerCase() || colStr.includes(session.name.toLowerCase())) {
-            sessionColMap.set(colIdx, (session as any)._id.toString());
-          }
-        }
-      });
-    }
-
-    // Fallbacks ONLY if no header row was detected
-    if (!isHeaderPresent) {
-      nameColIdx = 0;
-      emailColIdx = 1;
-      mobileColIdx = 2;
-      companyColIdx = 3;
-      dietaryColIdx = 4;
-    }
-
-    const dataRows = isHeaderPresent ? nonBlankRows.slice(1) : nonBlankRows;
-    
+    const nonBlankRows = rowsRaw.filter(r => Array.isArray(r) && r.some(cell => cleanCellValue(cell) !== ''));
     const results = {
-      totalRows: dataRows.length,
+      totalRows: 0,
       imported: 0,
       updated: 0,
+      removed: 0,
       rejected: 0,
       duplicateCount: 0,
       errors: [] as { row: number; error: string }[]
     };
+    if (nonBlankRows.length === 0) {
+      throw { statusCode: 400, message: 'The sheet has no invitee rows' };
+    }
 
-    const validInviteesToInsert: any[] = [];
-    const emailsInImport = new Set<string>();
-    const mobilesInImport = new Set<string>();
+    // Header matching (same rules as the frontend preview in utils/inviteeSheet.ts)
+    let nameColIdx = -1, emailColIdx = -1, mobileColIdx = -1, companyColIdx = -1, dietaryColIdx = -1;
+    const sessionColMap = new Map<number, string>();
+    const firstRowCols = nonBlankRows[0].map((c: any) => cleanCellValue(c).toLowerCase());
+    const isHeaderPresent = firstRowCols.some(
+      (col: string) => col.includes('name') || col.includes('email') || col.includes('mobile') || col.includes('phone') || col.includes('company')
+    );
+    if (isHeaderPresent) {
+      firstRowCols.forEach((colStr: string, colIdx: number) => {
+        if (!colStr) return;
+        if (colStr.includes('company') || colStr.includes('organization') || colStr.includes('organisation')) companyColIdx = colIdx;
+        else if (colStr.includes('name')) nameColIdx = colIdx;
+        else if (colStr.includes('email') || colStr.includes('mail')) emailColIdx = colIdx;
+        else if (colStr.includes('mobile') || colStr.includes('phone') || colStr.includes('contact') || colStr.includes('whatsapp')) mobileColIdx = colIdx;
+        else if (colStr.includes('diet') || colStr.includes('food') || colStr.includes('meal')) dietaryColIdx = colIdx;
+        // Per-session Y/N columns only apply to event-wide uploads
+        if (!targetSession) {
+          for (const session of eventSessions) {
+            if (session.inviteeSource !== InviteeSource.COPY_SESSION && colStr === session.name.toLowerCase()) {
+              sessionColMap.set(colIdx, String(session._id));
+            }
+          }
+        }
+      });
+    } else {
+      nameColIdx = 0; emailColIdx = 1; mobileColIdx = 2; companyColIdx = 3; dietaryColIdx = 4;
+    }
+
+    const dataRows = isHeaderPresent ? nonBlankRows.slice(1) : nonBlankRows;
+    results.totalRows = dataRows.length;
+    const cell = (row: any[], idx: number) => (idx !== -1 && row[idx] !== undefined ? cleanCellValue(row[idx]) : '');
+
+    const existingInvitees = await Invitee.find({ eventId });
+    const isStaged = (inv: IInvitee) =>
+      inv.invitationStatus === InvitationStatus.PENDING && inv.rsvpStatus === RsvpStatus.PENDING;
+    const checkedInIds = new Set((await CheckIn.distinct('inviteeId', { eventId })).map(String));
+    const hasHistory = (inv: IInvitee) => !isStaged(inv) || checkedInIds.has(String(inv._id));
+
+    const byEmail = new Map<string, IInvitee>();
+    const byMobile = new Map<string, IInvitee>();
+    for (const inv of existingInvitees) {
+      if (inv.email) byEmail.set(inv.email.toLowerCase(), inv);
+      if (inv.mobile) byMobile.set(inv.mobile.replace(/\D/g, ''), inv);
+    }
+
+    const ownSessionIds = eventSessions.filter((s) => s.inviteeSource !== InviteeSource.COPY_SESSION).map((s) => String(s._id));
+    const matchedIds = new Set<string>();
+    const seenEmails = new Set<string>();
+    const seenMobiles = new Set<string>();
+    const toInsert: any[] = [];
 
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i];
       const rowNum = i + (isHeaderPresent ? 2 : 1);
+      const name = cell(row, nameColIdx);
+      const email = cell(row, emailColIdx).toLowerCase();
+      const mobile = cell(row, mobileColIdx);
+      const company = cell(row, companyColIdx);
+      const dietary = cell(row, dietaryColIdx);
 
-      const rawName = nameColIdx !== -1 && row[nameColIdx] !== undefined ? cleanCellValue(row[nameColIdx]) : (!isHeaderPresent ? cleanCellValue(row[0]) : '');
-      const rawEmail = emailColIdx !== -1 && row[emailColIdx] !== undefined ? cleanCellValue(row[emailColIdx]).toLowerCase() : (!isHeaderPresent ? cleanCellValue(row[1]).toLowerCase() : '');
-      const rawMobile = mobileColIdx !== -1 && row[mobileColIdx] !== undefined ? cleanCellValue(row[mobileColIdx]) : (!isHeaderPresent ? cleanCellValue(row[2]) : '');
-      const companyVal = companyColIdx !== -1 && row[companyColIdx] !== undefined ? cleanCellValue(row[companyColIdx]) : (!isHeaderPresent ? cleanCellValue(row[3]) : '');
-      const dietaryPreference = dietaryColIdx !== -1 && row[dietaryColIdx] !== undefined ? cleanCellValue(row[dietaryColIdx]) : (!isHeaderPresent ? cleanCellValue(row[4]) : '');
+      if (!name) { results.rejected++; results.errors.push({ row: rowNum, error: 'Name is required' }); continue; }
+      if (name.length < 2 || name.length > 100) { results.rejected++; results.errors.push({ row: rowNum, error: `Invalid name '${name}' (must be 2-100 characters)` }); continue; }
+      if (email && !isValidEmailFormat(email)) { results.rejected++; results.errors.push({ row: rowNum, error: `Invalid email format '${email}'` }); continue; }
+      if (mobile && !isValidMobileFormat(mobile)) { results.rejected++; results.errors.push({ row: rowNum, error: `Invalid mobile number '${mobile}' (must contain 7-15 digits)` }); continue; }
+      if (!email && !mobile) { results.rejected++; results.errors.push({ row: rowNum, error: 'Email or mobile is required' }); continue; }
 
-      // 1. Name Validation
-      if (!rawName) {
-        results.rejected++;
-        results.errors.push({ row: rowNum, error: 'Name is required' });
+      const mobileKey = mobile.replace(/\D/g, '');
+      if ((email && seenEmails.has(email)) || (mobileKey && seenMobiles.has(mobileKey))) {
+        results.rejected++; results.duplicateCount++;
+        results.errors.push({ row: rowNum, error: `Duplicate invitee in file (${email || mobile})` });
         continue;
       }
+      if (email) seenEmails.add(email);
+      if (mobileKey) seenMobiles.add(mobileKey);
 
-      if (rawName.length < 2 || rawName.length > 100) {
-        results.rejected++;
-        results.errors.push({ row: rowNum, error: `Invalid name '${rawName}' (must be 2-100 characters)` });
-        continue;
+      // Access granted by this row
+      let rowAccess: { sessionId: string; allowed: boolean }[];
+      if (targetSession) {
+        rowAccess = [{ sessionId: String(targetSession._id), allowed: true }];
+      } else if (sessionColMap.size > 0) {
+        rowAccess = [...sessionColMap.entries()].map(([colIdx, sessionId]) => {
+          const v = cleanCellValue(row[colIdx]).toUpperCase();
+          return { sessionId, allowed: !['N', 'NO', 'FALSE', '0'].includes(v) };
+        });
+      } else {
+        rowAccess = ownSessionIds.map((sessionId) => ({ sessionId, allowed: true }));
       }
 
-      // 2. Email & Mobile Validation
-      let email = rawEmail;
-      let mobile = rawMobile;
-
-      if (email && !isValidEmailFormat(email)) {
-        results.rejected++;
-        results.errors.push({ row: rowNum, error: `Invalid email format '${email}'` });
-        continue;
-      }
-
-      if (mobile && !isValidMobileFormat(mobile)) {
-        results.rejected++;
-        results.errors.push({ row: rowNum, error: `Invalid mobile number format '${mobile}' (must contain 7-15 digits)` });
-        continue;
-      }
-
-      if (!email && !mobile) {
-        results.rejected++;
-        results.errors.push({ row: rowNum, error: 'At least one valid contact method (Email or Mobile) is required' });
-        continue;
-      }
-
-      // 3. In-File Duplicate Check
-      const cleanDigits = mobile ? mobile.replace(/\D/g, '') : '';
-      const emailDupKey = email ? email : '';
-      const mobileDupKey = cleanDigits ? cleanDigits : '';
-
-      if ((emailDupKey && emailsInImport.has(emailDupKey)) || (mobileDupKey && mobilesInImport.has(mobileDupKey))) {
-        results.rejected++;
-        results.duplicateCount++;
+      const existing = (email && byEmail.get(email)) || (mobileKey && byMobile.get(mobileKey)) || null;
+      if (existing && matchedIds.has(String(existing._id))) {
+        results.rejected++; results.duplicateCount++;
         results.errors.push({ row: rowNum, error: `Duplicate invitee in file (${email || mobile})` });
         continue;
       }
 
-      if (emailDupKey) emailsInImport.add(emailDupKey);
-      if (mobileDupKey) mobilesInImport.add(mobileDupKey);
-
-      // 4. Session Access Processing
-      const sessionAccess: any[] = [];
-      if (sessionColMap.size > 0) {
-        sessionColMap.forEach((sessionId, colIdx) => {
-          const val = cleanCellValue(row[colIdx]).toUpperCase();
-          if (val === 'Y' || val === 'YES' || val === 'TRUE' || val === '1') {
-            sessionAccess.push({ sessionId, allowed: true });
-          } else if (val === 'N' || val === 'NO' || val === 'FALSE' || val === '0') {
-            sessionAccess.push({ sessionId, allowed: false });
-          } else {
-            sessionAccess.push({ sessionId, allowed: true });
-          }
-        });
-      } else {
-        eventSessions.forEach(session => {
-          sessionAccess.push({ sessionId: (session as any)._id, allowed: true });
-        });
-      }
-
-      // 5. Database Duplicate Check & Update
-      const dbDuplicates = await inviteeRepository.findByEmailOrMobile(eventId, email, mobile);
-      if (dbDuplicates.length > 0) {
-        const existing = dbDuplicates[0];
-        const updateData: any = {
-          name: rawName || existing.name,
-          email: email || existing.email,
-          mobile: mobile || existing.mobile,
-          companyName: companyVal || existing.companyName || (existing as any).company,
-          company: companyVal || existing.company || existing.companyName,
-          dietaryPreference: dietaryPreference || existing.dietaryPreference,
-          sessionAccess: sessionAccess.length > 0 ? sessionAccess : existing.sessionAccess
-        };
-
-        await inviteeRepository.update((existing as any)._id.toString(), updateData);
+      if (existing) {
+        matchedIds.add(String(existing._id));
+        const access = new Map<string, boolean>((existing.sessionAccess || []).map((sa) => [String(sa.sessionId), sa.allowed]));
+        const hadImplicitAll = access.size === 0;
+        if (targetSession) {
+          if (!hadImplicitAll) access.set(String(targetSession._id), true);
+        } else if (hasHistory(existing)) {
+          // Already invited: never take access away
+          if (!hadImplicitAll) rowAccess.filter((a) => a.allowed).forEach((a) => access.set(a.sessionId, true));
+        } else {
+          access.clear();
+          rowAccess.forEach((a) => access.set(a.sessionId, a.allowed));
+        }
+        existing.name = name;
+        if (email) existing.email = email;
+        if (mobile) existing.mobile = mobile;
+        if (company) { existing.companyName = company; (existing as any).company = company; }
+        if (dietary) existing.dietaryPreference = dietary;
+        existing.sessionAccess = [...access.entries()].map(([sessionId, allowed]) => ({ sessionId: new mongoose.Types.ObjectId(sessionId), allowed })) as any;
+        await existing.save();
         results.updated++;
-        continue;
+      } else {
+        toInsert.push({
+          eventId: new mongoose.Types.ObjectId(eventId),
+          name,
+          email: email || undefined,
+          mobile: mobile || undefined,
+          companyName: company || undefined,
+          company: company || undefined,
+          dietaryPreference: dietary || undefined,
+          sessionAccess: rowAccess.map((a) => ({ sessionId: new mongoose.Types.ObjectId(a.sessionId), allowed: a.allowed })),
+          invitationStatus: InvitationStatus.PENDING,
+          rsvpStatus: RsvpStatus.PENDING
+        });
       }
-
-      validInviteesToInsert.push({
-        eventId: new mongoose.Types.ObjectId(eventId),
-        name: rawName,
-        email,
-        mobile,
-        companyName: companyVal,
-        company: companyVal,
-        dietaryPreference,
-        sessionAccess,
-        invitationStatus: 'PENDING',
-        rsvpStatus: 'PENDING'
-      });
     }
 
-    if (validInviteesToInsert.length > 0) {
-      await inviteeRepository.insertMany(validInviteesToInsert);
-      results.imported += validInviteesToInsert.length;
+    // A file where every row was rejected must not wipe the current list
+    if (matchedIds.size === 0 && toInsert.length === 0) {
+      return results;
+    }
+
+    if (toInsert.length > 0) {
+      await inviteeRepository.insertMany(toInsert);
+      results.imported = toInsert.length;
+    }
+
+    // Replace the staged list with the new file
+    const notInFile = existingInvitees.filter((inv) => !matchedIds.has(String(inv._id)) && !hasHistory(inv));
+    if (targetSession) {
+      const sid = String(targetSession._id);
+      const otherOwnSessions = ownSessionIds.filter((id) => id !== sid);
+      for (const inv of notInFile) {
+        const access = (inv.sessionAccess || []).map((sa) => ({ sessionId: String(sa.sessionId), allowed: sa.allowed }));
+        const wasAllowed = access.length === 0 || access.some((a) => a.sessionId === sid && a.allowed);
+        if (!wasAllowed) continue;
+        const remaining = access.length === 0
+          ? otherOwnSessions.map((sessionId) => ({ sessionId, allowed: true }))
+          : access.filter((a) => a.sessionId !== sid);
+        if (!remaining.some((a) => a.allowed)) {
+          await Invitee.deleteOne({ _id: inv._id });
+        } else {
+          inv.sessionAccess = remaining.map((a) => ({ sessionId: new mongoose.Types.ObjectId(a.sessionId), allowed: a.allowed })) as any;
+          await inv.save();
+        }
+        results.removed++;
+      }
+    } else if (notInFile.length > 0) {
+      await Invitee.deleteMany({ _id: { $in: notInFile.map((inv) => inv._id) } });
+      results.removed = notInFile.length;
     }
 
     return results;

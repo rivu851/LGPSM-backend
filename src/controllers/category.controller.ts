@@ -7,7 +7,19 @@ export const categoryController = {
       const category = await categoryService.createCategory(req.body);
       return res.status(201).json({ success: true, data: category });
     } catch (error: any) {
-      return res.status(400).json({ error: 'Bad Request', message: error.message });
+      if (error?.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+      return res.status(400).json({ success: false, error: 'Bad Request', message: error.message });
+    }
+  },
+
+  async addSubcategory(req: Request, res: Response) {
+    try {
+      const category = await categoryService.addSubcategory(req.params.id as string, req.body.name);
+      return res.status(201).json({ success: true, data: category });
+    } catch (error: any) {
+      if (error?.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+      if (error.message === 'CATEGORY_NOT_FOUND') return res.status(404).json({ success: false, message: 'Category not found' });
+      return res.status(400).json({ success: false, message: error.message });
     }
   },
 

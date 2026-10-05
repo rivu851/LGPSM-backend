@@ -7,6 +7,7 @@ export interface ITemplate extends Document {
   previewImageKey?: string;
   templateData?: Record<string, any>;
   isSystemTemplate: boolean;
+  isPublished: boolean;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -20,6 +21,9 @@ const TemplateSchema: Schema = new Schema(
     previewImageKey: { type: String },
     templateData: { type: Schema.Types.Mixed, default: {} },
     isSystemTemplate: { type: Boolean, default: true },
+    // Drafts are visible to admins only; organizers can pick published templates
+    isPublished: { type: Boolean, default: true },
+    // false = deleted (soft delete)
     isActive: { type: Boolean, default: true }
   },
   {

@@ -1,3 +1,4 @@
+import { isAcceptedImageKey } from '../utils/mediaKey';
 import { z } from 'zod';
 import { EventFormat, EventStatus } from '../models/Event';
 
@@ -33,8 +34,9 @@ export const createEventSchema = z.object({
     }).optional(),
     templateId: objectIdSchema.optional(),
     media: z.object({
-      logoKey: z.string().optional(),
-      bannerKey: z.string().optional()
+      // '' clears the logo
+      logoKey: z.string().refine((k) => k === '' || isAcceptedImageKey(k), 'Invalid logo image reference').optional(),
+      bannerKey: z.string().refine((k) => k === '' || isAcceptedImageKey(k), 'Invalid banner image reference').optional()
     }).optional()
   })
 });
@@ -78,8 +80,9 @@ export const updateEventSchema = z.object({
     }).optional(),
     templateId: objectIdSchema.optional(),
     media: z.object({
-      logoKey: z.string().optional(),
-      bannerKey: z.string().optional()
+      // '' clears the logo
+      logoKey: z.string().refine((k) => k === '' || isAcceptedImageKey(k), 'Invalid logo image reference').optional(),
+      bannerKey: z.string().refine((k) => k === '' || isAcceptedImageKey(k), 'Invalid banner image reference').optional()
     }).optional(),
     status: z.nativeEnum(EventStatus).optional()
   })

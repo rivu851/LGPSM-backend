@@ -5,6 +5,7 @@ import { hashPassword, verifyPassword } from '../utils/password';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken, generatePasswordResetToken, verifyPasswordResetToken } from '../utils/token';
 import { sendEmail } from '../utils/email.provider';
 import { AuthProvider, Role } from '../models/User';
+import { alertService } from './alert.service';
 import { env } from '../config/env';
 
 const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID);
@@ -16,13 +17,14 @@ export const authService = {
       throw { statusCode: 400, message: 'Email already in use' };
     }
 
-    const hashedPassword = await hashPassword(data.password);
-
-    // Role comes only from the explicit (validated) input; never inferred from name/email
-    let assignedRole = Role.ORGANIZER;
-    if (data.role && Object.values(Role).includes(data.role as Role)) {
-      assignedRole = data.role as Role;
+    // Self-registration only creates organizers. Admins are provisioned out of band and
+    // system users are created by an admin/organizer through the authenticated users API.
+    if (data.role && data.role !== Role.ORGANIZER) {
+      throw { statusCode: 403, message: 'Only organizer accounts can be self-registered' };
     }
+    const assignedRole = Role.ORGANIZER;
+
+    const hashedPassword = await hashPassword(data.password);
 
     const user = await userRepository.create({
       fullName: data.fullName,
@@ -31,6 +33,14 @@ export const authService = {
       passwordHash: hashedPassword,
       authProvider: AuthProvider.LOCAL,
       role: assignedRole
+    });
+
+    await alertService.notifyAdmins('newOrganizerRegistration', {
+      type: 'SYSTEM',
+      title: 'New organizer registered',
+      message: `${user.fullName} (${user.email}) created an organizer account.`,
+      entityType: 'User',
+      entityId: user._id
     });
 
     return user;
@@ -145,7 +155,9 @@ export const authService = {
     if (!user) return;
 
     const resetToken = generatePasswordResetToken((user as any)._id.toString(), user.role);
-    const resetUrl = `${env.FRONTEND_URL}/forgot-password?token=${encodeURIComponent(resetToken)}`;
+    // The portal mode lets the reset page send the user back to the right login screen
+    const portal = user.role === Role.ADMIN ? 'admin' : user.role === Role.ORGANIZER ? 'organizer' : 'app';
+    const resetUrl = `${env.FRONTEND_URL}/forgot-password?mode=${portal}&token=${encodeURIComponent(resetToken)}`;
 
     try {
       await sendEmail(

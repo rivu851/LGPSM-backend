@@ -9,8 +9,22 @@ import { CheckIn } from '../models/CheckIn';
 import { SystemUserAssignment } from '../models/SystemUserAssignment';
 import { Role } from '../models/User';
 import mongoose from 'mongoose';
+import { findManageableEvent } from '../utils/eventAccess';
+import { platformSettingsService } from './platformSettings.service';
+import { alertService } from './alert.service';
+import { formatCardDate, formatCardTime } from '../utils/invitationContent';
 
 export class EventService {
+  /**
+   * Creates a new event for an organizer.
+   *
+   * Rate Locking & Pricing Business Rule:
+   * - When an event is created, `platformSettingsService.currentRateSnapshot()` captures the global
+   *   per-invitee price rate in effect at that moment.
+   * - This rate (`pricing.lockedRatePerInvitee`) is permanently locked to the event.
+   * - Subsequent changes to the platform's global price rate (by Super Admin) do NOT modify existing
+   *   or historical event rates.
+   */
   async createEvent(organizerId: string, eventData: any): Promise<IEvent> {
     // Resolve Category
     let categoryId = eventData.categoryId;
@@ -48,6 +62,9 @@ export class EventService {
     const startVal = eventData.schedule?.start || eventData.startDate || now;
     const endVal = eventData.schedule?.end || eventData.endDate || tomorrow;
 
+    // Admin event settings apply on the server too
+    await platformSettingsService.applyEventFeatureRules(eventData, true);
+
     // Force organizerId and default status to PUBLISHED so it shows on event listing
     const dataToCreate = {
       ...eventData,
@@ -59,10 +76,22 @@ export class EventService {
         end: new Date(endVal)
       },
       organizerId: new mongoose.Types.ObjectId(organizerId),
-      status: 'PUBLISHED'
+      status: 'PUBLISHED',
+      // The per-invitee rate in force now is locked on the event; later rate changes do not affect it
+      pricing: await platformSettingsService.currentRateSnapshot()
     };
 
-    return await eventRepository.create(dataToCreate);
+    const created = await eventRepository.create(dataToCreate);
+    await alertService.notifyAdmins('newEventAdded', {
+      type: 'EVENT',
+      title: 'New event added',
+      message: created.schedule?.start
+        ? `"${created.title}" was created and starts ${formatCardDate(new Date(created.schedule.start))}, ${formatCardTime(new Date(created.schedule.start))}.`
+        : `"${created.title}" was created.`,
+      entityType: 'Event',
+      entityId: created._id
+    });
+    return created;
   }
 
   async getEventsByOrganizer(organizerId: string, filter: EventFilter & { organizerId?: string }, pagination: Pagination, role?: Role) {
@@ -83,9 +112,28 @@ export class EventService {
     return event;
   }
 
-  async updateEvent(eventId: string, organizerId: string, updateData: any): Promise<IEvent> {
-    // Check if event exists
-    const existingEvent = await this.getEventById(eventId, organizerId);
+  // Read model for detail screens: resolves the related category, subcategory and template for display
+  async getEventDetails(eventId: string, organizerId: string, role?: Role) {
+    const event = await this.getEventById(eventId, organizerId, role);
+    await event.populate([
+      { path: 'categoryId', select: 'name subcategories' },
+      { path: 'templateId', select: 'name previewImageKey isActive' },
+      { path: 'organizerId', select: 'fullName email profile.organizationName profile.logoKey' },
+    ]);
+    const json: any = event.toJSON();
+    // subcategoryId references an embedded subcategory of the category; expose its name alongside the id
+    const category: any = json.categoryId;
+    if (json.subcategoryId && category && Array.isArray(category.subcategories)) {
+      const sub = category.subcategories.find((s: any) => String(s._id) === String(json.subcategoryId));
+      if (sub) json.subcategory = { _id: sub._id, name: sub.name };
+    }
+    if (category && typeof category === 'object') delete category.subcategories;
+    return json;
+  }
+
+  async updateEvent(eventId: string, organizerId: string, updateData: any, role?: string): Promise<IEvent> {
+    const existingEvent = await findManageableEvent(eventId, organizerId, role);
+    if (!existingEvent) throw new Error('EVENT_NOT_FOUND');
 
     // Validate references if they are being updated
     if (updateData.categoryId && updateData.categoryId !== existingEvent.categoryId.toString()) {
@@ -98,12 +146,14 @@ export class EventService {
       if (!templateExists) throw new Error('TEMPLATE_NOT_FOUND');
     }
 
-    // Disallow updating organizerId, _id, createdAt
+    // Disallow updating organizerId, _id, createdAt and the locked rate
     delete updateData.organizerId;
     delete updateData._id;
     delete updateData.createdAt;
+    delete updateData.pricing;
+    await platformSettingsService.applyEventFeatureRules(updateData);
 
-    const updatedEvent = await eventRepository.updateByIdAndOrganizer(eventId, organizerId, updateData);
+    const updatedEvent = await eventRepository.updateByIdAndOrganizer(eventId, existingEvent.organizerId, updateData);
     if (!updatedEvent) {
       throw new Error('UPDATE_FAILED');
     }
@@ -111,11 +161,11 @@ export class EventService {
     return updatedEvent;
   }
 
-  async deactivateEvent(eventId: string, organizerId: string): Promise<IEvent> {
-    // Ensure it exists first
-    await this.getEventById(eventId, organizerId);
-    
-    const deletedEvent = await eventRepository.softDeleteByIdAndOrganizer(eventId, organizerId);
+  async deactivateEvent(eventId: string, organizerId: string, role?: string): Promise<IEvent> {
+    const existing = await findManageableEvent(eventId, organizerId, role);
+    if (!existing) throw new Error('EVENT_NOT_FOUND');
+
+    const deletedEvent = await eventRepository.softDeleteByIdAndOrganizer(eventId, String(existing.organizerId));
     if (!deletedEvent) {
       throw new Error('DELETION_FAILED');
     }
