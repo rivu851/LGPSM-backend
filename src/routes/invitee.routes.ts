@@ -36,7 +36,8 @@ export const eventInviteeRoutes = Router({ mergeParams: true });
 eventInviteeRoutes.use(authenticate);
 
 eventInviteeRoutes.post('/', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(createInviteeSchema), inviteeController.createInvitee);
-eventInviteeRoutes.get('/', authorizeRoles(Role.ADMIN, Role.ORGANIZER), inviteeController.getInvitees);
+// SYSTEM_USER may read invitees of events they are assigned to (for check-in)
+eventInviteeRoutes.get('/', authorizeRoles(Role.ADMIN, Role.ORGANIZER, Role.SYSTEM_USER), inviteeController.getInvitees);
 eventInviteeRoutes.put('/session-access/bulk', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(bulkUpdateSessionAccessSchema), inviteeController.bulkUpdateSessionAccess);
 
 // Upload handling
