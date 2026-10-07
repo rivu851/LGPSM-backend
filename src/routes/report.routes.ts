@@ -14,6 +14,9 @@ router.get('/dashboard', authorizeRoles(Role.ORGANIZER, Role.ADMIN), reportContr
 // Platform earnings (admin)
 router.get('/earnings', authorizeRoles(Role.ADMIN), reportController.getEarnings);
 
+// Platform home screen overview: revenue, events, monthly trend, top organizers (admin)
+router.get('/admin-overview', authorizeRoles(Role.ADMIN), reportController.getAdminOverview);
+
 // Event-specific analytics report
 router.get('/events/:eventId', authorizeRoles(Role.ORGANIZER, Role.ADMIN), reportController.getEventReport);
 

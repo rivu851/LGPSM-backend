@@ -106,8 +106,8 @@ export const userService = {
     return user;
   },
 
-  async getUsers(actor: Actor, role?: string) {
-    const query: any = { isActive: true };
+  async getUsers(actor: Actor, role?: string, includeInactive = false) {
+    const query: any = includeInactive && actor.role === Role.ADMIN ? {} : { isActive: true };
     if (role) {
       query.role = role;
     }
@@ -151,6 +151,7 @@ export const userService = {
       updatePayload.email = data.email;
     }
     if (data.phone !== undefined) updatePayload.phone = data.phone;
+    if (data.isActive !== undefined && actor.role === Role.ADMIN) updatePayload.isActive = data.isActive;
     if (data.password) {
       const { hashPassword } = await import('../utils/password');
       updatePayload.passwordHash = await hashPassword(data.password);

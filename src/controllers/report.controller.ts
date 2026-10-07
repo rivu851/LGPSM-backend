@@ -10,7 +10,20 @@ const parseDate = (v: unknown) => {
 export const reportController = {
   async getEarnings(req: Request, res: Response) {
     try {
-      const data = await reportService.getEarnings({ from: parseDate(req.query.from), to: parseDate(req.query.to) });
+      const data = await reportService.getEarnings({
+        from: parseDate(req.query.from),
+        to: parseDate(req.query.to),
+        eventId: req.query.eventId as string | undefined,
+      });
+      return res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  },
+
+  async getAdminOverview(req: Request, res: Response) {
+    try {
+      const data = await reportService.getAdminOverview({ from: parseDate(req.query.from), to: parseDate(req.query.to) });
       return res.status(200).json({ success: true, data });
     } catch (error: any) {
       return res.status(500).json({ success: false, message: error.message });

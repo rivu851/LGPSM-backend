@@ -54,4 +54,11 @@ router.patch(
   userController.updateUser
 );
 
+// Admin view of a staff member's event/session assignments
+router.get(
+  '/:id/assignments',
+  authorizeRoles(Role.ADMIN),
+  userController.getUserAssignments
+);
+
 export default router;

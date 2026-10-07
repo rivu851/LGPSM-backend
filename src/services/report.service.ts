@@ -164,16 +164,19 @@ export const reportService = {
 
   // Platform earnings per event: invitations sent x the event's locked per-invitee rate.
   // Events created before rates were locked use the rate that was in effect when they were created.
-  async getEarnings(filter: { from?: Date; to?: Date } = {}) {
+  async getEarnings(filter: { from?: Date; to?: Date; eventId?: string } = {}) {
     const query: any = { status: { $ne: 'CANCELLED' } };
     if (filter.from || filter.to) {
       query['schedule.start'] = {};
       if (filter.from) query['schedule.start'].$gte = filter.from;
       if (filter.to) query['schedule.start'].$lte = filter.to;
     }
+    if (filter.eventId) {
+      query._id = filter.eventId;
+    }
     const events = await Event.find(query)
       .select('title schedule createdAt organizerId pricing status')
-      .populate('organizerId', 'fullName email profile')
+      .populate('organizerId', 'fullName email phone profile')
       .sort({ 'schedule.start': -1 })
       .lean();
 
@@ -195,6 +198,8 @@ export const reportService = {
         eventName: e.title,
         organizerId: org._id ? String(org._id) : null,
         organizerName: org.profile?.organizationName || org.fullName || '',
+        organizerEmail: org.email || '',
+        organizerPhone: org.phone || '',
         eventStart: e.schedule?.start,
         createdAt: e.createdAt,
         invitesSent: invites,
@@ -211,6 +216,54 @@ export const reportService = {
       totalInvitesSent: rows.reduce((sum, r) => sum + r.invitesSent, 0),
       eventsWithoutRate: rows.filter((r) => r.ratePerInvitee === null).length,
       events: rows
+    };
+  },
+
+  // Platform home screen for ADMIN: total revenue/events, a monthly revenue series for the
+  // selected range, and the organizers generating the most revenue in that range.
+  async getAdminOverview(filter: { from?: Date; to?: Date } = {}) {
+    const earnings = await this.getEarnings(filter);
+
+    const monthBuckets = new Map<string, { label: string; year: number; month: number; amount: number }>();
+    const organizerTotals = new Map<string, { organizerId: string; name: string; email: string; phone: string; amount: number }>();
+
+    for (const row of earnings.events) {
+      if (!row.eventStart || row.amount === null) continue;
+      const date = new Date(row.eventStart);
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase();
+      const bucket = monthBuckets.get(key) || { label, year: date.getFullYear(), month: date.getMonth(), amount: 0 };
+      bucket.amount += row.amount;
+      monthBuckets.set(key, bucket);
+
+      if (row.organizerId) {
+        const org = organizerTotals.get(row.organizerId) || {
+          organizerId: row.organizerId,
+          name: row.organizerName,
+          email: row.organizerEmail,
+          phone: row.organizerPhone,
+          amount: 0
+        };
+        org.amount += row.amount;
+        organizerTotals.set(row.organizerId, org);
+      }
+    }
+
+    const revenueByMonth = Array.from(monthBuckets.values())
+      .sort((a, b) => a.year - b.year || a.month - b.month)
+      .map(({ label, amount }) => ({ label, amount: Math.round(amount * 100) / 100 }));
+
+    const topOrganizers = Array.from(organizerTotals.values())
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5)
+      .map((o) => ({ ...o, amount: Math.round(o.amount * 100) / 100 }));
+
+    return {
+      currency: earnings.currency,
+      totalRevenue: earnings.totalAmount,
+      totalEvents: earnings.events.length,
+      revenueByMonth,
+      topOrganizers
     };
   }
 };

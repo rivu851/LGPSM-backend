@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { userService } from '../services/user.service';
+import { systemUserAssignmentService } from '../services/systemUserAssignment.service';
 
 export const userController = {
   async getProfile(req: Request, res: Response, next: NextFunction) {
@@ -46,8 +47,19 @@ export const userController = {
     try {
       if (!req.user) throw { statusCode: 401, message: 'Unauthorized' };
       const roleFilter = req.query.role as string | undefined;
-      const users = await userService.getUsers(req.user, roleFilter);
+      const includeInactive = req.query.includeInactive === 'true';
+      const users = await userService.getUsers(req.user, roleFilter, includeInactive);
       res.status(200).json({ success: true, data: users });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async getUserAssignments(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw { statusCode: 401, message: 'Unauthorized' };
+      const assignments = await systemUserAssignmentService.getAssignmentsByUser(req.params.id as string);
+      res.status(200).json({ success: true, data: assignments });
     } catch (error) {
       next(error);
     }
