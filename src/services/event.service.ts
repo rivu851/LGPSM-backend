@@ -105,7 +105,7 @@ export class EventService {
   async getEventById(eventId: string, organizerId: string, role?: Role): Promise<IEvent> {
     const event = role === Role.ADMIN
       ? await Event.findById(eventId).populate('organizerId', 'fullName email')
-      : await eventRepository.findByIdAndOrganizer(eventId, organizerId);
+      : await findManageableEvent(eventId, organizerId, role);
     if (!event) {
       throw new Error('EVENT_NOT_FOUND');
     }

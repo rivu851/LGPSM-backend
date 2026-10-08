@@ -1,4 +1,5 @@
 import { Invitee } from '../models/Invitee';
+import { Session } from '../models/Session';
 import { Event, IEvent, EventStatus } from '../models/Event';
 import mongoose from 'mongoose';
 
@@ -95,14 +96,26 @@ const LIST_POPULATE = [
   { path: 'categoryId', select: 'name subcategories' }
 ];
 
-// Number of invitees per event who were sent an invitation (or a send was attempted)
+// Number of invitees per event who were sent an invitation (or a send was attempted),
+// plus each event's session names for the list card's "Sessions: X, Y" line.
 async function withInvitationCounts(events: IEvent[]): Promise<any[]> {
   if (events.length === 0) return [];
-  const counts = await Invitee.aggregate([
-    { $match: { eventId: { $in: events.map((e) => e._id) }, invitationStatus: { $ne: 'PENDING' } } },
-    { $group: { _id: '$eventId', count: { $sum: 1 } } }
+  const eventIds = events.map((e) => e._id);
+  const [counts, sessions] = await Promise.all([
+    Invitee.aggregate([
+      { $match: { eventId: { $in: eventIds }, invitationStatus: { $ne: 'PENDING' } } },
+      { $group: { _id: '$eventId', count: { $sum: 1 } } }
+    ]),
+    Session.find({ eventId: { $in: eventIds } }, 'eventId name').sort({ 'schedule.start': 1 }).lean()
   ]);
   const byEvent = new Map(counts.map((c) => [String(c._id), c.count as number]));
+  const sessionsByEvent = new Map<string, string[]>();
+  sessions.forEach((s: any) => {
+    const key = String(s.eventId);
+    const list = sessionsByEvent.get(key) ?? [];
+    list.push(s.name);
+    sessionsByEvent.set(key, list);
+  });
   return events.map((e) => {
     const json: any = e.toJSON();
     const category: any = json.categoryId;
@@ -112,6 +125,7 @@ async function withInvitationCounts(events: IEvent[]): Promise<any[]> {
     }
     if (category) delete category.subcategories;
     json.invitationsSent = byEvent.get(String(e._id)) || 0;
+    json.sessionNames = sessionsByEvent.get(String(e._id)) || [];
     return json;
   });
 }
