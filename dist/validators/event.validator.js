@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateEventSchema = exports.createEventSchema = void 0;
+const mediaKey_1 = require("../utils/mediaKey");
 const zod_1 = require("zod");
 const Event_1 = require("../models/Event");
 const objectIdSchema = zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ObjectId format');
@@ -34,8 +35,9 @@ exports.createEventSchema = zod_1.z.object({
         }).optional(),
         templateId: objectIdSchema.optional(),
         media: zod_1.z.object({
-            logoKey: zod_1.z.string().optional(),
-            bannerKey: zod_1.z.string().optional()
+            // '' clears the logo
+            logoKey: zod_1.z.string().refine((k) => k === '' || (0, mediaKey_1.isAcceptedImageKey)(k), 'Invalid logo image reference').optional(),
+            bannerKey: zod_1.z.string().refine((k) => k === '' || (0, mediaKey_1.isAcceptedImageKey)(k), 'Invalid banner image reference').optional()
         }).optional()
     })
 });
@@ -78,8 +80,9 @@ exports.updateEventSchema = zod_1.z.object({
         }).optional(),
         templateId: objectIdSchema.optional(),
         media: zod_1.z.object({
-            logoKey: zod_1.z.string().optional(),
-            bannerKey: zod_1.z.string().optional()
+            // '' clears the logo
+            logoKey: zod_1.z.string().refine((k) => k === '' || (0, mediaKey_1.isAcceptedImageKey)(k), 'Invalid logo image reference').optional(),
+            bannerKey: zod_1.z.string().refine((k) => k === '' || (0, mediaKey_1.isAcceptedImageKey)(k), 'Invalid banner image reference').optional()
         }).optional(),
         status: zod_1.z.nativeEnum(Event_1.EventStatus).optional()
     })

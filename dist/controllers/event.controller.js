@@ -2,10 +2,38 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.eventController = void 0;
 const event_service_1 = require("../services/event.service");
+const User_1 = require("../models/User");
 exports.eventController = {
     async createEvent(req, res, next) {
         try {
-            const organizerId = req.user.userId;
+            const authUser = req.user;
+            const userRole = authUser.role;
+            if (userRole === User_1.Role.ADMIN || userRole === 'SUPER_ADMIN') {
+                const organizerIds = Array.isArray(req.body.organizerIds) && req.body.organizerIds.length > 0
+                    ? req.body.organizerIds
+                    : req.body.organizerId
+                        ? [req.body.organizerId]
+                        : null;
+                if (organizerIds && organizerIds.length > 0) {
+                    const eventsCreated = [];
+                    for (const orgId of organizerIds) {
+                        const event = await event_service_1.eventService.createEvent(orgId, { ...req.body, organizerId: orgId });
+                        eventsCreated.push(event);
+                    }
+                    const primaryEvent = eventsCreated[0];
+                    res.status(201).json({
+                        success: true,
+                        data: {
+                            eventId: primaryEvent._id.toString(),
+                            eventIds: eventsCreated.map((e) => e._id.toString()),
+                            status: primaryEvent.status.toLowerCase(),
+                            createdAt: primaryEvent.createdAt
+                        }
+                    });
+                    return;
+                }
+            }
+            const organizerId = authUser.userId;
             const event = await event_service_1.eventService.createEvent(organizerId, req.body);
             res.status(201).json({
                 success: true,
@@ -70,7 +98,7 @@ exports.eventController = {
         try {
             const organizerId = req.user.userId;
             const eventId = req.params.eventId;
-            const event = await event_service_1.eventService.updateEvent(eventId, organizerId, req.body);
+            const event = await event_service_1.eventService.updateEvent(eventId, organizerId, req.body, req.user.role);
             res.status(200).json({ success: true, data: event });
         }
         catch (error) {
@@ -89,7 +117,7 @@ exports.eventController = {
         try {
             const organizerId = req.user.userId;
             const eventId = req.params.eventId;
-            const event = await event_service_1.eventService.deactivateEvent(eventId, organizerId);
+            const event = await event_service_1.eventService.deactivateEvent(eventId, organizerId, req.user.role);
             res.status(200).json({ success: true, data: { eventId: event._id, status: event.status } });
         }
         catch (error) {

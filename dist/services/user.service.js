@@ -32,18 +32,42 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.userService = void 0;
+exports.staffVisibleToOrganizer = staffVisibleToOrganizer;
+const mongoose_1 = __importDefault(require("mongoose"));
 const user_repository_1 = require("../repositories/user.repository");
 const User_1 = require("../models/User");
-// Organizers may only manage staff accounts (SYSTEM_USER); admins may manage anyone.
-async function findManageableUser(actorRole, userId) {
+const Event_1 = require("../models/Event");
+const SystemUserAssignment_1 = require("../models/SystemUserAssignment");
+// Staff an organizer works with: accounts they created plus staff assigned to their events
+async function staffVisibleToOrganizer(organizerId) {
+    const eventIds = await Event_1.Event.find({ organizerId }).distinct('_id');
+    const [created, assigned] = await Promise.all([
+        User_1.User.find({ role: User_1.Role.SYSTEM_USER, createdBy: organizerId }).distinct('_id'),
+        SystemUserAssignment_1.SystemUserAssignment.find({ eventId: { $in: eventIds } }).distinct('userId')
+    ]);
+    const ids = new Map();
+    [...created, ...assigned].forEach((id) => ids.set(String(id), id));
+    return [...ids.values()];
+}
+// Organizers may only manage their own staff accounts (SYSTEM_USER); admins may manage anyone.
+async function findManageableUser(actor, userId) {
     const target = await user_repository_1.userRepository.findById(userId);
     if (!target) {
         throw { statusCode: 404, message: 'User not found' };
     }
-    if (actorRole === User_1.Role.ORGANIZER && target.role !== User_1.Role.SYSTEM_USER) {
-        throw { statusCode: 403, message: 'Organizers can only manage staff (SYSTEM_USER) accounts' };
+    if (actor.role === User_1.Role.ORGANIZER) {
+        if (target.role !== User_1.Role.SYSTEM_USER) {
+            throw { statusCode: 403, message: 'Organizers can only manage staff (SYSTEM_USER) accounts' };
+        }
+        const visible = await staffVisibleToOrganizer(actor.userId);
+        if (!visible.some((id) => String(id) === userId)) {
+            throw { statusCode: 404, message: 'User not found' };
+        }
     }
     return target;
 }
@@ -79,9 +103,9 @@ exports.userService = {
         await user.save();
         return { updated: true };
     },
-    async createUser(creatorRole, data) {
+    async createUser(actor, data) {
         // Role Hierarchy rules
-        if (creatorRole === 'ORGANIZER' && data.role !== 'SYSTEM_USER') {
+        if (actor.role === 'ORGANIZER' && data.role !== 'SYSTEM_USER') {
             throw { statusCode: 403, message: 'Organizers can only create staff (SYSTEM_USER)' };
         }
         // Admins can create ORGANIZER and SYSTEM_USER (and admins if needed)
@@ -99,31 +123,43 @@ exports.userService = {
             ...(data.profile ? { profile: data.profile } : {}),
             passwordHash: hashedPassword,
             authProvider: AuthProvider.LOCAL,
-            role: data.role
+            role: data.role,
+            createdBy: new mongoose_1.default.Types.ObjectId(actor.userId)
         });
         return user;
     },
-    async getUsers(actorRole, role) {
-        const query = { isActive: true };
+    async getUsers(actor, role, includeInactive = false) {
+        const query = includeInactive && actor.role === User_1.Role.ADMIN ? {} : { isActive: true };
         if (role) {
             query.role = role;
         }
-        // Organizers only ever see staff accounts
-        if (actorRole === User_1.Role.ORGANIZER) {
+        // Organizers only ever see their own staff accounts
+        if (actor.role === User_1.Role.ORGANIZER) {
             query.role = User_1.Role.SYSTEM_USER;
+            query._id = { $in: await staffVisibleToOrganizer(actor.userId) };
         }
         return await user_repository_1.userRepository.find(query);
     },
-    async deleteUser(actorRole, userId) {
-        await findManageableUser(actorRole, userId);
+    async deleteUser(actor, userId) {
+        const target = await findManageableUser(actor, userId);
         const user = await user_repository_1.userRepository.updateById(userId, { isActive: false });
         if (!user) {
             throw { statusCode: 404, message: 'User not found' };
         }
+        if (target.role === User_1.Role.ORGANIZER && actor.role === User_1.Role.ADMIN) {
+            const { alertService } = await Promise.resolve().then(() => __importStar(require('./alert.service')));
+            await alertService.notifyAdmins('deactivatedOrganizerBySuperAdmin', {
+                type: 'SYSTEM',
+                title: 'Organizer deactivated',
+                message: `${target.fullName} (${target.email}) was deactivated by an administrator.`,
+                entityType: 'User',
+                entityId: target._id
+            });
+        }
         return { deleted: true };
     },
-    async updateUser(actorRole, userId, data) {
-        await findManageableUser(actorRole, userId);
+    async updateUser(actor, userId, data) {
+        await findManageableUser(actor, userId);
         const updatePayload = {};
         if (data.fullName !== undefined)
             updatePayload.fullName = data.fullName;
@@ -136,6 +172,8 @@ exports.userService = {
         }
         if (data.phone !== undefined)
             updatePayload.phone = data.phone;
+        if (data.isActive !== undefined && actor.role === User_1.Role.ADMIN)
+            updatePayload.isActive = data.isActive;
         if (data.password) {
             const { hashPassword } = await Promise.resolve().then(() => __importStar(require('../utils/password')));
             updatePayload.passwordHash = await hashPassword(data.password);

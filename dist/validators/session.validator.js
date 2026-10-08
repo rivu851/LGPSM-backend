@@ -39,7 +39,7 @@ exports.updateSessionSchema = zod_1.z.object({
         }).optional(),
         accessControl: zod_1.z.nativeEnum(Session_1.AccessControl).optional(),
         validateAgainstOtherSessions: zod_1.z.boolean().optional(),
-        // inviteeSource and sourceSessionId are typically not updated after creation,
-        // but if needed, we can allow them to be updated.
+        inviteeSource: zod_1.z.nativeEnum(Session_1.InviteeSource).optional(),
+        sourceSessionId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid session ID').nullable().optional()
     })
 });

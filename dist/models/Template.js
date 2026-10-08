@@ -42,6 +42,9 @@ const TemplateSchema = new mongoose_1.Schema({
     previewImageKey: { type: String },
     templateData: { type: mongoose_1.Schema.Types.Mixed, default: {} },
     isSystemTemplate: { type: Boolean, default: true },
+    // Drafts are visible to admins only; organizers can pick published templates
+    isPublished: { type: Boolean, default: true },
+    // false = deleted (soft delete)
     isActive: { type: Boolean, default: true }
 }, {
     timestamps: true

@@ -5,17 +5,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.systemUserAssignmentService = void 0;
 const systemUserAssignment_repository_1 = require("../repositories/systemUserAssignment.repository");
-const Event_1 = require("../models/Event");
 const User_1 = require("../models/User");
 const Session_1 = require("../models/Session");
+const user_service_1 = require("./user.service");
+const eventAccess_1 = require("../utils/eventAccess");
 const mongoose_1 = __importDefault(require("mongoose"));
-async function findAccessibleEvent(eventId, organizerId) {
-    const requestingUser = await User_1.User.findById(organizerId);
-    if (requestingUser?.role === User_1.Role.ADMIN) {
-        return await Event_1.Event.findById(eventId);
-    }
-    return await Event_1.Event.findOne({ _id: eventId, organizerId });
-}
+const findAccessibleEvent = (eventId, actorId) => (0, eventAccess_1.findManageableEvent)(eventId, actorId);
 exports.systemUserAssignmentService = {
     async createAssignment(eventId, organizerId, data) {
         const event = await findAccessibleEvent(eventId, organizerId);
@@ -25,6 +20,12 @@ exports.systemUserAssignmentService = {
         const targetUser = await User_1.User.findById(data.userId);
         if (!targetUser || !targetUser.isActive || targetUser.role !== User_1.Role.SYSTEM_USER) {
             throw new Error('INVALID_USER');
+        }
+        // Organizers can only assign their own staff
+        if ((await (0, eventAccess_1.getUserRole)(organizerId)) === User_1.Role.ORGANIZER) {
+            const visible = await (0, user_service_1.staffVisibleToOrganizer)(organizerId);
+            if (!visible.some((id) => String(id) === data.userId))
+                throw new Error('INVALID_USER');
         }
         const existing = await systemUserAssignment_repository_1.systemUserAssignmentRepository.findByUserAndEvent(data.userId, eventId);
         if (existing) {
@@ -53,8 +54,17 @@ exports.systemUserAssignmentService = {
         }
         return await systemUserAssignment_repository_1.systemUserAssignmentRepository.findByEventId(eventId);
     },
-    async getAssignmentsByUser(userId) {
-        return await systemUserAssignment_repository_1.systemUserAssignmentRepository.findByUserId(userId);
+    async getAssignmentsByUser(userId, actor) {
+        const assignments = await systemUserAssignment_repository_1.systemUserAssignmentRepository.findByUserId(userId);
+        if (actor.role === User_1.Role.ORGANIZER) {
+            // Organizers only see this staff member's assignments on their own events
+            return assignments.filter((a) => {
+                const event = a.eventId;
+                const eventOrganizerId = event && typeof event === 'object' ? event.organizerId : null;
+                return eventOrganizerId && String(eventOrganizerId) === actor.userId;
+            });
+        }
+        return assignments;
     },
     async updateAssignment(assignmentId, organizerId, sessionIds) {
         const assignment = await systemUserAssignment_repository_1.systemUserAssignmentRepository.findById(assignmentId);

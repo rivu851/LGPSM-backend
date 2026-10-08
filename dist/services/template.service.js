@@ -6,8 +6,8 @@ exports.templateService = {
     async createTemplate(data) {
         return await template_repository_1.templateRepository.create(data);
     },
-    async getTemplates(categoryId) {
-        return await template_repository_1.templateRepository.findAll(categoryId);
+    async getTemplates(categoryId, includeDrafts = false) {
+        return await template_repository_1.templateRepository.findAll(categoryId, includeDrafts);
     },
     async getTemplateById(id) {
         const template = await template_repository_1.templateRepository.findById(id);

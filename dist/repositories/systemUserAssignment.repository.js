@@ -21,7 +21,7 @@ exports.systemUserAssignmentRepository = {
     },
     async findByUserId(userId) {
         return await SystemUserAssignment_1.SystemUserAssignment.find({ userId })
-            .populate('eventId', 'title status format location schedule')
+            .populate('eventId', 'title status format location schedule organizerId')
             .populate('sessionIds', 'name schedule')
             .populate('assignedBy', 'fullName email');
     },

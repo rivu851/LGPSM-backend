@@ -6,8 +6,11 @@ exports.templateRepository = {
     async create(data) {
         return await Template_1.Template.create(data);
     },
-    async findAll(categoryId) {
+    async findAll(categoryId, includeDrafts = false) {
         const query = { isActive: true };
+        // Templates created before the publish flag existed count as published
+        if (!includeDrafts)
+            query.isPublished = { $ne: false };
         if (categoryId)
             query.categoryId = categoryId;
         return await Template_1.Template.find(query).populate('categoryId').sort({ createdAt: -1 });

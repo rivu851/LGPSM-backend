@@ -8,6 +8,7 @@ const password_1 = require("../utils/password");
 const token_1 = require("../utils/token");
 const email_provider_1 = require("../utils/email.provider");
 const User_1 = require("../models/User");
+const alert_service_1 = require("./alert.service");
 const env_1 = require("../config/env");
 const googleClient = new google_auth_library_1.OAuth2Client(env_1.env.GOOGLE_CLIENT_ID);
 exports.authService = {
@@ -16,12 +17,13 @@ exports.authService = {
         if (existingUser) {
             throw { statusCode: 400, message: 'Email already in use' };
         }
-        const hashedPassword = await (0, password_1.hashPassword)(data.password);
-        // Role comes only from the explicit (validated) input; never inferred from name/email
-        let assignedRole = User_1.Role.ORGANIZER;
-        if (data.role && Object.values(User_1.Role).includes(data.role)) {
-            assignedRole = data.role;
+        // Self-registration only creates organizers. Admins are provisioned out of band and
+        // system users are created by an admin/organizer through the authenticated users API.
+        if (data.role && data.role !== User_1.Role.ORGANIZER) {
+            throw { statusCode: 403, message: 'Only organizer accounts can be self-registered' };
         }
+        const assignedRole = User_1.Role.ORGANIZER;
+        const hashedPassword = await (0, password_1.hashPassword)(data.password);
         const user = await user_repository_1.userRepository.create({
             fullName: data.fullName,
             email: data.email,
@@ -29,6 +31,13 @@ exports.authService = {
             passwordHash: hashedPassword,
             authProvider: User_1.AuthProvider.LOCAL,
             role: assignedRole
+        });
+        await alert_service_1.alertService.notifyAdmins('newOrganizerRegistration', {
+            type: 'SYSTEM',
+            title: 'New organizer registered',
+            message: `${user.fullName} (${user.email}) created an organizer account.`,
+            entityType: 'User',
+            entityId: user._id
         });
         return user;
     },
@@ -118,7 +127,9 @@ exports.authService = {
         if (!user)
             return;
         const resetToken = (0, token_1.generatePasswordResetToken)(user._id.toString(), user.role);
-        const resetUrl = `${env_1.env.FRONTEND_URL}/forgot-password?token=${encodeURIComponent(resetToken)}`;
+        // The portal mode lets the reset page send the user back to the right login screen
+        const portal = user.role === User_1.Role.ADMIN ? 'admin' : user.role === User_1.Role.ORGANIZER ? 'organizer' : 'app';
+        const resetUrl = `${env_1.env.FRONTEND_URL}/forgot-password?mode=${portal}&token=${encodeURIComponent(resetToken)}`;
         try {
             await (0, email_provider_1.sendEmail)(user.email, 'Reset your LGPSM password', `<p>Hello ${user.fullName},</p><p>Use the link below to reset your password. It expires in 15 minutes.</p><p><a href="${resetUrl}">Reset password</a></p><p>If you did not request this, you can ignore this email.</p>`);
         }

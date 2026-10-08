@@ -15,7 +15,8 @@ exports.templateController = {
     async getTemplates(req, res) {
         try {
             const categoryId = req.query.categoryId;
-            const templates = await template_service_1.templateService.getTemplates(categoryId);
+            const isAdmin = req.user?.role === 'ADMIN';
+            const templates = await template_service_1.templateService.getTemplates(categoryId, isAdmin);
             return res.status(200).json({ success: true, data: templates });
         }
         catch (error) {

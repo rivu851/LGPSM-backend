@@ -65,6 +65,11 @@ export class EventService {
     // Admin event settings apply on the server too
     await platformSettingsService.applyEventFeatureRules(eventData, true);
 
+    // Resolve target organizer ID from eventData.organizerId or organizerId argument
+    const targetOrganizer = (eventData.organizerId && mongoose.Types.ObjectId.isValid(eventData.organizerId))
+      ? eventData.organizerId
+      : organizerId;
+
     // Force organizerId and default status to PUBLISHED so it shows on event listing
     const dataToCreate = {
       ...eventData,
@@ -75,7 +80,7 @@ export class EventService {
         start: new Date(startVal),
         end: new Date(endVal)
       },
-      organizerId: new mongoose.Types.ObjectId(organizerId),
+      organizerId: new mongoose.Types.ObjectId(targetOrganizer),
       status: 'PUBLISHED',
       // The per-invitee rate in force now is locked on the event; later rate changes do not affect it
       pricing: await platformSettingsService.currentRateSnapshot()

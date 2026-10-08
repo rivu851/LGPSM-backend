@@ -33,38 +33,26 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.User = exports.AuthProvider = exports.Role = void 0;
+exports.Media = exports.MediaPurpose = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-var Role;
-(function (Role) {
-    Role["ADMIN"] = "ADMIN";
-    Role["ORGANIZER"] = "ORGANIZER";
-    Role["SYSTEM_USER"] = "SYSTEM_USER";
-})(Role || (exports.Role = Role = {}));
-var AuthProvider;
-(function (AuthProvider) {
-    AuthProvider["LOCAL"] = "LOCAL";
-    AuthProvider["GOOGLE"] = "GOOGLE";
-})(AuthProvider || (exports.AuthProvider = AuthProvider = {}));
-const UserSchema = new mongoose_1.Schema({
-    fullName: { type: String, required: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    phone: { type: String },
-    passwordHash: { type: String },
-    authProvider: { type: String, enum: Object.values(AuthProvider), default: AuthProvider.LOCAL },
-    role: { type: String, enum: Object.values(Role), default: Role.ORGANIZER },
-    profile: { type: mongoose_1.Schema.Types.Mixed },
-    // Who created this account (admins/organizers create staff); scopes which organizer sees it
-    createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
-    isActive: { type: Boolean, default: true }
-}, {
-    timestamps: true,
-    toJSON: {
-        transform: function (doc, ret) {
-            delete ret.passwordHash;
-            delete ret.__v;
-            return ret;
-        }
-    }
-});
-exports.User = mongoose_1.default.model('User', UserSchema);
+// Images stored in the database so uploads persist on any deployment without external object storage.
+// Referenced from other documents as `media:<id>` (see utils/mediaKey.ts).
+var MediaPurpose;
+(function (MediaPurpose) {
+    MediaPurpose["TEMPLATE"] = "TEMPLATE";
+    MediaPurpose["EVENT_LOGO"] = "EVENT_LOGO";
+    MediaPurpose["ORGANIZATION_LOGO"] = "ORGANIZATION_LOGO";
+    MediaPurpose["AVATAR"] = "AVATAR";
+})(MediaPurpose || (exports.MediaPurpose = MediaPurpose = {}));
+const MediaSchema = new mongoose_1.Schema({
+    ownerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
+    purpose: { type: String, enum: Object.values(MediaPurpose), required: true },
+    contentType: { type: String, required: true },
+    size: { type: Number, required: true },
+    width: { type: Number },
+    height: { type: Number },
+    originalName: { type: String },
+    data: { type: Buffer, required: true, select: false }
+}, { timestamps: true });
+MediaSchema.index({ ownerId: 1, purpose: 1 });
+exports.Media = mongoose_1.default.model('Media', MediaSchema);

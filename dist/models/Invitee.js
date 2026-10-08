@@ -72,7 +72,9 @@ const InviteeSchema = new mongoose_1.Schema({
     companyName: { type: String, trim: true },
     company: { type: String, trim: true },
     sessionAccess: { type: [SessionAccessSchema], default: [] },
-    qrTokenHash: { type: String }
+    qrTokenHash: { type: String },
+    // Encrypted copy of the current token (see utils/tokenCipher); never returned by default
+    qrTokenCipher: { type: String, select: false }
 }, {
     timestamps: true
 });

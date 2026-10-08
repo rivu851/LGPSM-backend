@@ -9,7 +9,22 @@ exports.categoryController = {
             return res.status(201).json({ success: true, data: category });
         }
         catch (error) {
-            return res.status(400).json({ error: 'Bad Request', message: error.message });
+            if (error?.statusCode)
+                return res.status(error.statusCode).json({ success: false, message: error.message });
+            return res.status(400).json({ success: false, error: 'Bad Request', message: error.message });
+        }
+    },
+    async addSubcategory(req, res) {
+        try {
+            const category = await category_service_1.categoryService.addSubcategory(req.params.id, req.body.name);
+            return res.status(201).json({ success: true, data: category });
+        }
+        catch (error) {
+            if (error?.statusCode)
+                return res.status(error.statusCode).json({ success: false, message: error.message });
+            if (error.message === 'CATEGORY_NOT_FOUND')
+                return res.status(404).json({ success: false, message: 'Category not found' });
+            return res.status(400).json({ success: false, message: error.message });
         }
     },
     async getCategories(req, res) {

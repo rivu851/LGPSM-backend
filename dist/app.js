@@ -58,6 +58,7 @@ const auditLog_routes_1 = __importDefault(require("./routes/auditLog.routes"));
 const report_routes_1 = __importDefault(require("./routes/report.routes"));
 const ticketTier_routes_1 = require("./routes/ticketTier.routes");
 const payment_routes_1 = __importDefault(require("./routes/payment.routes"));
+const platformSettings_routes_1 = __importDefault(require("./routes/platformSettings.routes"));
 const app = (0, express_1.default)();
 // Security and Middleware
 app.use((0, helmet_1.default)());
@@ -69,6 +70,7 @@ app.use((0, cors_1.default)({
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Authorization', 'Content-Type'],
+    exposedHeaders: ['X-Invitation-Qr'],
     credentials: true,
 }));
 app.use(express_1.default.json());
@@ -103,6 +105,7 @@ app.use('/api/v1/invoices/:id', requireObjectIdParam('id'));
 app.use('/api/auth', auth_routes_1.default);
 app.use('/api/users', user_routes_1.default);
 app.use('/api/v1/events', event_routes_1.default);
+app.use('/api/v1/media/:id', requireObjectIdParam('id', ['presign', 'upload']));
 app.use('/api/v1/media', media_routes_1.default);
 app.use('/api/v1/events/:eventId/sessions', session_routes_1.eventSessionRoutes);
 app.use('/api/v1/sessions', session_routes_1.sessionRoutes);
@@ -120,6 +123,7 @@ app.use('/api/v1/categories', category_routes_1.default);
 app.use('/api/v1/templates', template_routes_1.default);
 app.use('/api/v1/notifications', notification_routes_1.default);
 app.use('/api/v1/audit-logs', auditLog_routes_1.default);
+app.use('/api/v1/settings', platformSettings_routes_1.default);
 app.use('/api/v1/reports', report_routes_1.default);
 app.use('/api/v1/events/:eventId/tickets', ticketTier_routes_1.eventTicketTierRoutes);
 app.use('/api/v1/tickets', ticketTier_routes_1.ticketTierRoutes);

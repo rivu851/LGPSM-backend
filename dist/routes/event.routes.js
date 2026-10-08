@@ -25,7 +25,8 @@ router.post('/:eventId/cleanup', (0, authorizeRoles_1.authorizeRoles)(User_1.Rol
 // Routes accessible to ADMIN and ORGANIZER
 router.post('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(event_validator_1.createEventSchema), event_controller_1.eventController.createEvent);
 router.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), event_controller_1.eventController.getEvents);
-router.get('/:eventId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), event_controller_1.eventController.getEventById);
+// SYSTEM_USER may read details of events they are assigned to (for check-in)
+router.get('/:eventId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER), event_controller_1.eventController.getEventById);
 router.patch('/:eventId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(event_validator_1.updateEventSchema), event_controller_1.eventController.updateEvent);
 router.delete('/:eventId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), event_controller_1.eventController.deleteEvent);
 exports.default = router;

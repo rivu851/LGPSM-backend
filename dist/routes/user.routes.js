@@ -28,4 +28,7 @@ router.post('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.
 router.delete('/:id', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), user_controller_1.userController.deleteUser);
 // Endpoint for Admins and Organizers to update sub-users
 router.patch('/:id', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(user_validator_1.updateUserSchema), user_controller_1.userController.updateUser);
+// Admin/organizer view of a staff member's event/session assignments
+// (organizers only ever see assignments scoped to their own events; see service)
+router.get('/:id/assignments', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), user_controller_1.userController.getUserAssignments);
 exports.default = router;

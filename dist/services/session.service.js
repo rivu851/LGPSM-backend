@@ -9,27 +9,50 @@ const Session_1 = require("../models/Session");
 const SystemUserAssignment_1 = require("../models/SystemUserAssignment");
 const Event_1 = require("../models/Event");
 const mongoose_1 = __importDefault(require("mongoose"));
+const Invitee_1 = require("../models/Invitee");
+const eventAccess_1 = require("../utils/eventAccess");
+// The primary session is the event's first-created session
+async function primarySessionId(eventId) {
+    const first = await Session_1.Session.findOne({ eventId }).sort({ _id: 1 }).select('_id').lean();
+    return first ? String(first._id) : null;
+}
+// A session may keep the same invitees as another session of the same event that has its own list
+async function assertValidSource(eventId, sessionId, sourceSessionId) {
+    if (sessionId && sessionId === sourceSessionId) {
+        throw { statusCode: 400, message: 'A session cannot copy its own invitee list' };
+    }
+    const source = await Session_1.Session.findOne({ _id: sourceSessionId, eventId });
+    if (!source)
+        throw new Error('INVALID_SOURCE_SESSION');
+    if (source.inviteeSource === Session_1.InviteeSource.COPY_SESSION) {
+        throw { statusCode: 400, message: `"${source.name}" already uses another session's invitees; choose a session with its own list` };
+    }
+    if (sessionId && (await Session_1.Session.exists({ eventId, sourceSessionId: sessionId }))) {
+        throw { statusCode: 400, message: 'Other sessions copy this session\'s invitees, so it must keep its own list' };
+    }
+}
 exports.sessionService = {
     async createSession(eventId, organizerId, data) {
-        // Verify event ownership
-        const event = await Event_1.Event.findOne({ _id: eventId, organizerId });
+        const event = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId);
         if (!event) {
             throw new Error('EVENT_NOT_FOUND');
+        }
+        // Cross-session validation is configured on the primary (first) session only
+        if (data.validateAgainstOtherSessions && (await primarySessionId(eventId))) {
+            throw { statusCode: 400, message: 'Session access validation can only be set on the first session' };
         }
         // Validate schedule falls within event schedule (if required)
         if (new Date(data.schedule.start) < new Date(event.schedule.start) ||
             new Date(data.schedule.end) > new Date(event.schedule.end)) {
             throw new Error('SESSION_OUT_OF_BOUNDS');
         }
-        // If inviteeSource is COPY_SESSION, validate source session
+        // COPY_SESSION sessions resolve access through the source session's list (utils/sessionAccess.ts)
         if (data.inviteeSource === Session_1.InviteeSource.COPY_SESSION && data.sourceSessionId) {
-            const sourceSession = await session_repository_1.sessionRepository.findById(data.sourceSessionId.toString());
-            if (!sourceSession || sourceSession.eventId.toString() !== eventId) {
-                throw new Error('INVALID_SOURCE_SESSION');
-            }
-            // Note: Invitee copying is handled in Phase 4 Step 6.8
-            // As per instructions: "If copying behavior is not fully specified, implement the supported source-session validation and document the unresolved copying semantics."
-            // We will leave the actual copying logic or state assignment for later or as a separate service call.
+            await assertValidSource(eventId, null, data.sourceSessionId.toString());
+        }
+        else {
+            data.inviteeSource = Session_1.InviteeSource.NEW_LIST;
+            data.sourceSessionId = null;
         }
         const sessionData = {
             ...data,
@@ -51,9 +74,7 @@ exports.sessionService = {
             const sessions = await Session_1.Session.find(query).sort({ 'schedule.start': 1 });
             return { sessions, total: sessions.length };
         }
-        const event = role === 'ADMIN'
-            ? await Event_1.Event.findById(eventId)
-            : await Event_1.Event.findOne({ _id: eventId, organizerId });
+        const event = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId, role);
         if (!event) {
             throw new Error('EVENT_NOT_FOUND');
         }
@@ -73,7 +94,7 @@ exports.sessionService = {
         if (!session) {
             throw new Error('SESSION_NOT_FOUND');
         }
-        const event = await Event_1.Event.findOne({ _id: session.eventId, organizerId });
+        const event = await (0, eventAccess_1.findManageableEvent)(session.eventId.toString(), organizerId);
         if (!event) {
             throw new Error('SESSION_NOT_FOUND'); // Hide cross-organizer existence
         }
@@ -85,6 +106,18 @@ exports.sessionService = {
         delete data._id;
         delete data.eventId;
         delete data.createdAt;
+        const eventId = session.eventId.toString();
+        if (data.validateAgainstOtherSessions && (await primarySessionId(eventId)) !== sessionId) {
+            throw { statusCode: 400, message: 'Session access validation can only be set on the first session' };
+        }
+        if (data.inviteeSource === Session_1.InviteeSource.COPY_SESSION) {
+            if (!data.sourceSessionId)
+                throw { statusCode: 400, message: 'Choose the session whose invitees should be used' };
+            await assertValidSource(eventId, sessionId, data.sourceSessionId.toString());
+        }
+        else if (data.inviteeSource === Session_1.InviteeSource.NEW_LIST) {
+            data.sourceSessionId = null;
+        }
         if (data.schedule) {
             const event = await Event_1.Event.findById(session.eventId);
             if (event && (new Date(data.schedule.start) < new Date(event.schedule.start) ||
@@ -100,6 +133,21 @@ exports.sessionService = {
     },
     async deleteSession(sessionId, organizerId) {
         const session = await this.getSessionById(sessionId, organizerId); // Ensures ownership
+        // Sessions that kept this session's invitees get their own copy of the list before it disappears
+        const dependents = await Session_1.Session.find({ eventId: session.eventId, sourceSessionId: session._id });
+        if (dependents.length > 0) {
+            const allowed = await Invitee_1.Invitee.find({ eventId: session.eventId, sessionAccess: { $elemMatch: { sessionId: session._id, allowed: true } } });
+            for (const inv of allowed) {
+                for (const dep of dependents) {
+                    if (!inv.sessionAccess.some((sa) => String(sa.sessionId) === String(dep._id))) {
+                        inv.sessionAccess.push({ sessionId: dep._id, allowed: true });
+                    }
+                }
+                await inv.save();
+            }
+            await Session_1.Session.updateMany({ _id: { $in: dependents.map((d) => d._id) } }, { inviteeSource: Session_1.InviteeSource.NEW_LIST, sourceSessionId: null });
+        }
+        await Invitee_1.Invitee.updateMany({ eventId: session.eventId }, { $pull: { sessionAccess: { sessionId: session._id } } });
         // We do a hard delete or safe non-destructive approach. The prompt says: "If a deletion policy is not defined, use a safe non-destructive approach and document the required decision."
         // However, if we don't have an `isActive` flag on the Session, we might just hard delete it, or we should add an isActive flag.
         // Let's perform a hard delete as it's common, but we'll document it.

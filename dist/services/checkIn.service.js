@@ -13,16 +13,46 @@ const User_1 = require("../models/User");
 const SystemUserAssignment_1 = require("../models/SystemUserAssignment");
 const checkIn_repository_1 = require("../repositories/checkIn.repository");
 const invitation_util_1 = require("../utils/invitation.util");
+const Invitation_1 = require("../models/Invitation");
+const qrPayload_1 = require("../utils/qrPayload");
+const sessionAccess_1 = require("../utils/sessionAccess");
+/**
+ * Core service for event check-in operations (QR scanning and manual entry).
+ *
+ * Security & Access Rules:
+ * - Admin/Organizer: Full check-in access for owned events.
+ * - System User (Staff): Allowed only if assigned to the event and specific session.
+ * - Token Validation: Parses QR payloads securely using `parseInvitationQrPayload` and hashes tokens
+ *   to query MongoDB (`qrTokenHash`). Superseded tokens from older invitation resends are rejected (`QR_TOKEN_SUPERSEDED`).
+ * - RSVP Eligibility: Rejects guests with DECLINED/PENDING status based on event RSVP settings.
+ * - Access Control:
+ *   - ONLY_ONCE: Allows only one check-in per session (`ONLY_ONCE_VIOLATION`).
+ *   - NO_RESTRICTION: Logs check-ins but rejects duplicate attempts if already recorded.
+ *   - Primary Session Rule: When primary session `validateAgainstOtherSessions` is active, guests must
+ *     check in to the primary session first before entering secondary sessions (`PRIMARY_SESSION_CHECKIN_REQUIRED`).
+ */
+const QR_REJECTIONS = {
+    EMPTY: 'QR_PAYLOAD_REQUIRED',
+    UNSUPPORTED_FORMAT: 'QR_FORMAT_UNSUPPORTED',
+    UNTRUSTED_URL: 'QR_URL_UNTRUSTED',
+    PREVIEW_SAMPLE: 'QR_PREVIEW_SAMPLE',
+};
 exports.checkInService = {
+    /**
+     * Processes a QR scan check-in attempt.
+     * Validates QR payload, token hash lookup, staff assignment, RSVP eligibility, and session access rules.
+     */
     async scanCheckIn(actor, dto) {
-        const rawToken = this.extractRawToken(dto.qrCode);
-        if (!rawToken) {
-            throw new Error('INVALID_QR_TOKEN');
+        const parsed = (0, qrPayload_1.parseInvitationQrPayload)(dto.qrCode);
+        if (!parsed.ok) {
+            throw new Error(QR_REJECTIONS[parsed.reason]);
         }
-        const tokenHash = (0, invitation_util_1.hashToken)(rawToken);
+        const tokenHash = (0, invitation_util_1.hashToken)(parsed.token);
         const invitee = await Invitee_1.Invitee.findOne({ qrTokenHash: tokenHash });
         if (!invitee) {
-            throw new Error('INVALID_QR_TOKEN');
+            // A token from an earlier send/resend is replaced by the newest one
+            const superseded = await Invitation_1.Invitation.exists({ tokenHash });
+            throw new Error(superseded ? 'QR_TOKEN_SUPERSEDED' : 'INVALID_QR_TOKEN');
         }
         const eventId = invitee.eventId.toString();
         if (dto.eventId && dto.eventId !== eventId) {
@@ -163,22 +193,6 @@ exports.checkInService = {
         };
     },
     // Helper Methods
-    extractRawToken(qrCode) {
-        if (!qrCode || typeof qrCode !== 'string')
-            return '';
-        const trimmed = qrCode.trim();
-        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-            try {
-                const url = new URL(trimmed);
-                const segments = url.pathname.split('/').filter(Boolean);
-                return segments[segments.length - 1] || '';
-            }
-            catch (err) {
-                return trimmed;
-            }
-        }
-        return trimmed;
-    },
     async validateActorAndEvent(actor, eventId) {
         const event = await Event_1.Event.findById(eventId);
         if (!event) {
@@ -228,18 +242,9 @@ exports.checkInService = {
         if (!session) {
             throw new Error('SESSION_NOT_FOUND');
         }
-        // Invitee session permissions check
-        if (invitee.sessionAccess && invitee.sessionAccess.length > 0) {
-            const accessEntry = invitee.sessionAccess.find(sa => sa.sessionId.toString() === sessionId);
-            if (accessEntry) {
-                if (!accessEntry.allowed) {
-                    throw new Error('INVITEE_SESSION_DENIED');
-                }
-            }
-            else {
-                // Invitee has explicit session access rules defined, but this session is missing
-                throw new Error('INVITEE_SESSION_DENIED');
-            }
+        // Invitee session permissions (sessions that keep another session's invitees use that list)
+        if (!(0, sessionAccess_1.inviteeAllowedInSession)(invitee, session)) {
+            throw new Error('INVITEE_SESSION_DENIED');
         }
         // AccessControl (ONLY_ONCE / NO_RESTRICTION) check
         const existingSessionCheckIn = await checkIn_repository_1.checkInRepository.findByInviteeAndSession(invitee._id.toString(), sessionId);
@@ -249,11 +254,13 @@ exports.checkInService = {
         if (session.accessControl === Session_1.AccessControl.NO_RESTRICTION && existingSessionCheckIn) {
             throw new Error('DUPLICATE_CHECKIN');
         }
-        // Cross-session validation check
-        if (session.validateAgainstOtherSessions) {
-            const otherCheckIns = await checkIn_repository_1.checkInRepository.findOtherSessionCheckIns(invitee._id.toString(), eventId, sessionId);
-            if (otherCheckIns.length > 0) {
-                throw new Error('CROSS_SESSION_CONFLICT');
+        // "Consider access session validation on other session access" is configured on the primary
+        // (first) session: when enabled, guests must have checked in to it before entering other sessions.
+        const primary = await Session_1.Session.findOne({ eventId }).sort({ _id: 1 });
+        if (primary && String(primary._id) !== String(session._id) && primary.validateAgainstOtherSessions) {
+            const primaryCheckIn = await checkIn_repository_1.checkInRepository.findByInviteeAndSession(invitee._id.toString(), String(primary._id));
+            if (!primaryCheckIn) {
+                throw new Error('PRIMARY_SESSION_CHECKIN_REQUIRED');
             }
         }
         return session;

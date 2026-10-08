@@ -33,38 +33,13 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.User = exports.AuthProvider = exports.Role = void 0;
+exports.PriceRateChange = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-var Role;
-(function (Role) {
-    Role["ADMIN"] = "ADMIN";
-    Role["ORGANIZER"] = "ORGANIZER";
-    Role["SYSTEM_USER"] = "SYSTEM_USER";
-})(Role || (exports.Role = Role = {}));
-var AuthProvider;
-(function (AuthProvider) {
-    AuthProvider["LOCAL"] = "LOCAL";
-    AuthProvider["GOOGLE"] = "GOOGLE";
-})(AuthProvider || (exports.AuthProvider = AuthProvider = {}));
-const UserSchema = new mongoose_1.Schema({
-    fullName: { type: String, required: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    phone: { type: String },
-    passwordHash: { type: String },
-    authProvider: { type: String, enum: Object.values(AuthProvider), default: AuthProvider.LOCAL },
-    role: { type: String, enum: Object.values(Role), default: Role.ORGANIZER },
-    profile: { type: mongoose_1.Schema.Types.Mixed },
-    // Who created this account (admins/organizers create staff); scopes which organizer sees it
-    createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
-    isActive: { type: Boolean, default: true }
-}, {
-    timestamps: true,
-    toJSON: {
-        transform: function (doc, ret) {
-            delete ret.passwordHash;
-            delete ret.__v;
-            return ret;
-        }
-    }
-});
-exports.User = mongoose_1.default.model('User', UserSchema);
+const PriceRateChangeSchema = new mongoose_1.Schema({
+    previousRate: { type: Number, default: null },
+    newRate: { type: Number, required: true, min: 0 },
+    currency: { type: String, required: true },
+    changedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true }
+}, { timestamps: { createdAt: true, updatedAt: false } });
+PriceRateChangeSchema.index({ createdAt: -1 });
+exports.PriceRateChange = mongoose_1.default.model('PriceRateChange', PriceRateChangeSchema);

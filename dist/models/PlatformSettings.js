@@ -33,38 +33,34 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.User = exports.AuthProvider = exports.Role = void 0;
+exports.PlatformSettings = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-var Role;
-(function (Role) {
-    Role["ADMIN"] = "ADMIN";
-    Role["ORGANIZER"] = "ORGANIZER";
-    Role["SYSTEM_USER"] = "SYSTEM_USER";
-})(Role || (exports.Role = Role = {}));
-var AuthProvider;
-(function (AuthProvider) {
-    AuthProvider["LOCAL"] = "LOCAL";
-    AuthProvider["GOOGLE"] = "GOOGLE";
-})(AuthProvider || (exports.AuthProvider = AuthProvider = {}));
-const UserSchema = new mongoose_1.Schema({
-    fullName: { type: String, required: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    phone: { type: String },
-    passwordHash: { type: String },
-    authProvider: { type: String, enum: Object.values(AuthProvider), default: AuthProvider.LOCAL },
-    role: { type: String, enum: Object.values(Role), default: Role.ORGANIZER },
-    profile: { type: mongoose_1.Schema.Types.Mixed },
-    // Who created this account (admins/organizers create staff); scopes which organizer sees it
-    createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
-    isActive: { type: Boolean, default: true }
-}, {
-    timestamps: true,
-    toJSON: {
-        transform: function (doc, ret) {
-            delete ret.passwordHash;
-            delete ret.__v;
-            return ret;
-        }
+const on = { type: Boolean, default: true };
+const off = { type: Boolean, default: false };
+const PlatformSettingsSchema = new mongoose_1.Schema({
+    key: { type: String, required: true, unique: true, default: 'global' },
+    eventFeatures: {
+        allowEventRSVP: on,
+        acceptInvitedAttendees: on,
+        chooseNotRespondedInvitees: on,
+        chooseRSVPDeclinedInvitees: on,
+        askFoodPreference: on
+    },
+    notificationPreferences: {
+        newOrganizerRegistration: on,
+        newEventAdded: on,
+        deactivatedOrganizerBySuperAdmin: on,
+        changeInPrice: on,
+        invitationSendFailed: on,
+        dayBeforeEventAlert: on,
+        reportDownload: off,
+        customTemplateRequest: on
+    },
+    pricing: {
+        ratePerInvitee: { type: Number, default: null, min: 0 },
+        currency: { type: String, default: 'USD' },
+        updatedAt: { type: Date },
+        updatedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }
     }
-});
-exports.User = mongoose_1.default.model('User', UserSchema);
+}, { timestamps: true });
+exports.PlatformSettings = mongoose_1.default.model('PlatformSettings', PlatformSettingsSchema);

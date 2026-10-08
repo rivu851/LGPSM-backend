@@ -27,6 +27,15 @@ exports.publicInvitationController = {
             if (error.message === 'INVITATION_NOT_FOUND' || error.message === 'INVALID_TOKEN') {
                 return res.status(404).json({ success: false, error: 'Not Found', message: 'Invitation not found or token is invalid' });
             }
+            if (error.message === 'EVENT_CANCELLED') {
+                return res.status(410).json({ success: false, message: 'This event has been cancelled.' });
+            }
+            if (error.message === 'RSVP_DISABLED') {
+                return res.status(400).json({ success: false, message: 'RSVP is not open for this event.' });
+            }
+            if (error.message === 'RSVP_CLOSED') {
+                return res.status(400).json({ success: false, message: 'The RSVP deadline for this event has passed.' });
+            }
             return res.status(500).json({ success: false, error: 'Internal Server Error', message: error.message });
         }
     }

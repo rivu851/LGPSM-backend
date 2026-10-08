@@ -15,11 +15,14 @@ const upload = (0, multer_1.default)({
     storage: multer_1.default.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
     fileFilter: (req, file, cb) => {
-        if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || file.mimetype === 'application/vnd.ms-excel') {
+        const excelMime = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'].includes(file.mimetype);
+        // Some browsers send spreadsheets as a generic binary; the parser still validates the content
+        const excelByName = file.mimetype === 'application/octet-stream' && /\.(xlsx|xls)$/i.test(file.originalname);
+        if (excelMime || excelByName) {
             cb(null, true);
         }
         else {
-            cb(new Error('Invalid file type'));
+            cb(new Error('Upload an Excel file (.xlsx or .xls)'));
         }
     }
 });
@@ -36,7 +39,8 @@ const validate = (schema) => (req, res, next) => {
 exports.eventInviteeRoutes = (0, express_1.Router)({ mergeParams: true });
 exports.eventInviteeRoutes.use(authenticate_1.authenticate);
 exports.eventInviteeRoutes.post('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(invitee_validator_1.createInviteeSchema), invitee_controller_1.inviteeController.createInvitee);
-exports.eventInviteeRoutes.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), invitee_controller_1.inviteeController.getInvitees);
+// SYSTEM_USER may read invitees of events they are assigned to (for check-in)
+exports.eventInviteeRoutes.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER), invitee_controller_1.inviteeController.getInvitees);
 exports.eventInviteeRoutes.put('/session-access/bulk', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(invitee_validator_1.bulkUpdateSessionAccessSchema), invitee_controller_1.inviteeController.bulkUpdateSessionAccess);
 // Upload handling
 exports.eventInviteeRoutes.post('/import', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), (req, res, next) => {

@@ -87,6 +87,11 @@ const EventSchema = new mongoose_1.Schema({
         bannerKey: { type: String }
     },
     status: { type: String, enum: Object.values(EventStatus), default: EventStatus.DRAFT, required: true },
+    pricing: {
+        ratePerInvitee: { type: Number, default: null },
+        currency: { type: String },
+        lockedAt: { type: Date }
+    },
     operationalDataCleared: { type: Boolean, default: false }
 }, {
     timestamps: true

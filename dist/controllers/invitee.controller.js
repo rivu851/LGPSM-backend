@@ -7,7 +7,7 @@ exports.inviteeController = {
         try {
             const organizerId = req.user.userId;
             const eventId = req.params.eventId;
-            const invitee = await invitee_service_1.inviteeService.createInvitee(eventId, organizerId, req.body);
+            const invitee = await invitee_service_1.inviteeService.createInvitee(eventId, organizerId, req.body, req.user.role);
             res.status(201).json({ success: true, data: invitee });
         }
         catch (error) {
@@ -151,7 +151,15 @@ exports.inviteeController = {
                 res.status(400).json({ error: 'Bad Request', message: 'No file uploaded', details: [] });
                 return;
             }
-            const result = await invitee_service_1.inviteeService.processExcelImport(eventId, organizerId, req.file.buffer);
+            const rawSessionId = (req.body?.sessionId || req.query.sessionId || '');
+            if (rawSessionId && !/^[0-9a-fA-F]{24}$/.test(rawSessionId)) {
+                res.status(400).json({ success: false, message: 'Invalid sessionId format' });
+                return;
+            }
+            const result = await invitee_service_1.inviteeService.processExcelImport(eventId, organizerId, req.file.buffer, {
+                sessionId: rawSessionId || undefined,
+                role: req.user.role
+            });
             res.status(200).json({ success: true, data: result });
         }
         catch (error) {

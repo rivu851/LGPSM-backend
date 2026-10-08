@@ -1,11 +1,42 @@
 import { Request, Response, NextFunction } from 'express';
 import { eventService } from '../services/event.service';
 import { EventStatus } from '../models/Event';
+import { Role } from '../models/User';
 
 export const eventController = {
   async createEvent(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizerId = (req as any).user.userId;
+      const authUser = (req as any).user;
+      const userRole = authUser.role;
+
+      if (userRole === Role.ADMIN || userRole === 'SUPER_ADMIN') {
+        const organizerIds = Array.isArray(req.body.organizerIds) && req.body.organizerIds.length > 0
+          ? req.body.organizerIds
+          : req.body.organizerId
+            ? [req.body.organizerId]
+            : null;
+
+        if (organizerIds && organizerIds.length > 0) {
+          const eventsCreated = [];
+          for (const orgId of organizerIds) {
+            const event = await eventService.createEvent(orgId, { ...req.body, organizerId: orgId });
+            eventsCreated.push(event);
+          }
+          const primaryEvent = eventsCreated[0];
+          res.status(201).json({
+            success: true,
+            data: {
+              eventId: (primaryEvent as any)._id.toString(),
+              eventIds: eventsCreated.map((e: any) => (e as any)._id.toString()),
+              status: primaryEvent.status.toLowerCase(),
+              createdAt: primaryEvent.createdAt
+            }
+          });
+          return;
+        }
+      }
+
+      const organizerId = authUser.userId;
       const event = await eventService.createEvent(organizerId, req.body);
       
       res.status(201).json({

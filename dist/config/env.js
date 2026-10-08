@@ -13,6 +13,8 @@ const envSchema = zod_1.z.object({
     ATLAS_URL: zod_1.z.string().min(1, 'ATLAS_URL is required'),
     DNS_SERVER: zod_1.z.string().optional().default('8.8.8.8'),
     FRONTEND_URL: zod_1.z.string().default('http://localhost:3000'),
+    // Time zone used when dates are rendered on the server (invitation cards, emails, WhatsApp)
+    APP_TIMEZONE: zod_1.z.string().default('Asia/Kolkata'),
     JWT_SECRET: zod_1.z.string().min(1, 'JWT_SECRET is required'),
     JWT_REFRESH_SECRET: zod_1.z.string().min(1, 'JWT_REFRESH_SECRET is required'),
     JWT_EXPIRES_IN: zod_1.z.string().default('15m'),

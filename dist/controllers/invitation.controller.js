@@ -82,8 +82,10 @@ exports.invitationController = {
                 userId: req.user?.userId,
                 role: req.user?.role
             };
-            const pngBuffer = await invitation_service_1.invitationService.previewInvitationCard(eventId, user, inviteeId);
+            const { png: pngBuffer, qr } = await invitation_service_1.invitationService.previewInvitationCard(eventId, user, inviteeId);
             res.setHeader('Content-Type', 'image/png');
+            // ISSUED: the QR is the guest's current check-in pass; SAMPLE: placeholder, not valid for check-in
+            res.setHeader('X-Invitation-Qr', qr);
             res.setHeader('Content-Disposition', 'inline; filename="invitation-card-preview.png"');
             return res.status(200).send(pngBuffer);
         }

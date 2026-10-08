@@ -2,6 +2,16 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.checkInController = void 0;
 const checkIn_service_1 = require("../services/checkIn.service");
+// QR problems carry a machine-readable `code` so the client can tell an unreadable pass from an
+// unknown one and from a business-rule denial.
+const QR_REJECTION_RESPONSES = {
+    QR_PAYLOAD_REQUIRED: { status: 400, error: 'Bad Request', message: 'Scan or upload a QR pass first' },
+    QR_FORMAT_UNSUPPORTED: { status: 400, error: 'Bad Request', message: 'This QR code is not an LGPSM invitation pass' },
+    QR_URL_UNTRUSTED: { status: 400, error: 'Bad Request', message: 'This QR code links to an address that is not an LGPSM invitation' },
+    QR_PREVIEW_SAMPLE: { status: 400, error: 'Bad Request', message: 'This is a sample QR from a card preview. Send the invitation to issue the guest a real pass' },
+    QR_TOKEN_SUPERSEDED: { status: 410, error: 'Gone', message: 'This pass was replaced by a newer invitation. Ask the guest for the latest one' },
+    INVALID_QR_TOKEN: { status: 404, error: 'Not Found', message: 'No invitation matches this QR pass' },
+};
 exports.checkInController = {
     async scanCheckIn(req, res, next) {
         try {
@@ -13,8 +23,9 @@ exports.checkInController = {
             res.status(201).json({ success: true, message: 'Check-in successful', data: result });
         }
         catch (error) {
-            if (error.message === 'INVALID_QR_TOKEN') {
-                res.status(404).json({ success: false, error: 'Not Found', message: 'Invalid or unknown QR token' });
+            const qrRejection = QR_REJECTION_RESPONSES[error.message];
+            if (qrRejection) {
+                res.status(qrRejection.status).json({ success: false, code: error.message, error: qrRejection.error, message: qrRejection.message });
             }
             else if (error.message === 'EVENT_NOT_FOUND') {
                 res.status(404).json({ success: false, error: 'Not Found', message: 'Event not found' });
@@ -45,6 +56,9 @@ exports.checkInController = {
             }
             else if (error.message === 'DUPLICATE_CHECKIN' || error.code === 11000) {
                 res.status(409).json({ success: false, error: 'Conflict', message: 'Invitee has already checked in' });
+            }
+            else if (error.message === 'PRIMARY_SESSION_CHECKIN_REQUIRED') {
+                res.status(409).json({ success: false, error: 'Conflict', message: 'Guest must check in to the first session before entering this session' });
             }
             else if (error.message === 'CROSS_SESSION_CONFLICT') {
                 res.status(409).json({ success: false, error: 'Conflict', message: 'Cross-session conflict: Invitee has already checked into another session for this event' });
@@ -96,6 +110,9 @@ exports.checkInController = {
             }
             else if (error.message === 'DUPLICATE_CHECKIN' || error.code === 11000) {
                 res.status(409).json({ success: false, error: 'Conflict', message: 'Invitee has already checked in' });
+            }
+            else if (error.message === 'PRIMARY_SESSION_CHECKIN_REQUIRED') {
+                res.status(409).json({ success: false, error: 'Conflict', message: 'Guest must check in to the first session before entering this session' });
             }
             else if (error.message === 'CROSS_SESSION_CONFLICT') {
                 res.status(409).json({ success: false, error: 'Conflict', message: 'Cross-session conflict: Invitee has already checked into another session for this event' });
