@@ -58,7 +58,7 @@ export const userController = {
   async getUserAssignments(req: Request, res: Response, next: NextFunction) {
     try {
       if (!req.user) throw { statusCode: 401, message: 'Unauthorized' };
-      const assignments = await systemUserAssignmentService.getAssignmentsByUser(req.params.id as string);
+      const assignments = await systemUserAssignmentService.getAssignmentsByUser(req.params.id as string, req.user);
       res.status(200).json({ success: true, data: assignments });
     } catch (error) {
       next(error);

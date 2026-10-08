@@ -164,7 +164,7 @@ export const reportService = {
 
   // Platform earnings per event: invitations sent x the event's locked per-invitee rate.
   // Events created before rates were locked use the rate that was in effect when they were created.
-  async getEarnings(filter: { from?: Date; to?: Date; eventId?: string } = {}) {
+  async getEarnings(filter: { from?: Date; to?: Date; eventId?: string; organizerId?: string } = {}) {
     const query: any = { status: { $ne: 'CANCELLED' } };
     if (filter.from || filter.to) {
       query['schedule.start'] = {};
@@ -173,6 +173,9 @@ export const reportService = {
     }
     if (filter.eventId) {
       query._id = filter.eventId;
+    }
+    if (filter.organizerId) {
+      query.organizerId = filter.organizerId;
     }
     const events = await Event.find(query)
       .select('title schedule createdAt organizerId pricing status')

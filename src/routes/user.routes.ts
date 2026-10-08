@@ -54,10 +54,11 @@ router.patch(
   userController.updateUser
 );
 
-// Admin view of a staff member's event/session assignments
+// Admin/organizer view of a staff member's event/session assignments
+// (organizers only ever see assignments scoped to their own events; see service)
 router.get(
   '/:id/assignments',
-  authorizeRoles(Role.ADMIN),
+  authorizeRoles(Role.ADMIN, Role.ORGANIZER),
   userController.getUserAssignments
 );
 

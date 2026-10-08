@@ -59,8 +59,17 @@ export const systemUserAssignmentService = {
     return await systemUserAssignmentRepository.findByEventId(eventId);
   },
 
-  async getAssignmentsByUser(userId: string) {
-    return await systemUserAssignmentRepository.findByUserId(userId);
+  async getAssignmentsByUser(userId: string, actor: { userId: string; role: Role }) {
+    const assignments = await systemUserAssignmentRepository.findByUserId(userId);
+    if (actor.role === Role.ORGANIZER) {
+      // Organizers only see this staff member's assignments on their own events
+      return assignments.filter((a: any) => {
+        const event = a.eventId;
+        const eventOrganizerId = event && typeof event === 'object' ? event.organizerId : null;
+        return eventOrganizerId && String(eventOrganizerId) === actor.userId;
+      });
+    }
+    return assignments;
   },
 
   async updateAssignment(assignmentId: string, organizerId: string, sessionIds: string[]): Promise<ISystemUserAssignment> {

@@ -10,10 +10,12 @@ const parseDate = (v: unknown) => {
 export const reportController = {
   async getEarnings(req: Request, res: Response) {
     try {
+      const actor = (req as any).user;
       const data = await reportService.getEarnings({
         from: parseDate(req.query.from),
         to: parseDate(req.query.to),
         eventId: req.query.eventId as string | undefined,
+        organizerId: actor.role === 'ORGANIZER' ? actor.userId : undefined,
       });
       return res.status(200).json({ success: true, data });
     } catch (error: any) {

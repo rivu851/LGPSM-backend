@@ -45,8 +45,8 @@ export const systemUserAssignmentController = {
   async getMyAssignments(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = (req as any).user.userId;
-      
-      const assignments = await systemUserAssignmentService.getAssignmentsByUser(userId);
+
+      const assignments = await systemUserAssignmentService.getAssignmentsByUser(userId, (req as any).user);
       
       res.status(200).json({ success: true, data: assignments });
     } catch (error: any) {
