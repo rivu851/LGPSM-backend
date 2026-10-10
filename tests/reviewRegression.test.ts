@@ -14,6 +14,10 @@ import { CheckIn } from '../src/models/CheckIn';
 import { generateAccessToken } from '../src/utils/token';
 import { generateSecureToken, hashToken } from '../src/utils/invitation.util';
 
+jest.mock('../src/utils/email.provider', () => ({
+  sendEmail: jest.fn().mockResolvedValue(true),
+}));
+
 let mongoServer: MongoMemoryServer;
 let admin: any, organizer: any, otherOrganizer: any;
 let adminToken: string, organizerToken: string, otherToken: string;

@@ -33,39 +33,45 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.User = exports.AuthProvider = exports.Role = void 0;
+exports.EmailVerification = exports.RESEND_COOLDOWN_SECONDS = exports.MAX_OTP_ATTEMPTS = exports.OTP_EXPIRY_MINUTES = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-var Role;
-(function (Role) {
-    Role["ADMIN"] = "ADMIN";
-    Role["ORGANIZER"] = "ORGANIZER";
-    Role["SYSTEM_USER"] = "SYSTEM_USER";
-})(Role || (exports.Role = Role = {}));
-var AuthProvider;
-(function (AuthProvider) {
-    AuthProvider["LOCAL"] = "LOCAL";
-    AuthProvider["GOOGLE"] = "GOOGLE";
-})(AuthProvider || (exports.AuthProvider = AuthProvider = {}));
-const UserSchema = new mongoose_1.Schema({
-    fullName: { type: String, required: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    phone: { type: String },
-    passwordHash: { type: String },
-    authProvider: { type: String, enum: Object.values(AuthProvider), default: AuthProvider.LOCAL },
-    role: { type: String, enum: Object.values(Role), default: Role.ORGANIZER },
-    profile: { type: mongoose_1.Schema.Types.Mixed },
-    // Who created this account (admins/organizers create staff); scopes which organizer sees it
-    createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
-    isActive: { type: Boolean, default: true },
-    isEmailVerified: { type: Boolean, default: true },
+/**
+ * Stores a hashed 6-digit OTP for organizer email verification.
+ *
+ * Security notes:
+ *  - `codeHash` stores bcrypt(OTP) — the plaintext is never persisted.
+ *  - `expiresAt` is validated both by MongoDB's TTL index and in application
+ *    code so that replication lag cannot create a window.
+ *  - `attempts` tracks wrong guesses; the document is locked (and effectively
+ *    invalid) once it reaches MAX_ATTEMPTS.
+ *  - `lastSentAt` enforces the 60-second resend cooldown at the model layer.
+ *
+ * One document per email address (upsert replaces any previous pending code).
+ */
+exports.OTP_EXPIRY_MINUTES = 10;
+exports.MAX_OTP_ATTEMPTS = 5;
+exports.RESEND_COOLDOWN_SECONDS = 60;
+const EmailVerificationSchema = new mongoose_1.Schema({
+    email: {
+        type: String,
+        required: true,
+        unique: true,
+        lowercase: true,
+        trim: true,
+    },
+    codeHash: { type: String, required: true },
+    expiresAt: { type: Date, required: true, index: { expires: 0 } },
+    attempts: { type: Number, default: 0 },
+    lastSentAt: { type: Date, required: true },
 }, {
     timestamps: true,
     toJSON: {
-        transform: function (doc, ret) {
-            delete ret.passwordHash;
+        transform: (_doc, ret) => {
+            // Never expose the hash through serialisation
+            delete ret.codeHash;
             delete ret.__v;
             return ret;
-        }
-    }
+        },
+    },
 });
-exports.User = mongoose_1.default.model('User', UserSchema);
+exports.EmailVerification = mongoose_1.default.model('EmailVerification', EmailVerificationSchema);

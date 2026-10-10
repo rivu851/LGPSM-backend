@@ -16,7 +16,22 @@ exports.userRepository = {
     async updateById(id, updateData) {
         return User_1.User.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
     },
+    /**
+     * Updates a user matched by email address.
+     * Used by the email-verification flow (updateByEmail happens before the
+     * user has a session, so we can't rely on an ID).
+     */
+    async updateByEmail(email, updateData) {
+        return User_1.User.findOneAndUpdate({ email }, updateData, { new: true, runValidators: true });
+    },
+    /**
+     * Hard-deletes a user by email.  Called by the registration rollback path
+     * when SMTP delivery fails, ensuring no orphaned inactive accounts remain.
+     */
+    async deleteByEmail(email) {
+        await User_1.User.deleteOne({ email });
+    },
     async find(query = {}) {
         return User_1.User.find(query).select('-passwordHash').sort({ createdAt: -1 });
-    }
+    },
 };

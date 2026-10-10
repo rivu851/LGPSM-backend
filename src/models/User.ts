@@ -21,6 +21,13 @@ export interface IUser extends Document {
   profile?: Record<string, any>;
   createdBy?: mongoose.Types.ObjectId;
   isActive: boolean;
+  /**
+   * Email ownership has been confirmed via OTP.
+   * — New ORGANIZER self-registrations start as false.
+   * — ADMIN / SYSTEM_USER accounts and all pre-existing accounts default to true
+   *   so that existing login/session flows are not affected.
+   */
+  isEmailVerified: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,7 +43,8 @@ const UserSchema: Schema = new Schema(
     profile: { type: Schema.Types.Mixed },
     // Who created this account (admins/organizers create staff); scopes which organizer sees it
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
-    isActive: { type: Boolean, default: true }
+    isActive: { type: Boolean, default: true },
+    isEmailVerified: { type: Boolean, default: true },
   },
   {
     timestamps: true,

@@ -14,12 +14,16 @@ const validate = (schema) => (req, res, next) => {
     req.body = result.data;
     next();
 };
+// Apply the base auth rate limiter to all routes in this router
 router.use(rateLimiter_1.authRateLimiter);
 router.post('/register', validate(auth_validator_1.registerSchema), auth_controller_1.authController.register);
 router.post('/login', validate(auth_validator_1.loginSchema), auth_controller_1.authController.login);
 router.post('/google', validate(auth_validator_1.googleAuthSchema), auth_controller_1.authController.googleAuth);
 router.post('/refresh', validate(auth_validator_1.refreshTokenSchema), auth_controller_1.authController.refresh);
-router.post('/logout', auth_controller_1.authController.logout); // logout might not need strict validation if token is missing it just does nothing
+router.post('/logout', auth_controller_1.authController.logout);
 router.post('/forgot-password', validate(auth_validator_1.forgotPasswordSchema), auth_controller_1.authController.forgotPassword);
 router.post('/reset-password', validate(auth_validator_1.resetPasswordSchema), auth_controller_1.authController.resetPassword);
+// Email verification — additional, stricter rate limiters on top of authRateLimiter
+router.post('/verify-email', rateLimiter_1.verifyEmailRateLimiter, validate(auth_validator_1.verifyEmailSchema), auth_controller_1.authController.verifyEmail);
+router.post('/resend-verification', rateLimiter_1.resendVerificationRateLimiter, validate(auth_validator_1.resendVerificationSchema), auth_controller_1.authController.resendVerificationCode);
 exports.default = router;

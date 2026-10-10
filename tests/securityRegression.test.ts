@@ -12,6 +12,10 @@ import { generateAccessToken, generatePasswordResetToken } from '../src/utils/to
 import { Session } from '../src/models/Session';
 import { SystemUserAssignment } from '../src/models/SystemUserAssignment';
 
+jest.mock('../src/utils/email.provider', () => ({
+  sendEmail: jest.fn().mockResolvedValue(true),
+}));
+
 let mongoServer: MongoMemoryServer;
 
 beforeAll(async () => {
@@ -26,6 +30,7 @@ afterAll(async () => {
 
 async function registerAndLogin(fullName: string, email: string, role: string) {
   await request(app).post('/api/auth/register').send({ fullName, email, password: 'Password123!', role });
+  await User.updateOne({ email }, { isEmailVerified: true });
   return request(app).post('/api/auth/login').send({ email, password: 'Password123!', role });
 }
 
