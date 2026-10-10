@@ -16,6 +16,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import app from '../src/app';
 import { User } from '../src/models/User';
 import { Role } from '../src/models/User';
+import { EmailVerification } from '../src/models/EmailVerification';
 
 let mongoServer: MongoMemoryServer;
 
@@ -323,6 +324,34 @@ describe('Resend Verification', () => {
     expect(verifyRes.statusCode).toBe(200);
   });
 
+  it('keeps the previous code valid when the resend email fails to send', async () => {
+    await request(app)
+      .post('/api/auth/register')
+      .send({ fullName: 'Resend SMTP Fail User', email: 'resendsmtpfail@example.com', password: 'password123' });
+
+    const originalOtp = extractOtpFromLastEmail();
+    mockSendEmail.mockClear();
+
+    // Bypass the 60s cooldown deterministically instead of racing the clock.
+    await EmailVerification.updateOne(
+      { email: 'resendsmtpfail@example.com' },
+      { $set: { lastSentAt: new Date(Date.now() - 61_000) } }
+    );
+
+    mockSendEmail.mockRejectedValueOnce(new Error('SMTP connection failed'));
+    const resendRes = await request(app)
+      .post('/api/auth/resend-verification')
+      .send({ email: 'resendsmtpfail@example.com' });
+    expect(resendRes.statusCode).toBe(503);
+
+    // The original code must still verify — a failed resend must not destroy
+    // the only code the user actually received.
+    const verifyRes = await request(app)
+      .post('/api/auth/verify-email')
+      .send({ email: 'resendsmtpfail@example.com', code: originalOtp });
+    expect(verifyRes.statusCode).toBe(200);
+  });
+
   it('returns success even for an unknown email (enumeration prevention)', async () => {
     const res = await request(app)
       .post('/api/auth/resend-verification')
@@ -358,6 +387,28 @@ describe('Token flow (verified organizer)', () => {
       .send({ refreshToken });
     expect(refresh.statusCode).toBe(200);
     expect(refresh.body.data.accessToken).toBeDefined();
+    expect(refresh.body.data.refreshToken).toBeDefined();
+    // Rotation: refresh issues a brand new refresh token distinct from the one spent.
+    expect(refresh.body.data.refreshToken).not.toBe(refreshToken);
+  });
+
+  it('rejects reuse of a refresh token that was already rotated away', async () => {
+    const login = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'verifyme@example.com', password: 'password123' });
+    const firstRefreshToken = login.body.data.refreshToken;
+
+    const firstRefresh = await request(app)
+      .post('/api/auth/refresh')
+      .send({ refreshToken: firstRefreshToken });
+    expect(firstRefresh.statusCode).toBe(200);
+
+    // The token just spent above must now be rejected — mirrors the mobile
+    // client, which must persist the rotated token rather than reusing the old one.
+    const reuse = await request(app)
+      .post('/api/auth/refresh')
+      .send({ refreshToken: firstRefreshToken });
+    expect(reuse.statusCode).toBe(401);
   });
 });
 
