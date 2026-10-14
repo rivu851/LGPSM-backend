@@ -1,6 +1,13 @@
+import dns from 'dns';
 import app from './app';
 import connectDatabase from './config/database';
 import { env } from './config/env';
+
+// Render containers have no outbound IPv6 route. Node's default DNS ordering can still return an
+// IPv6 address first for dual-stack hosts (smtp.gmail.com, some third-party APIs), which then
+// fails with ENETUNREACH. Prefer IPv4 results process-wide so every outbound connection benefits,
+// not just SMTP.
+dns.setDefaultResultOrder('ipv4first');
 
 async function startServer() {
   try {
