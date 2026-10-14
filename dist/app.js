@@ -130,6 +130,8 @@ app.use('/api/v1/reports', report_routes_1.default);
 app.use('/api/v1/events/:eventId/tickets', ticketTier_routes_1.eventTicketTierRoutes);
 app.use('/api/v1/tickets', ticketTier_routes_1.ticketTierRoutes);
 app.use('/api/v1', payment_routes_1.default);
+// Keep unmatched API requests in the same JSON error format as other failures.
+app.use(errorHandler_1.notFoundHandler);
 // Global error handler should be the last middleware
 app.use(errorHandler_1.errorHandler);
 exports.default = app;

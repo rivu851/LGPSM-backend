@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { env } from './config/env';
-import { errorHandler } from './middlewares/errorHandler';
+import { errorHandler, notFoundHandler } from './middlewares/errorHandler';
 
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
@@ -102,6 +102,9 @@ app.use('/api/v1/reports', reportRoutes);
 app.use('/api/v1/events/:eventId/tickets', eventTicketTierRoutes);
 app.use('/api/v1/tickets', ticketTierRoutes);
 app.use('/api/v1', paymentRoutes);
+
+// Keep unmatched API requests in the same JSON error format as other failures.
+app.use(notFoundHandler);
 
 // Global error handler should be the last middleware
 app.use(errorHandler);
