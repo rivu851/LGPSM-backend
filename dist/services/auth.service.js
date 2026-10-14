@@ -197,7 +197,10 @@ exports.authService = {
         }
         const otp = generateOtpPlaintext();
         const codeHash = await hashOtp(otp);
-        await emailVerification_repository_1.emailVerificationRepository.createOrReplace(normalised, codeHash);
+        // Send before persisting: if SMTP fails here, the previous (still-delivered)
+        // code and its cooldown stay intact instead of being replaced by a code the
+        // user never received, which would otherwise leave the account with no
+        // working code at all until the next successful resend.
         try {
             await sendVerificationEmail(normalised, user.fullName, otp);
         }
@@ -208,6 +211,7 @@ exports.authService = {
                 message: 'Unable to send verification email. Please try again later.',
             };
         }
+        await emailVerification_repository_1.emailVerificationRepository.createOrReplace(normalised, codeHash);
         return { sent: true };
     },
     /**

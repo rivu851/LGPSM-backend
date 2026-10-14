@@ -60,6 +60,8 @@ const ticketTier_routes_1 = require("./routes/ticketTier.routes");
 const payment_routes_1 = __importDefault(require("./routes/payment.routes"));
 const platformSettings_routes_1 = __importDefault(require("./routes/platformSettings.routes"));
 const app = (0, express_1.default)();
+// Render forwards requests through one trusted proxy.
+app.set('trust proxy', 1);
 // Security and Middleware
 app.use((0, helmet_1.default)());
 app.use((0, cors_1.default)({

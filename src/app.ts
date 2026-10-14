@@ -25,6 +25,9 @@ import platformSettingsRoutes from './routes/platformSettings.routes';
 
 const app = express();
 
+// Render forwards requests through one trusted proxy.
+app.set('trust proxy', 1);
+
 // Security and Middleware
 app.use(helmet());
 app.use(cors({
