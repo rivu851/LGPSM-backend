@@ -89,6 +89,27 @@ describe('Invitees — sessionAccessId filter', () => {
     expect(res.body.data.map((i: any) => i._id)).toContain(String(allSessions._id));
   });
 
+  it('treats a legacy invitee document with no sessionAccess field at all as invited to every session', async () => {
+    // Written straight to the collection so Mongoose's [] default never applies.
+    const { insertedId } = await Invitee.collection.insertOne({
+      eventId: event._id,
+      name: 'Legacy Invitee',
+      email: 'legacy@example.com',
+      invitationStatus: InvitationStatus.SENT,
+      rsvpStatus: RsvpStatus.ACCEPTED,
+      createdAt: new Date(),
+    });
+
+    const res = await request(app)
+      .get(`/api/v1/events/${event._id}/invitees`)
+      .query({ sessionAccessId: String(sessionA._id), limit: 1 })
+      .set('Authorization', `Bearer ${organizerToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.meta.total).toBe(1);
+    expect(res.body.data[0]._id).toBe(String(insertedId));
+  });
+
   it('excludes an invitee explicitly restricted to a different session', async () => {
     const onlyB = await Invitee.create({
       eventId: event._id,
