@@ -24,6 +24,8 @@ router.patch('/me/password', validate(user_validator_1.changePasswordSchema), us
 router.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), user_controller_1.userController.getUsers);
 // Endpoint for Admins and Organizers to create sub-users
 router.post('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(user_validator_1.createUserSchema), user_controller_1.userController.createUser);
+// Endpoint for Admins and Organizers to view a single sub-user
+router.get('/:id', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), user_controller_1.userController.getUserById);
 // Endpoint for Admins and Organizers to delete sub-users
 router.delete('/:id', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), user_controller_1.userController.deleteUser);
 // Endpoint for Admins and Organizers to update sub-users

@@ -99,6 +99,57 @@ describe('New Modules (Category, Template, Notification, AuditLog, Report, Ticke
 
     expect(getRes.status).toBe(200);
     expect(getRes.body.data.length).toBe(1);
+    expect(getRes.body.meta).toMatchObject({ page: 1, limit: 25, total: 1 });
+  });
+
+  it('Template API: organizers cannot create, update, or delete templates', async () => {
+    const createRes = await request
+      .post('/api/v1/templates')
+      .set('Authorization', `Bearer ${organizerToken}`)
+      .send({ name: 'Should Not Be Created' });
+    expect(createRes.status).toBe(403);
+
+    const seeded = await request
+      .post('/api/v1/templates')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Seed Template' });
+    const templateId = seeded.body.data._id;
+
+    const updateRes = await request
+      .patch(`/api/v1/templates/${templateId}`)
+      .set('Authorization', `Bearer ${organizerToken}`)
+      .send({ name: 'Hijacked Name' });
+    expect(updateRes.status).toBe(403);
+
+    const deleteRes = await request
+      .delete(`/api/v1/templates/${templateId}`)
+      .set('Authorization', `Bearer ${organizerToken}`);
+    expect(deleteRes.status).toBe(403);
+
+    const unauthenticatedRes = await request.post('/api/v1/templates').send({ name: 'No Token' });
+    expect(unauthenticatedRes.status).toBe(401);
+  });
+
+  it('Template API: a persisted name/publish edit survives reload', async () => {
+    const created = await request
+      .post('/api/v1/templates')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Draft Badge', isPublished: false });
+    const templateId = created.body.data._id;
+
+    const updateRes = await request
+      .patch(`/api/v1/templates/${templateId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Published Badge', isPublished: true });
+    expect(updateRes.status).toBe(200);
+    expect(updateRes.body.data.name).toBe('Published Badge');
+    expect(updateRes.body.data.isPublished).toBe(true);
+
+    const reread = await request
+      .get(`/api/v1/templates/${templateId}`)
+      .set('Authorization', `Bearer ${organizerToken}`);
+    expect(reread.body.data.name).toBe('Published Badge');
+    expect(reread.body.data.isPublished).toBe(true);
   });
 
   it('Notification API: should list and mark notifications as read', async () => {

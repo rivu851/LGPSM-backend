@@ -34,9 +34,15 @@ export interface IUser extends Document {
 
 const UserSchema: Schema = new Schema(
   {
-    fullName: { type: String, required: true },
+    // Indexed (non-unique) so admin/organizer user search can sort/filter by
+    // name without a full collection scan.
+    fullName: { type: String, required: true, index: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    phone: { type: String },
+    // Stored in normalized form (see whatsapp.service.ts normalizePhoneNumber) so
+    // phone-based login can do a direct indexed lookup instead of scanning the
+    // collection. Not unique: existing data may still contain duplicates/legacy
+    // raw formats — see src/scripts/normalizePhoneNumbers.ts for backfilling.
+    phone: { type: String, index: true },
     passwordHash: { type: String },
     authProvider: { type: String, enum: Object.values(AuthProvider), default: AuthProvider.LOCAL },
     role: { type: String, enum: Object.values(Role), default: Role.ORGANIZER },

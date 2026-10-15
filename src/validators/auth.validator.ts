@@ -8,8 +8,13 @@ export const registerSchema = z.object({
   role: z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });
 
+// Mobile number is the primary identifier; email remains a valid alternative.
+// "At least one of the two" is enforced in authService.login(), not here —
+// this route's validate() middleware doesn't surface a top-level `message`
+// for Zod refine failures, only the raw field-error tree.
 export const loginSchema = z.object({
-  email: z.string().email('Invalid email format'),
+  email: z.string().email('Invalid email format').optional(),
+  phone: z.string().min(4, 'Invalid mobile number').optional(),
   password: z.string().min(1, 'Password is required'),
   role: z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });

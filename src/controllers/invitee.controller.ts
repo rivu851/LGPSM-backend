@@ -25,15 +25,22 @@ export const inviteeController = {
     try {
       const organizerId = (req as any).user.userId;
       const eventId = req.params.eventId as string;
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 10;
-      
+      const page = Math.max(parseInt(req.query.page as string) || 1, 1);
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 100);
+
+      const checkInStatusParam = req.query.checkInStatus as string | undefined;
+      const checkInStatus: 'CHECKED_IN' | 'PENDING' | undefined =
+        checkInStatusParam === 'CHECKED_IN' || checkInStatusParam === 'PENDING' ? checkInStatusParam : undefined;
+
       const options = {
         page,
         limit,
         rsvpStatus: req.query.rsvpStatus as string,
         invitationStatus: req.query.invitationStatus as string,
-        search: req.query.search as string
+        search: req.query.search as string,
+        sessionId: req.query.sessionId as string | undefined,
+        checkInStatus,
+        sessionAccessId: req.query.sessionAccessId as string | undefined,
       };
 
       const result = await inviteeService.getInvitees(eventId, organizerId, options, (req as any).user.role);
@@ -41,7 +48,7 @@ export const inviteeController = {
       res.status(200).json({
         success: true,
         data: result.invitees,
-        meta: { page, limit, total: result.total }
+        meta: { page, limit, total: result.total, totalPages: Math.ceil(result.total / limit) || 1 }
       });
     } catch (error: any) {
       if (error.message === 'EVENT_NOT_FOUND') {

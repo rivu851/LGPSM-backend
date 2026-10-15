@@ -1,8 +1,62 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.inviteeRepository = void 0;
+const mongoose_1 = __importDefault(require("mongoose"));
 const Invitee_1 = require("../models/Invitee");
+const CheckIn_1 = require("../models/CheckIn");
 exports.inviteeRepository = {
+    /**
+     * Same as findByEventId/countByEventId, but also joins each invitee against
+     * the checkins collection (scoped to `sessionId` when given) so check-in
+     * status can be filtered and paginated server-side instead of requiring the
+     * caller to fetch every invitee and every check-in record to cross-reference
+     * them in memory.
+     */
+    async findByEventIdWithCheckInStatus(eventId, options = {}) {
+        const matchStage = { eventId: new mongoose_1.default.Types.ObjectId(eventId), ...(options.filter || {}) };
+        const checkInMatch = { $expr: { $eq: ['$inviteeId', '$$inviteeId'] } };
+        if (options.sessionId) {
+            checkInMatch.sessionId = new mongoose_1.default.Types.ObjectId(options.sessionId);
+        }
+        const pipeline = [
+            { $match: matchStage },
+            {
+                $lookup: {
+                    from: CheckIn_1.CheckIn.collection.name,
+                    let: { inviteeId: '$_id' },
+                    pipeline: [{ $match: checkInMatch }, { $sort: { checkInAt: -1 } }, { $limit: 1 }],
+                    as: 'checkInRecord',
+                },
+            },
+            {
+                $addFields: {
+                    isCheckedIn: { $gt: [{ $size: '$checkInRecord' }, 0] },
+                    checkedInAt: { $arrayElemAt: ['$checkInRecord.checkInAt', 0] },
+                },
+            },
+        ];
+        if (options.checkInStatus) {
+            pipeline.push({ $match: { isCheckedIn: options.checkInStatus === 'CHECKED_IN' } });
+        }
+        pipeline.push({
+            $facet: {
+                data: [
+                    { $sort: options.sort || { createdAt: -1 } },
+                    { $skip: options.skip || 0 },
+                    { $limit: options.limit || 25 },
+                    { $project: { checkInRecord: 0 } },
+                ],
+                totalCount: [{ $count: 'count' }],
+            },
+        });
+        const [result] = await Invitee_1.Invitee.aggregate(pipeline);
+        const invitees = result?.data || [];
+        const total = result?.totalCount?.[0]?.count || 0;
+        return { invitees, total };
+    },
     async create(data) {
         const invitee = new Invitee_1.Invitee(data);
         return await invitee.save();

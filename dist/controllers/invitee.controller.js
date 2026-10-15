@@ -26,20 +26,25 @@ exports.inviteeController = {
         try {
             const organizerId = req.user.userId;
             const eventId = req.params.eventId;
-            const page = parseInt(req.query.page) || 1;
-            const limit = parseInt(req.query.limit) || 10;
+            const page = Math.max(parseInt(req.query.page) || 1, 1);
+            const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 100);
+            const checkInStatusParam = req.query.checkInStatus;
+            const checkInStatus = checkInStatusParam === 'CHECKED_IN' || checkInStatusParam === 'PENDING' ? checkInStatusParam : undefined;
             const options = {
                 page,
                 limit,
                 rsvpStatus: req.query.rsvpStatus,
                 invitationStatus: req.query.invitationStatus,
-                search: req.query.search
+                search: req.query.search,
+                sessionId: req.query.sessionId,
+                checkInStatus,
+                sessionAccessId: req.query.sessionAccessId,
             };
             const result = await invitee_service_1.inviteeService.getInvitees(eventId, organizerId, options, req.user.role);
             res.status(200).json({
                 success: true,
                 data: result.invitees,
-                meta: { page, limit, total: result.total }
+                meta: { page, limit, total: result.total, totalPages: Math.ceil(result.total / limit) || 1 }
             });
         }
         catch (error) {

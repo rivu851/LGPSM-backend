@@ -34,12 +34,19 @@ export const inviteeService = {
     return await inviteeRepository.create(inviteeData);
   },
 
-  async getInvitees(eventId: string, organizerId: string, options: { 
-    page?: number; 
+  async getInvitees(eventId: string, organizerId: string, options: {
+    page?: number;
     limit?: number;
     rsvpStatus?: string;
     invitationStatus?: string;
     search?: string;
+    sessionId?: string;
+    checkInStatus?: 'CHECKED_IN' | 'PENDING';
+    // Invitation-level session targeting (distinct from checkInStatus/sessionId
+    // above, which are about check-in records): matches invitees who are
+    // either invited to every session (no sessionAccess entries) or have an
+    // explicit allowed entry for this session.
+    sessionAccessId?: string;
   } = {}, role?: string) {
     const event = await findManageableEvent(eventId, organizerId, role);
     if (!event) {
@@ -53,22 +60,50 @@ export const inviteeService = {
     const filter: any = {};
     if (options.rsvpStatus) filter.rsvpStatus = options.rsvpStatus;
     if (options.invitationStatus) filter.invitationStatus = options.invitationStatus;
-    
+    const andConditions: any[] = [];
+    if (options.sessionAccessId) {
+      andConditions.push({
+        $or: [
+          { sessionAccess: { $size: 0 } },
+          { sessionAccess: { $elemMatch: { sessionId: options.sessionAccessId, allowed: true } } },
+        ],
+      });
+    }
+
     if (options.search) {
-      filter.$or = [
-        { name: { $regex: options.search, $options: 'i' } },
-        { email: { $regex: options.search, $options: 'i' } },
-        { mobile: { $regex: options.search, $options: 'i' } }
-      ];
+      const escaped = options.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = { $regex: escaped, $options: 'i' };
+      andConditions.push({
+        $or: [{ name: pattern }, { email: pattern }, { mobile: pattern }],
+      });
+    }
+
+    if (andConditions.length > 0) {
+      filter.$and = andConditions;
+    }
+
+    // Only pay for the check-in join when the caller actually needs check-in
+    // status (e.g. the check-in scanner's All/Checked-in/Pending filter) —
+    // every other list screen keeps the plain, cheaper query path.
+    if (options.checkInStatus || options.sessionId) {
+      const { invitees, total } = await inviteeRepository.findByEventIdWithCheckInStatus(eventId, {
+        filter,
+        sessionId: options.sessionId,
+        checkInStatus: options.checkInStatus,
+        sort: { createdAt: -1, _id: -1 },
+        skip,
+        limit,
+      });
+      return { invitees, total };
     }
 
     const invitees = await inviteeRepository.findByEventId(eventId, {
       filter,
-      sort: { createdAt: -1 },
+      sort: { createdAt: -1, _id: -1 },
       skip,
       limit
     });
-    
+
     const total = await inviteeRepository.countByEventId(eventId, filter);
 
     return { invitees, total };

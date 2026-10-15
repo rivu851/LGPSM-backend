@@ -39,6 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
+const morgan_1 = __importDefault(require("morgan"));
 const env_1 = require("./config/env");
 const errorHandler_1 = require("./middlewares/errorHandler");
 const auth_routes_1 = __importDefault(require("./routes/auth.routes"));
@@ -64,6 +65,11 @@ const app = (0, express_1.default)();
 app.set('trust proxy', 1);
 // Security and Middleware
 app.use((0, helmet_1.default)());
+// Per-request logging (method, path, status, response time). Silenced during
+// the test suite so Jest output stays readable.
+if (env_1.env.NODE_ENV !== 'test') {
+    app.use((0, morgan_1.default)('dev'));
+}
 app.use((0, cors_1.default)({
     origin: [
         env_1.env.FRONTEND_URL,

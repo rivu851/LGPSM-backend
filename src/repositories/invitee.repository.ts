@@ -1,6 +1,72 @@
+import mongoose from 'mongoose';
 import { Invitee, IInvitee } from '../models/Invitee';
+import { CheckIn } from '../models/CheckIn';
 
 export const inviteeRepository = {
+  /**
+   * Same as findByEventId/countByEventId, but also joins each invitee against
+   * the checkins collection (scoped to `sessionId` when given) so check-in
+   * status can be filtered and paginated server-side instead of requiring the
+   * caller to fetch every invitee and every check-in record to cross-reference
+   * them in memory.
+   */
+  async findByEventIdWithCheckInStatus(
+    eventId: string,
+    options: {
+      filter?: any;
+      sessionId?: string;
+      checkInStatus?: 'CHECKED_IN' | 'PENDING';
+      sort?: any;
+      skip?: number;
+      limit?: number;
+    } = {}
+  ): Promise<{ invitees: (IInvitee & { isCheckedIn: boolean; checkedInAt: Date | null })[]; total: number }> {
+    const matchStage: any = { eventId: new mongoose.Types.ObjectId(eventId), ...(options.filter || {}) };
+
+    const checkInMatch: any = { $expr: { $eq: ['$inviteeId', '$$inviteeId'] } };
+    if (options.sessionId) {
+      checkInMatch.sessionId = new mongoose.Types.ObjectId(options.sessionId);
+    }
+
+    const pipeline: any[] = [
+      { $match: matchStage },
+      {
+        $lookup: {
+          from: CheckIn.collection.name,
+          let: { inviteeId: '$_id' },
+          pipeline: [{ $match: checkInMatch }, { $sort: { checkInAt: -1 } }, { $limit: 1 }],
+          as: 'checkInRecord',
+        },
+      },
+      {
+        $addFields: {
+          isCheckedIn: { $gt: [{ $size: '$checkInRecord' }, 0] },
+          checkedInAt: { $arrayElemAt: ['$checkInRecord.checkInAt', 0] },
+        },
+      },
+    ];
+
+    if (options.checkInStatus) {
+      pipeline.push({ $match: { isCheckedIn: options.checkInStatus === 'CHECKED_IN' } });
+    }
+
+    pipeline.push({
+      $facet: {
+        data: [
+          { $sort: options.sort || { createdAt: -1 } },
+          { $skip: options.skip || 0 },
+          { $limit: options.limit || 25 },
+          { $project: { checkInRecord: 0 } },
+        ],
+        totalCount: [{ $count: 'count' }],
+      },
+    });
+
+    const [result] = await Invitee.aggregate(pipeline);
+    const invitees = result?.data || [];
+    const total = result?.totalCount?.[0]?.count || 0;
+    return { invitees, total };
+  },
   async create(data: Partial<IInvitee>): Promise<IInvitee> {
     const invitee = new Invitee(data);
     return await invitee.save();

@@ -54,8 +54,26 @@ exports.userController = {
                 throw { statusCode: 401, message: 'Unauthorized' };
             const roleFilter = req.query.role;
             const includeInactive = req.query.includeInactive === 'true';
-            const users = await user_service_1.userService.getUsers(req.user, roleFilter, includeInactive);
-            res.status(200).json({ success: true, data: users });
+            const page = req.query.page ? parseInt(req.query.page, 10) : undefined;
+            const limit = req.query.limit ? parseInt(req.query.limit, 10) : undefined;
+            const search = req.query.search?.trim() || undefined;
+            const result = await user_service_1.userService.getUsers(req.user, roleFilter, includeInactive, { page, limit, search });
+            res.status(200).json({
+                success: true,
+                data: result.users,
+                meta: { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages },
+            });
+        }
+        catch (error) {
+            next(error);
+        }
+    },
+    async getUserById(req, res, next) {
+        try {
+            if (!req.user)
+                throw { statusCode: 401, message: 'Unauthorized' };
+            const user = await user_service_1.userService.getUserById(req.user, req.params.id);
+            res.status(200).json({ success: true, data: user });
         }
         catch (error) {
             next(error);

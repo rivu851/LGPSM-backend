@@ -43,6 +43,7 @@ const user_repository_1 = require("../repositories/user.repository");
 const User_1 = require("../models/User");
 const Event_1 = require("../models/Event");
 const SystemUserAssignment_1 = require("../models/SystemUserAssignment");
+const whatsapp_service_1 = require("./whatsapp.service");
 // Staff an organizer works with: accounts they created plus staff assigned to their events
 async function staffVisibleToOrganizer(organizerId) {
     const eventIds = await Event_1.Event.find({ organizerId }).distinct('_id');
@@ -80,7 +81,8 @@ exports.userService = {
         return user;
     },
     async updateProfile(userId, data) {
-        const user = await user_repository_1.userRepository.updateById(userId, data);
+        const payload = data.phone !== undefined ? { ...data, phone: (0, whatsapp_service_1.normalizePhoneNumber)(data.phone) } : data;
+        const user = await user_repository_1.userRepository.updateById(userId, payload);
         if (!user) {
             throw { statusCode: 404, message: 'User not found' };
         }
@@ -119,7 +121,7 @@ exports.userService = {
         const user = await user_repository_1.userRepository.create({
             fullName: data.fullName,
             email: data.email,
-            phone: data.phone,
+            phone: data.phone ? (0, whatsapp_service_1.normalizePhoneNumber)(data.phone) : undefined,
             ...(data.profile ? { profile: data.profile } : {}),
             passwordHash: hashedPassword,
             authProvider: AuthProvider.LOCAL,
@@ -128,7 +130,7 @@ exports.userService = {
         });
         return user;
     },
-    async getUsers(actor, role, includeInactive = false) {
+    async getUsers(actor, role, includeInactive = false, options = {}) {
         const query = includeInactive && actor.role === User_1.Role.ADMIN ? {} : { isActive: true };
         if (role) {
             query.role = role;
@@ -138,7 +140,30 @@ exports.userService = {
             query.role = User_1.Role.SYSTEM_USER;
             query._id = { $in: await staffVisibleToOrganizer(actor.userId) };
         }
-        return await user_repository_1.userRepository.find(query);
+        if (options.search) {
+            const normalizedPhone = (0, whatsapp_service_1.normalizePhoneNumber)(options.search);
+            // Escape regex metacharacters so a search term like "a.b" or "(x)" can't
+            // alter the match or throw — this still isn't an indexed match on
+            // fullName/email, just a bounded scan over the already-filtered set.
+            const escaped = options.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const pattern = new RegExp(escaped, 'i');
+            query.$or = [
+                { fullName: pattern },
+                { email: pattern },
+                ...(normalizedPhone ? [{ phone: normalizedPhone }] : []),
+            ];
+        }
+        const page = Math.max(options.page || 1, 1);
+        const limit = Math.min(Math.max(options.limit || 25, 1), 100);
+        const skip = (page - 1) * limit;
+        const [users, total] = await Promise.all([
+            user_repository_1.userRepository.findPage(query, skip, limit),
+            user_repository_1.userRepository.count(query),
+        ]);
+        return { users, total, page, limit, totalPages: Math.ceil(total / limit) || 1 };
+    },
+    async getUserById(actor, userId) {
+        return await findManageableUser(actor, userId);
     },
     async deleteUser(actor, userId) {
         const target = await findManageableUser(actor, userId);
@@ -171,7 +196,7 @@ exports.userService = {
             updatePayload.email = data.email;
         }
         if (data.phone !== undefined)
-            updatePayload.phone = data.phone;
+            updatePayload.phone = (0, whatsapp_service_1.normalizePhoneNumber)(data.phone);
         if (data.isActive !== undefined && actor.role === User_1.Role.ADMIN)
             updatePayload.isActive = data.isActive;
         if (data.password) {

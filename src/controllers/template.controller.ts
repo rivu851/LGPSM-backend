@@ -15,8 +15,14 @@ export const templateController = {
     try {
       const categoryId = req.query.categoryId as string;
       const isAdmin = (req as any).user?.role === 'ADMIN';
-      const templates = await templateService.getTemplates(categoryId, isAdmin);
-      return res.status(200).json({ success: true, data: templates });
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+      const result = await templateService.getTemplates(categoryId, isAdmin, { page, limit });
+      return res.status(200).json({
+        success: true,
+        data: result.templates,
+        meta: { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages },
+      });
     } catch (error: any) {
       return res.status(500).json({ error: 'Internal Server Error', message: error.message });
     }

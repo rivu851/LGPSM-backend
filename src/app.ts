@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import morgan from 'morgan';
 import { env } from './config/env';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler';
 
@@ -30,6 +31,11 @@ app.set('trust proxy', 1);
 
 // Security and Middleware
 app.use(helmet());
+// Per-request logging (method, path, status, response time). Silenced during
+// the test suite so Jest output stays readable.
+if (env.NODE_ENV !== 'test') {
+  app.use(morgan('dev'));
+}
 app.use(cors({
   origin: [
     env.FRONTEND_URL,

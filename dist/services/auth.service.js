@@ -17,6 +17,7 @@ const User_1 = require("../models/User");
 const EmailVerification_1 = require("../models/EmailVerification");
 const alert_service_1 = require("./alert.service");
 const env_1 = require("../config/env");
+const whatsapp_service_1 = require("./whatsapp.service");
 const googleClient = new google_auth_library_1.OAuth2Client(env_1.env.GOOGLE_CLIENT_ID);
 // ─── OTP helpers (no plaintext ever leaves this module) ───────────────────────
 /** Generates a cryptographically random 6-digit string (zero-padded). */
@@ -80,7 +81,9 @@ exports.authService = {
         const user = await user_repository_1.userRepository.create({
             fullName: data.fullName,
             email: data.email,
-            phone: data.phone,
+            // Normalized at write time so phone-based login can do a direct
+            // indexed lookup instead of scanning for every legacy raw format.
+            phone: data.phone ? (0, whatsapp_service_1.normalizePhoneNumber)(data.phone) : undefined,
             passwordHash: hashedPassword,
             authProvider: User_1.AuthProvider.LOCAL,
             role: User_1.Role.ORGANIZER,
@@ -222,7 +225,29 @@ exports.authService = {
      *  - Admins and System Users are not affected by this gate.
      */
     async login(data) {
-        const user = await user_repository_1.userRepository.findByEmail(data.email);
+        if (!data.email && !data.phone) {
+            throw { statusCode: 400, message: 'Provide an email address or mobile number to sign in' };
+        }
+        const userByEmail = data.email ? await user_repository_1.userRepository.findByEmail(data.email) : null;
+        const phoneMatches = data.phone ? await user_repository_1.userRepository.findByPhone(data.phone) : [];
+        if (phoneMatches.length > 1) {
+            // Data integrity issue (phone isn't a unique field) — never guess which
+            // account was meant; fail safely and leave a trail for an admin to fix.
+            console.error('[auth.service] Ambiguous phone number matched multiple accounts during login attempt');
+            throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
+        }
+        const userByPhone = phoneMatches[0] ?? null;
+        let user;
+        if (data.email && data.phone) {
+            // Both identifiers supplied — they must resolve to the same account.
+            if (!userByEmail || !userByPhone || String(userByEmail._id) !== String(userByPhone._id)) {
+                throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
+            }
+            user = userByEmail;
+        }
+        else {
+            user = userByEmail ?? userByPhone;
+        }
         if (!user) {
             throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
         }

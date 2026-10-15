@@ -6,8 +6,21 @@ export const templateService = {
     return await templateRepository.create(data);
   },
 
-  async getTemplates(categoryId?: string, includeDrafts = false): Promise<ITemplate[]> {
-    return await templateRepository.findAll(categoryId, includeDrafts);
+  async getTemplates(
+    categoryId?: string,
+    includeDrafts = false,
+    options: { page?: number; limit?: number } = {}
+  ) {
+    const page = Math.max(options.page || 1, 1);
+    const limit = Math.min(Math.max(options.limit || 25, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const [templates, total] = await Promise.all([
+      templateRepository.findAll(categoryId, includeDrafts, { skip, limit }),
+      templateRepository.count(categoryId, includeDrafts),
+    ]);
+
+    return { templates, total, page, limit, totalPages: Math.ceil(total / limit) || 1 };
   },
 
   async getTemplateById(id: string): Promise<ITemplate> {

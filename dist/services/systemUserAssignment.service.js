@@ -9,7 +9,25 @@ const User_1 = require("../models/User");
 const Session_1 = require("../models/Session");
 const user_service_1 = require("./user.service");
 const eventAccess_1 = require("../utils/eventAccess");
+const event_repository_1 = require("../repositories/event.repository");
 const mongoose_1 = __importDefault(require("mongoose"));
+// Populate only selects a handful of Event fields (title/status/format/location/
+// schedule/organizerId) — invitationsSent is computed on the fly, same as the
+// events-list endpoint, so the mobile "Number of invites" figure isn't stuck
+// showing nothing for every assignment.
+async function withInvitationsSent(assignments) {
+    const plain = assignments.map((a) => (typeof a.toObject === 'function' ? a.toObject() : a));
+    const eventIds = plain
+        .map((a) => a.eventId && typeof a.eventId === 'object' ? a.eventId._id : null)
+        .filter((id) => !!id);
+    const counts = await (0, event_repository_1.getInvitationCounts)(eventIds);
+    plain.forEach((a) => {
+        if (a.eventId && typeof a.eventId === 'object') {
+            a.eventId.invitationsSent = counts.get(String(a.eventId._id)) || 0;
+        }
+    });
+    return plain;
+}
 const findAccessibleEvent = (eventId, actorId) => (0, eventAccess_1.findManageableEvent)(eventId, actorId);
 exports.systemUserAssignmentService = {
     async createAssignment(eventId, organizerId, data) {
@@ -56,15 +74,16 @@ exports.systemUserAssignmentService = {
     },
     async getAssignmentsByUser(userId, actor) {
         const assignments = await systemUserAssignment_repository_1.systemUserAssignmentRepository.findByUserId(userId);
+        const withCounts = await withInvitationsSent(assignments);
         if (actor.role === User_1.Role.ORGANIZER) {
             // Organizers only see this staff member's assignments on their own events
-            return assignments.filter((a) => {
+            return withCounts.filter((a) => {
                 const event = a.eventId;
                 const eventOrganizerId = event && typeof event === 'object' ? event.organizerId : null;
                 return eventOrganizerId && String(eventOrganizerId) === actor.userId;
             });
         }
-        return assignments;
+        return withCounts;
     },
     async updateAssignment(assignmentId, organizerId, sessionIds) {
         const assignment = await systemUserAssignment_repository_1.systemUserAssignmentRepository.findById(assignmentId);

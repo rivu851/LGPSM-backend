@@ -5,7 +5,26 @@ import { User, Role } from '../models/User';
 import { Session } from '../models/Session';
 import { staffVisibleToOrganizer } from './user.service';
 import { findManageableEvent, getUserRole } from '../utils/eventAccess';
+import { getInvitationCounts } from '../repositories/event.repository';
 import mongoose from 'mongoose';
+
+// Populate only selects a handful of Event fields (title/status/format/location/
+// schedule/organizerId) — invitationsSent is computed on the fly, same as the
+// events-list endpoint, so the mobile "Number of invites" figure isn't stuck
+// showing nothing for every assignment.
+async function withInvitationsSent(assignments: ISystemUserAssignment[]): Promise<any[]> {
+  const plain = assignments.map((a: any) => (typeof a.toObject === 'function' ? a.toObject() : a));
+  const eventIds = plain
+    .map((a) => a.eventId && typeof a.eventId === 'object' ? a.eventId._id : null)
+    .filter((id): id is mongoose.Types.ObjectId => !!id);
+  const counts = await getInvitationCounts(eventIds);
+  plain.forEach((a) => {
+    if (a.eventId && typeof a.eventId === 'object') {
+      a.eventId.invitationsSent = counts.get(String(a.eventId._id)) || 0;
+    }
+  });
+  return plain;
+}
 
 const findAccessibleEvent = (eventId: string, actorId: string) => findManageableEvent(eventId, actorId);
 
@@ -61,15 +80,16 @@ export const systemUserAssignmentService = {
 
   async getAssignmentsByUser(userId: string, actor: { userId: string; role: Role }) {
     const assignments = await systemUserAssignmentRepository.findByUserId(userId);
+    const withCounts = await withInvitationsSent(assignments);
     if (actor.role === Role.ORGANIZER) {
       // Organizers only see this staff member's assignments on their own events
-      return assignments.filter((a: any) => {
+      return withCounts.filter((a: any) => {
         const event = a.eventId;
         const eventOrganizerId = event && typeof event === 'object' ? event.organizerId : null;
         return eventOrganizerId && String(eventOrganizerId) === actor.userId;
       });
     }
-    return assignments;
+    return withCounts;
   },
 
   async updateAssignment(assignmentId: string, organizerId: string, sessionIds: string[]): Promise<ISystemUserAssignment> {

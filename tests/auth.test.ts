@@ -462,6 +462,86 @@ describe('ADMIN login is unaffected by email verification gate', () => {
   });
 });
 
+describe('Mobile-number login', () => {
+  const rawPhone = '98765 43210';
+  const normalizedPhone = '919876543210';
+
+  beforeAll(async () => {
+    const bcrypt = require('bcrypt');
+    const hash = await bcrypt.hash('PhonePass123!', 10);
+    await User.create({
+      fullName: 'Phone Login User',
+      email: 'phonelogin@example.com',
+      phone: normalizedPhone, // stored normalized, as auth.service.ts/user.service.ts now write it
+      passwordHash: hash,
+      authProvider: 'LOCAL',
+      role: Role.ADMIN,
+      isActive: true,
+      isEmailVerified: true,
+    });
+  });
+
+  it('logs in with phone + password only', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ phone: rawPhone, password: 'PhonePass123!' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.accessToken).toBeDefined();
+    expect(res.body.data.user.email).toBe('phonelogin@example.com');
+  });
+
+  it('still logs in with email + password only (unchanged path)', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'phonelogin@example.com', password: 'PhonePass123!' });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('logs in when both email and phone are supplied and match the same account', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'phonelogin@example.com', phone: rawPhone, password: 'PhonePass123!' });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('rejects mismatched email + phone (phone belongs to a different account)', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'phonelogin@example.com', phone: '919999999999', password: 'PhonePass123!' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('rejects when neither email nor phone is supplied', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ password: 'PhonePass123!' });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('fails safely when a phone number is ambiguous across accounts', async () => {
+    const bcrypt = require('bcrypt');
+    const hash = await bcrypt.hash('OtherPass123!', 10);
+    // A second account sharing the exact same normalized phone (data integrity issue).
+    await User.create({
+      fullName: 'Duplicate Phone User',
+      email: 'dupephone@example.com',
+      phone: normalizedPhone,
+      passwordHash: hash,
+      authProvider: 'LOCAL',
+      role: Role.ADMIN,
+      isActive: true,
+      isEmailVerified: true,
+    });
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ phone: rawPhone, password: 'PhonePass123!' });
+    expect(res.statusCode).toBe(401);
+
+    await User.deleteOne({ email: 'dupephone@example.com' });
+  });
+});
+
 describe('Forgot password still works', () => {
   it('returns success regardless of whether the email exists', async () => {
     const res = await request(app)

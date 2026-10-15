@@ -39,6 +39,13 @@ router.post(
   userController.createUser
 );
 
+// Endpoint for Admins and Organizers to view a single sub-user
+router.get(
+  '/:id',
+  authorizeRoles(Role.ADMIN, Role.ORGANIZER),
+  userController.getUserById
+);
+
 // Endpoint for Admins and Organizers to delete sub-users
 router.delete(
   '/:id',

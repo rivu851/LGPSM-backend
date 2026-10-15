@@ -1,8 +1,21 @@
 import { User, IUser, Role, AuthProvider } from '../models/User';
+import { normalizePhoneNumber } from '../services/whatsapp.service';
 
 export const userRepository = {
   async findByEmail(email: string): Promise<IUser | null> {
     return User.findOne({ email });
+  },
+
+  /**
+   * Looks up accounts by normalized phone number via the indexed `phone` field
+   * (no collection scan). Returns up to 2 matches so the caller can detect and
+   * safely reject an ambiguous match (phone isn't a unique field) rather than
+   * silently picking one account.
+   */
+  async findByPhone(rawPhone: string): Promise<IUser[]> {
+    const normalized = normalizePhoneNumber(rawPhone);
+    if (!normalized) return [];
+    return User.find({ phone: normalized }).limit(2);
   },
 
   async findById(id: string): Promise<IUser | null> {
@@ -37,5 +50,18 @@ export const userRepository = {
 
   async find(query: any = {}): Promise<IUser[]> {
     return User.find(query).select('-passwordHash').sort({ createdAt: -1 });
+  },
+
+  async findPage(query: any, skip: number, limit: number): Promise<IUser[]> {
+    return User.find(query)
+      .select('-passwordHash')
+      .sort({ createdAt: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+  },
+
+  async count(query: any = {}): Promise<number> {
+    return User.countDocuments(query);
   },
 };

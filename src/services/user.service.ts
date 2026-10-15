@@ -3,6 +3,7 @@ import { userRepository } from '../repositories/user.repository';
 import { Role, User } from '../models/User';
 import { Event } from '../models/Event';
 import { SystemUserAssignment } from '../models/SystemUserAssignment';
+import { normalizePhoneNumber } from './whatsapp.service';
 
 export interface Actor {
   userId: string;
@@ -49,7 +50,8 @@ export const userService = {
   },
 
   async updateProfile(userId: string, data: any) {
-    const user = await userRepository.updateById(userId, data);
+    const payload = data.phone !== undefined ? { ...data, phone: normalizePhoneNumber(data.phone) } : data;
+    const user = await userRepository.updateById(userId, payload);
     if (!user) {
       throw { statusCode: 404, message: 'User not found' };
     }
@@ -95,7 +97,7 @@ export const userService = {
     const user = await userRepository.create({
       fullName: data.fullName,
       email: data.email,
-      phone: data.phone,
+      phone: data.phone ? normalizePhoneNumber(data.phone) : undefined,
       ...(data.profile ? { profile: data.profile } : {}),
       passwordHash: hashedPassword,
       authProvider: AuthProvider.LOCAL,
@@ -106,7 +108,12 @@ export const userService = {
     return user;
   },
 
-  async getUsers(actor: Actor, role?: string, includeInactive = false) {
+  async getUsers(
+    actor: Actor,
+    role?: string,
+    includeInactive = false,
+    options: { page?: number; limit?: number; search?: string } = {}
+  ) {
     const query: any = includeInactive && actor.role === Role.ADMIN ? {} : { isActive: true };
     if (role) {
       query.role = role;
@@ -116,7 +123,35 @@ export const userService = {
       query.role = Role.SYSTEM_USER;
       query._id = { $in: await staffVisibleToOrganizer(actor.userId) };
     }
-    return await userRepository.find(query);
+
+    if (options.search) {
+      const normalizedPhone = normalizePhoneNumber(options.search);
+      // Escape regex metacharacters so a search term like "a.b" or "(x)" can't
+      // alter the match or throw — this still isn't an indexed match on
+      // fullName/email, just a bounded scan over the already-filtered set.
+      const escaped = options.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(escaped, 'i');
+      query.$or = [
+        { fullName: pattern },
+        { email: pattern },
+        ...(normalizedPhone ? [{ phone: normalizedPhone }] : []),
+      ];
+    }
+
+    const page = Math.max(options.page || 1, 1);
+    const limit = Math.min(Math.max(options.limit || 25, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const [users, total] = await Promise.all([
+      userRepository.findPage(query, skip, limit),
+      userRepository.count(query),
+    ]);
+
+    return { users, total, page, limit, totalPages: Math.ceil(total / limit) || 1 };
+  },
+
+  async getUserById(actor: Actor, userId: string) {
+    return await findManageableUser(actor, userId);
   },
 
   async deleteUser(actor: Actor, userId: string) {
@@ -150,7 +185,7 @@ export const userService = {
       }
       updatePayload.email = data.email;
     }
-    if (data.phone !== undefined) updatePayload.phone = data.phone;
+    if (data.phone !== undefined) updatePayload.phone = normalizePhoneNumber(data.phone);
     if (data.isActive !== undefined && actor.role === Role.ADMIN) updatePayload.isActive = data.isActive;
     if (data.password) {
       const { hashPassword } = await import('../utils/password');

@@ -17,6 +17,7 @@ import { AuthProvider, Role } from '../models/User';
 import { MAX_OTP_ATTEMPTS, OTP_EXPIRY_MINUTES } from '../models/EmailVerification';
 import { alertService } from './alert.service';
 import { env } from '../config/env';
+import { normalizePhoneNumber } from './whatsapp.service';
 
 const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID);
 
@@ -103,7 +104,9 @@ export const authService = {
     const user = await userRepository.create({
       fullName: data.fullName,
       email: data.email,
-      phone: data.phone,
+      // Normalized at write time so phone-based login can do a direct
+      // indexed lookup instead of scanning for every legacy raw format.
+      phone: data.phone ? normalizePhoneNumber(data.phone) : undefined,
       passwordHash: hashedPassword,
       authProvider: AuthProvider.LOCAL,
       role: Role.ORGANIZER,
@@ -279,8 +282,34 @@ export const authService = {
    *  - If `isEmailVerified === false` → 403 EMAIL_NOT_VERIFIED.
    *  - Admins and System Users are not affected by this gate.
    */
-  async login(data: { email: string; password: string; role?: string }) {
-    const user = await userRepository.findByEmail(data.email);
+  async login(data: { email?: string; phone?: string; password: string; role?: string }) {
+    if (!data.email && !data.phone) {
+      throw { statusCode: 400, message: 'Provide an email address or mobile number to sign in' };
+    }
+
+    const userByEmail = data.email ? await userRepository.findByEmail(data.email) : null;
+    const phoneMatches = data.phone ? await userRepository.findByPhone(data.phone) : [];
+
+    if (phoneMatches.length > 1) {
+      // Data integrity issue (phone isn't a unique field) — never guess which
+      // account was meant; fail safely and leave a trail for an admin to fix.
+      console.error(
+        '[auth.service] Ambiguous phone number matched multiple accounts during login attempt'
+      );
+      throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
+    }
+    const userByPhone = phoneMatches[0] ?? null;
+
+    let user;
+    if (data.email && data.phone) {
+      // Both identifiers supplied — they must resolve to the same account.
+      if (!userByEmail || !userByPhone || String(userByEmail._id) !== String(userByPhone._id)) {
+        throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
+      }
+      user = userByEmail;
+    } else {
+      user = userByEmail ?? userByPhone;
+    }
 
     if (!user) {
       throw { statusCode: 401, message: 'Invalid credentials or inactive account' };

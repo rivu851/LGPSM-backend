@@ -9,8 +9,13 @@ exports.registerSchema = zod_1.z.object({
     phone: zod_1.z.string().optional(),
     role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });
+// Mobile number is the primary identifier; email remains a valid alternative.
+// "At least one of the two" is enforced in authService.login(), not here —
+// this route's validate() middleware doesn't surface a top-level `message`
+// for Zod refine failures, only the raw field-error tree.
 exports.loginSchema = zod_1.z.object({
-    email: zod_1.z.string().email('Invalid email format'),
+    email: zod_1.z.string().email('Invalid email format').optional(),
+    phone: zod_1.z.string().min(4, 'Invalid mobile number').optional(),
     password: zod_1.z.string().min(1, 'Password is required'),
     role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });

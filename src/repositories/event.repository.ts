@@ -96,19 +96,28 @@ const LIST_POPULATE = [
   { path: 'categoryId', select: 'name subcategories' }
 ];
 
+// Number of invitees per event who were sent an invitation (or a send was attempted).
+// Shared by the events-list endpoint (withInvitationCounts below) and by any other
+// endpoint that returns events and needs the same "Number of invites" figure
+// (e.g. a System User's assigned-events list) without duplicating this aggregation.
+export async function getInvitationCounts(eventIds: any[]): Promise<Map<string, number>> {
+  if (eventIds.length === 0) return new Map();
+  const counts = await Invitee.aggregate([
+    { $match: { eventId: { $in: eventIds }, invitationStatus: { $ne: 'PENDING' } } },
+    { $group: { _id: '$eventId', count: { $sum: 1 } } }
+  ]);
+  return new Map(counts.map((c) => [String(c._id), c.count as number]));
+}
+
 // Number of invitees per event who were sent an invitation (or a send was attempted),
 // plus each event's session names for the list card's "Sessions: X, Y" line.
 async function withInvitationCounts(events: IEvent[]): Promise<any[]> {
   if (events.length === 0) return [];
   const eventIds = events.map((e) => e._id);
-  const [counts, sessions] = await Promise.all([
-    Invitee.aggregate([
-      { $match: { eventId: { $in: eventIds }, invitationStatus: { $ne: 'PENDING' } } },
-      { $group: { _id: '$eventId', count: { $sum: 1 } } }
-    ]),
+  const [byEvent, sessions] = await Promise.all([
+    getInvitationCounts(eventIds),
     Session.find({ eventId: { $in: eventIds } }, 'eventId name').sort({ 'schedule.start': 1 }).lean()
   ]);
-  const byEvent = new Map(counts.map((c) => [String(c._id), c.count as number]));
   const sessionsByEvent = new Map<string, string[]>();
   sessions.forEach((s: any) => {
     const key = String(s.eventId);
