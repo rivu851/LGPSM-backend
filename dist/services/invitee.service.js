@@ -83,6 +83,7 @@ exports.inviteeService = {
         if (options.sessionAccessId) {
             andConditions.push({
                 $or: [
+                    { sessionAccess: { $exists: false } },
                     { sessionAccess: { $size: 0 } },
                     { sessionAccess: { $elemMatch: { sessionId: options.sessionAccessId, allowed: true } } },
                 ],

@@ -28,6 +28,9 @@ export interface InvitationCardData {
     timeSub?: string;
     venue?: string;
     locationSub?: string;
+    // Organizer's own uploaded event photo (Event.logoKey, resolved via resolveImageKeyBase64),
+    // not Figma placeholder content — absent when the organizer hasn't uploaded one.
+    photoBase64?: string;
   };
   sessions: CardSessionData[];
   qrDataUrl?: string;
@@ -81,6 +84,27 @@ function getLogoBase64(): string {
     console.warn('Could not load LGPSM Logo.png from disk:', err);
   }
   return '';
+}
+
+// Decorative card assets bundled with this repo (src/assets/cardDesigns) — cached after first
+// read since the same files are re-embedded on every card render.
+const cardAssetCache = new Map<string, string>();
+function getCardAssetBase64(fileName: string): string {
+  const cached = cardAssetCache.get(fileName);
+  if (cached !== undefined) return cached;
+  let result = '';
+  try {
+    const assetPath = path.join(__dirname, '../assets/cardDesigns', fileName);
+    if (fs.existsSync(assetPath)) {
+      const buffer = fs.readFileSync(assetPath);
+      const ext = path.extname(fileName).slice(1);
+      result = `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${buffer.toString('base64')}`;
+    }
+  } catch (err) {
+    console.warn(`Could not load card asset ${fileName}:`, err);
+  }
+  cardAssetCache.set(fileName, result);
+  return result;
 }
 
 function escapeXml(unsafe: string = ''): string {
@@ -472,6 +496,7 @@ async function buildWeddingSVG(data: InvitationCardData): Promise<string> {
   const dateParts = parseCardDateParts(data.event.date);
   const venue = data.event.venue || 'Venue to be announced';
   const locationSub = data.event.locationSub || '';
+  const photoHref = data.event.photoBase64 || '';
 
   // Simple decorative wreath: a ring of small leaf-like ellipses.
   let wreathLeaves = '';
@@ -487,8 +512,12 @@ async function buildWeddingSVG(data: InvitationCardData): Promise<string> {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="weddingPhotoClip"><circle cx="${width / 2}" cy="430" r="160" /></clipPath>
+  </defs>
   <rect width="${width}" height="${height}" fill="#FFFDF8" />
 
+  ${photoHref ? `<image href="${photoHref}" x="${width / 2 - 160}" y="270" width="320" height="320" preserveAspectRatio="xMidYMid slice" clip-path="url(#weddingPhotoClip)" />` : ''}
   <g transform="translate(${width / 2}, 430)">${wreathLeaves}</g>
 
   <text x="${width / 2}" y="760" text-anchor="middle" font-family="${serif}" font-size="58" fill="#202020">${escapeXml(names)}</text>
@@ -531,13 +560,22 @@ async function buildRiceCeremonySVG(data: InvitationCardData): Promise<string> {
   const dateParts = parseCardDateParts(data.event.date);
   const venue = data.event.venue || 'Venue to be announced';
   const locationSub = data.event.locationSub || '';
+  const photoHref = data.event.photoBase64 || '';
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="riceCeremonyPhotoClip"><circle cx="${width / 2}" cy="200" r="100" /></clipPath>
+  </defs>
   <rect width="${width}" height="${height}" fill="#660410" />
   <!-- Gold border frame -->
   <rect x="50" y="50" width="${width - 100}" height="${height - 100}" fill="none" stroke="#D4A24C" stroke-width="3" />
   <rect x="64" y="64" width="${width - 128}" height="${height - 128}" fill="none" stroke="#D4A24C" stroke-width="1" />
+
+  ${photoHref
+    ? `<image href="${photoHref}" x="${width / 2 - 100}" y="100" width="200" height="200" preserveAspectRatio="xMidYMid slice" clip-path="url(#riceCeremonyPhotoClip)" />
+  <circle cx="${width / 2}" cy="200" r="100" fill="none" stroke="#D4A24C" stroke-width="3" />`
+    : ''}
 
   <text x="${width / 2}" y="320" text-anchor="middle" font-family="${serif}" font-size="54" letter-spacing="4" fill="#F7ECD9">RICE CEREMONY</text>
   <text x="${width / 2}" y="370" text-anchor="middle" font-family="${serif}" font-size="24" letter-spacing="6" fill="#D4A24C">OF OUR BELOVED CHILD</text>
@@ -574,18 +612,26 @@ async function buildBirthdaySVG(data: InvitationCardData): Promise<string> {
   const venue = data.event.venue || 'Venue to be announced';
   const locationSub = data.event.locationSub || '';
 
-  // Procedural gold confetti scatter (deterministic, no RNG needed for stability).
-  const confettiSeeds = [0.08, 0.2, 0.33, 0.41, 0.52, 0.63, 0.71, 0.82, 0.91, 0.15, 0.27, 0.58, 0.76, 0.95];
-  const confetti = (yBase: number) =>
-    confettiSeeds
-      .map((s, i) => {
-        const cx = s * width;
-        const cy = yBase + ((i * 37) % 80);
-        const r = 4 + ((i * 13) % 10);
-        const colors = ['#D4A24C', '#F2C879', '#FFFFFF'];
-        return `<circle cx="${cx.toFixed(0)}" cy="${cy}" r="${r}" fill="${colors[i % colors.length]}" opacity="0.85" />`;
-      })
-      .join('');
+  // Gold balloons/confetti/gift-box corner art (from the approved invitation card design file),
+  // composited with its real alpha mask. Falls back to a plain procedural dot scatter if the
+  // bundled asset is ever missing so the card never breaks.
+  const balloonsHref = getCardAssetBase64('birthday-balloons-corner.png');
+  const balloonsDecoration = balloonsHref
+    ? `<image href="${balloonsHref}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none" opacity="0.92" />`
+    : (() => {
+        const confettiSeeds = [0.08, 0.2, 0.33, 0.41, 0.52, 0.63, 0.71, 0.82, 0.91, 0.15, 0.27, 0.58, 0.76, 0.95];
+        const dots = (yBase: number) =>
+          confettiSeeds
+            .map((s, i) => {
+              const cx = s * width;
+              const cy = yBase + ((i * 37) % 80);
+              const r = 4 + ((i * 13) % 10);
+              const colors = ['#D4A24C', '#F2C879', '#FFFFFF'];
+              return `<circle cx="${cx.toFixed(0)}" cy="${cy}" r="${r}" fill="${colors[i % colors.length]}" opacity="0.85" />`;
+            })
+            .join('');
+        return dots(40) + dots(height - 120);
+      })();
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -597,7 +643,7 @@ async function buildBirthdaySVG(data: InvitationCardData): Promise<string> {
   </defs>
   <rect width="${width}" height="${height}" fill="url(#bdayBg)" />
 
-  ${confetti(40)}
+  ${balloonsDecoration}
 
   <text x="${width / 2}" y="310" text-anchor="middle" font-family="'Inter', Arial, sans-serif" font-weight="500" font-size="28" letter-spacing="4" fill="#F2C879">PLEASE JOIN US TO CELEBRATE</text>
   <text x="${width / 2}" y="420" text-anchor="middle" font-family="'Georgia', serif" font-weight="700" font-size="84" fill="#D4A24C">Birthday Party</text>
@@ -622,8 +668,6 @@ async function buildBirthdaySVG(data: InvitationCardData): Promise<string> {
   <text x="${width / 2}" y="1610" text-anchor="middle" font-family="'Inter', Arial, sans-serif" font-weight="600" font-size="32" fill="#FFFFFF">${dateParts.monthName}</text>
 
   <text x="${width / 2}" y="1700" text-anchor="middle" font-family="'Inter', Arial, sans-serif" font-weight="500" font-size="30" fill="#E0E0E0">${escapeXml(venue)}${locationSub ? `, ${escapeXml(locationSub)}` : ''}</text>
-
-  ${confetti(height - 120)}
 </svg>`;
 }
 

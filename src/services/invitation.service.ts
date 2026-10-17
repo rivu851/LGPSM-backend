@@ -14,6 +14,7 @@ import { decryptToken, encryptToken } from '../utils/tokenCipher';
 import { sendEmail } from '../utils/email.provider';
 import { whatsappService } from './whatsapp.service';
 import { invitationCardService } from './invitationCard.service';
+import { resolveImageKeyBase64 } from '../utils/resolveImageBase64';
 
 function buildFormalInvitationEmailHTML(params: {
   eventTitle: string;
@@ -163,6 +164,9 @@ export const invitationService = {
 
     const template = event.templateId ? await Template.findById(event.templateId).select('cardDesign').lean() : null;
     const cardDesign = template?.cardDesign;
+    // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
+    // every invitee's card for this event.
+    const eventPhotoBase64 = await resolveImageKeyBase64((event as any).media?.logoKey);
 
     // Filter unique inviteeIds to prevent duplicate processing in one request
     const idsArray = Array.isArray(inviteeIds) ? inviteeIds : typeof inviteeIds === "string" ? [inviteeIds] : [];
@@ -232,7 +236,8 @@ export const invitationService = {
             startTime: eventTime,
             timeSub: 'ONWARDS',
             venue,
-            locationSub
+            locationSub,
+            photoBase64: eventPhotoBase64
           },
           sessions: assignedSessions,
           qrDataUrl,
@@ -398,6 +403,9 @@ export const invitationService = {
     if (!event) throw new Error('EVENT_NOT_FOUND');
     const template = event.templateId ? await Template.findById(event.templateId).select('cardDesign').lean() : null;
     const cardDesign = template?.cardDesign;
+    // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
+    // every invitee's card for this event.
+    const eventPhotoBase64 = await resolveImageKeyBase64((event as any).media?.logoKey);
     const allSessions = await Session.find({ eventId });
 
     const idsArray = Array.isArray(invitationIds) ? invitationIds : typeof invitationIds === "string" ? [invitationIds] : [];
@@ -467,7 +475,8 @@ export const invitationService = {
             startTime: eventTime,
             timeSub: 'ONWARDS',
             venue,
-            locationSub
+            locationSub,
+            photoBase64: eventPhotoBase64
           },
           sessions: assignedSessions,
           qrDataUrl,
@@ -656,6 +665,9 @@ export const invitationService = {
     if (!event) throw new Error('EVENT_NOT_FOUND');
     const template = event.templateId ? await Template.findById(event.templateId).select('cardDesign').lean() : null;
     const cardDesign = template?.cardDesign;
+    // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
+    // every invitee's card for this event.
+    const eventPhotoBase64 = await resolveImageKeyBase64((event as any).media?.logoKey);
 
     // Without a specific invitee the preview shows a neutral placeholder guest
     let inviteeName = 'Guest Name';
@@ -688,7 +700,8 @@ export const invitationService = {
         startTime: eventTime,
         timeSub: 'ONWARDS',
         venue,
-        locationSub
+        locationSub,
+        photoBase64: eventPhotoBase64
       },
       sessions: assignedSessions,
       qrDataUrl,

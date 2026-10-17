@@ -8,6 +8,7 @@ const invitationContent_1 = require("../utils/invitationContent");
 const alert_service_1 = require("./alert.service");
 const mongoose_1 = __importDefault(require("mongoose"));
 const Event_1 = require("../models/Event");
+const Template_1 = require("../models/Template");
 const Invitee_1 = require("../models/Invitee");
 const Invitation_1 = require("../models/Invitation");
 const Session_1 = require("../models/Session");
@@ -19,6 +20,7 @@ const tokenCipher_1 = require("../utils/tokenCipher");
 const email_provider_1 = require("../utils/email.provider");
 const whatsapp_service_1 = require("./whatsapp.service");
 const invitationCard_service_1 = require("./invitationCard.service");
+const resolveImageBase64_1 = require("../utils/resolveImageBase64");
 function buildFormalInvitationEmailHTML(params) {
     const { eventTitle, inviteeName, eventDate, eventTime, venue, dietaryPreference, invitationUrl, cid, cardCid, isReminder } = params;
     return `
@@ -152,6 +154,11 @@ exports.invitationService = {
         }
         if (!event)
             throw new Error('EVENT_NOT_FOUND');
+        const template = event.templateId ? await Template_1.Template.findById(event.templateId).select('cardDesign').lean() : null;
+        const cardDesign = template?.cardDesign;
+        // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
+        // every invitee's card for this event.
+        const eventPhotoBase64 = await (0, resolveImageBase64_1.resolveImageKeyBase64)(event.media?.logoKey);
         // Filter unique inviteeIds to prevent duplicate processing in one request
         const idsArray = Array.isArray(inviteeIds) ? inviteeIds : typeof inviteeIds === "string" ? [inviteeIds] : [];
         const validObjectIds = idsArray
@@ -209,11 +216,13 @@ exports.invitationService = {
                         startTime: eventTime,
                         timeSub: 'ONWARDS',
                         venue,
-                        locationSub
+                        locationSub,
+                        photoBase64: eventPhotoBase64
                     },
                     sessions: assignedSessions,
                     qrDataUrl,
-                    invitationUrl
+                    invitationUrl,
+                    cardDesign
                 });
             }
             catch (err) {
@@ -366,6 +375,11 @@ exports.invitationService = {
         }
         if (!event)
             throw new Error('EVENT_NOT_FOUND');
+        const template = event.templateId ? await Template_1.Template.findById(event.templateId).select('cardDesign').lean() : null;
+        const cardDesign = template?.cardDesign;
+        // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
+        // every invitee's card for this event.
+        const eventPhotoBase64 = await (0, resolveImageBase64_1.resolveImageKeyBase64)(event.media?.logoKey);
         const allSessions = await Session_1.Session.find({ eventId });
         const idsArray = Array.isArray(invitationIds) ? invitationIds : typeof invitationIds === "string" ? [invitationIds] : [];
         const validObjectIds = idsArray
@@ -421,11 +435,13 @@ exports.invitationService = {
                         startTime: eventTime,
                         timeSub: 'ONWARDS',
                         venue,
-                        locationSub
+                        locationSub,
+                        photoBase64: eventPhotoBase64
                     },
                     sessions: assignedSessions,
                     qrDataUrl,
-                    invitationUrl
+                    invitationUrl,
+                    cardDesign
                 });
             }
             catch (err) {
@@ -597,6 +613,11 @@ exports.invitationService = {
         }
         if (!event)
             throw new Error('EVENT_NOT_FOUND');
+        const template = event.templateId ? await Template_1.Template.findById(event.templateId).select('cardDesign').lean() : null;
+        const cardDesign = template?.cardDesign;
+        // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
+        // every invitee's card for this event.
+        const eventPhotoBase64 = await (0, resolveImageBase64_1.resolveImageKeyBase64)(event.media?.logoKey);
         // Without a specific invitee the preview shows a neutral placeholder guest
         let inviteeName = 'Guest Name';
         let inviteeCompanyName = '';
@@ -624,11 +645,13 @@ exports.invitationService = {
                 startTime: eventTime,
                 timeSub: 'ONWARDS',
                 venue,
-                locationSub
+                locationSub,
+                photoBase64: eventPhotoBase64
             },
             sessions: assignedSessions,
             qrDataUrl,
-            invitationUrl
+            invitationUrl,
+            cardDesign
         });
         return { png, qr: issuedToken ? 'ISSUED' : 'SAMPLE' };
     }

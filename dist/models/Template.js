@@ -33,14 +33,23 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Template = void 0;
+exports.Template = exports.CARD_DESIGNS = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
+exports.CARD_DESIGNS = [
+    'CLASSIC',
+    'CORPORATE_V1',
+    'CORPORATE_V2',
+    'WEDDING',
+    'RICE_CEREMONY',
+    'BIRTHDAY'
+];
 const TemplateSchema = new mongoose_1.Schema({
     name: { type: String, required: true },
     categoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Category' },
     subcategoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Category' },
     previewImageKey: { type: String },
     templateData: { type: mongoose_1.Schema.Types.Mixed, default: {} },
+    cardDesign: { type: String, enum: exports.CARD_DESIGNS, default: 'CLASSIC' },
     isSystemTemplate: { type: Boolean, default: true },
     // Drafts are visible to admins only; organizers can pick published templates
     isPublished: { type: Boolean, default: true },
