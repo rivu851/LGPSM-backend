@@ -1,11 +1,22 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+export const CARD_DESIGNS = [
+  'CLASSIC',
+  'CORPORATE_V1',
+  'CORPORATE_V2',
+  'WEDDING',
+  'RICE_CEREMONY',
+  'BIRTHDAY'
+] as const;
+export type CardDesign = (typeof CARD_DESIGNS)[number];
+
 export interface ITemplate extends Document {
   name: string;
   categoryId?: mongoose.Types.ObjectId;
   subcategoryId?: mongoose.Types.ObjectId;
   previewImageKey?: string;
   templateData?: Record<string, any>;
+  cardDesign: CardDesign;
   isSystemTemplate: boolean;
   isPublished: boolean;
   isActive: boolean;
@@ -20,6 +31,7 @@ const TemplateSchema: Schema = new Schema(
     subcategoryId: { type: Schema.Types.ObjectId, ref: 'Category' },
     previewImageKey: { type: String },
     templateData: { type: Schema.Types.Mixed, default: {} },
+    cardDesign: { type: String, enum: CARD_DESIGNS, default: 'CLASSIC' },
     isSystemTemplate: { type: Boolean, default: true },
     // Drafts are visible to admins only; organizers can pick published templates
     isPublished: { type: Boolean, default: true },

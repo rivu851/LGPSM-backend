@@ -2,6 +2,7 @@ import { buildInvitationContent } from '../utils/invitationContent';
 import { alertService } from './alert.service';
 import mongoose from 'mongoose';
 import { Event } from '../models/Event';
+import { Template } from '../models/Template';
 import { Invitee, InvitationStatus } from '../models/Invitee';
 import { Invitation, DeliveryChannel, InvitationDeliveryStatus } from '../models/Invitation';
 import { Session } from '../models/Session';
@@ -160,6 +161,9 @@ export const invitationService = {
     }
     if (!event) throw new Error('EVENT_NOT_FOUND');
 
+    const template = event.templateId ? await Template.findById(event.templateId).select('cardDesign').lean() : null;
+    const cardDesign = template?.cardDesign;
+
     // Filter unique inviteeIds to prevent duplicate processing in one request
     const idsArray = Array.isArray(inviteeIds) ? inviteeIds : typeof inviteeIds === "string" ? [inviteeIds] : [];
     const validObjectIds = idsArray
@@ -232,7 +236,8 @@ export const invitationService = {
           },
           sessions: assignedSessions,
           qrDataUrl,
-          invitationUrl
+          invitationUrl,
+          cardDesign
         });
       } catch (err) {
         console.error('Failed to generate high-resolution invitation card PNG:', err);
@@ -391,6 +396,8 @@ export const invitationService = {
       event = await Event.findOne({ _id: eventId, organizerId });
     }
     if (!event) throw new Error('EVENT_NOT_FOUND');
+    const template = event.templateId ? await Template.findById(event.templateId).select('cardDesign').lean() : null;
+    const cardDesign = template?.cardDesign;
     const allSessions = await Session.find({ eventId });
 
     const idsArray = Array.isArray(invitationIds) ? invitationIds : typeof invitationIds === "string" ? [invitationIds] : [];
@@ -464,7 +471,8 @@ export const invitationService = {
           },
           sessions: assignedSessions,
           qrDataUrl,
-          invitationUrl
+          invitationUrl,
+          cardDesign
         });
       } catch (err) {
         console.error('Failed to generate high-resolution invitation card PNG for resend:', err);
@@ -646,6 +654,8 @@ export const invitationService = {
       event = await Event.findOne({ _id: eventId, organizerId });
     }
     if (!event) throw new Error('EVENT_NOT_FOUND');
+    const template = event.templateId ? await Template.findById(event.templateId).select('cardDesign').lean() : null;
+    const cardDesign = template?.cardDesign;
 
     // Without a specific invitee the preview shows a neutral placeholder guest
     let inviteeName = 'Guest Name';
@@ -682,7 +692,8 @@ export const invitationService = {
       },
       sessions: assignedSessions,
       qrDataUrl,
-      invitationUrl
+      invitationUrl,
+      cardDesign
     });
     return { png, qr: issuedToken ? ('ISSUED' as const) : ('SAMPLE' as const) };
   }
