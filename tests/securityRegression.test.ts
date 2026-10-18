@@ -181,7 +181,7 @@ describe('Password flows regression', () => {
     const withAccess = await request(app).post('/api/auth/reset-password').send({ token: accessToken, newPassword: 'Hijacked123!' });
     expect(withAccess.status).toBe(401);
 
-    const resetToken = generatePasswordResetToken((user!._id as any).toString(), Role.ORGANIZER);
+    const resetToken = generatePasswordResetToken((user!._id as any).toString(), Role.ORGANIZER, user!.passwordHash);
     const asBearer = await request(app).get('/api/users/profile').set('Authorization', `Bearer ${resetToken}`);
     expect(asBearer.status).toBe(401);
 

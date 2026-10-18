@@ -9,6 +9,9 @@ import { InviteeSource } from '../models/Session';
 import { InvitationStatus, RsvpStatus } from '../models/Invitee';
 import { CheckIn } from '../models/CheckIn';
 
+// Upper bound for one spreadsheet import (header row excluded)
+export const MAX_IMPORT_ROWS = 5000;
+
 export const inviteeService = {
   async createInvitee(eventId: string, organizerId: string, data: Partial<IInvitee>, role?: string): Promise<IInvitee> {
     const event = await findManageableEvent(eventId, organizerId, role);
@@ -261,7 +264,8 @@ export const inviteeService = {
 
     let workbook: xlsx.WorkBook;
     try {
-      workbook = xlsx.read(fileBuffer, { type: 'buffer' });
+      // sheetRows bounds how much of a (possibly highly compressed) sheet is ever materialised
+      workbook = xlsx.read(fileBuffer, { type: 'buffer', sheetRows: MAX_IMPORT_ROWS + 2 });
     } catch {
       throw { statusCode: 400, message: 'The file could not be read as an Excel sheet' };
     }
@@ -282,6 +286,10 @@ export const inviteeService = {
       const digits = v.replace(/\D/g, '');
       return digits.length >= 7 && digits.length <= 15;
     };
+
+    if (rowsRaw.length > MAX_IMPORT_ROWS + 1) {
+      throw { statusCode: 400, message: `A sheet can contain at most ${MAX_IMPORT_ROWS} invitees. Split the file and import it in parts.` };
+    }
 
     const nonBlankRows = rowsRaw.filter(r => Array.isArray(r) && r.some(cell => cleanCellValue(cell) !== ''));
     const results = {

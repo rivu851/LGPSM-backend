@@ -18,7 +18,9 @@ export const notificationPreferencesSchema = z.object({
   invitationSendFailed: flag,
   dayBeforeEventAlert: flag,
   reportDownload: flag,
-  customTemplateRequest: flag
+  customTemplateRequest: flag,
+  // Added later than the other keys; optional so clients that don't send it yet keep working
+  newContactMessage: flag.optional()
 }).strict();
 
 export const pricingSchema = z.object({

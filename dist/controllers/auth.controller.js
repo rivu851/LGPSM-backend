@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.authController = void 0;
 const auth_service_1 = require("../services/auth.service");
+const securityLog_1 = require("../utils/securityLog");
 exports.authController = {
     async register(req, res, next) {
         try {
@@ -18,6 +19,9 @@ exports.authController = {
             res.status(200).json({ success: true, data: result });
         }
         catch (error) {
+            // No identifier or password is logged, only that a sign-in failed and why (status)
+            if (error?.statusCode === 401 || error?.statusCode === 403)
+                (0, securityLog_1.securityEvent)('LOGIN_FAILED', req, { status: error.statusCode });
             next(error);
         }
     },

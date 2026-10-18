@@ -29,7 +29,8 @@ export const categoryController = {
       const categories = await categoryService.getCategories(activeOnly);
       return res.status(200).json({ success: true, data: categories });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   },
 
@@ -39,7 +40,8 @@ export const categoryController = {
       return res.status(200).json({ success: true, data: category });
     } catch (error: any) {
       if (error.message === 'CATEGORY_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Category not found' });
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   },
 
@@ -59,7 +61,8 @@ export const categoryController = {
       return res.status(200).json({ success: true, message: 'Category deactivated successfully', data: category });
     } catch (error: any) {
       if (error.message === 'CATEGORY_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Category not found' });
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   }
 };

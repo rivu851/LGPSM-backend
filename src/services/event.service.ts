@@ -14,6 +14,20 @@ import { platformSettingsService } from './platformSettings.service';
 import { alertService } from './alert.service';
 import { formatCardDate, formatCardTime } from '../utils/invitationContent';
 
+// Client-writable event fields. Anything else in a request body (organizerId, status flags,
+// operationalDataCleared, pricing, ...) is server-controlled and is dropped before it reaches the database.
+const EVENT_WRITABLE_FIELDS = [
+  'title', 'description', 'categoryId', 'subcategoryId', 'format', 'location', 'contactNumber',
+  'schedule', 'rsvp', 'attendeeSettings', 'dietaryPreference', 'templateId', 'media'
+] as const;
+const pickEventFields = (data: any, extra: readonly string[] = []) => {
+  const out: Record<string, any> = {};
+  for (const key of [...EVENT_WRITABLE_FIELDS, ...extra]) {
+    if (data && data[key] !== undefined) out[key] = data[key];
+  }
+  return out;
+};
+
 export class EventService {
   /**
    * Creates a new event for an organizer.
@@ -25,7 +39,9 @@ export class EventService {
    * - Subsequent changes to the platform's global price rate (by Super Admin) do NOT modify existing
    *   or historical event rates.
    */
-  async createEvent(organizerId: string, eventData: any): Promise<IEvent> {
+  async createEvent(organizerId: string, rawEventData: any): Promise<IEvent> {
+    // The owner is always the authenticated caller (or, for admins, the id the controller passes in)
+    const eventData: any = pickEventFields(rawEventData, ['startDate', 'endDate']);
     // Resolve Category
     let categoryId = eventData.categoryId;
     let categoryExists = categoryId && mongoose.Types.ObjectId.isValid(categoryId) 
@@ -65,10 +81,7 @@ export class EventService {
     // Admin event settings apply on the server too
     await platformSettingsService.applyEventFeatureRules(eventData, true);
 
-    // Resolve target organizer ID from eventData.organizerId or organizerId argument
-    const targetOrganizer = (eventData.organizerId && mongoose.Types.ObjectId.isValid(eventData.organizerId))
-      ? eventData.organizerId
-      : organizerId;
+    const targetOrganizer = organizerId;
 
     // Force organizerId and default status to PUBLISHED so it shows on event listing
     const dataToCreate = {
@@ -136,7 +149,8 @@ export class EventService {
     return json;
   }
 
-  async updateEvent(eventId: string, organizerId: string, updateData: any, role?: string): Promise<IEvent> {
+  async updateEvent(eventId: string, organizerId: string, rawUpdateData: any, role?: string): Promise<IEvent> {
+    const updateData: any = pickEventFields(rawUpdateData, ['status']);
     const existingEvent = await findManageableEvent(eventId, organizerId, role);
     if (!existingEvent) throw new Error('EVENT_NOT_FOUND');
 

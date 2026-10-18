@@ -2,8 +2,11 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { publicInvitationController } from '../controllers/publicInvitation.controller';
 import { submitRsvpSchema } from '../validators/publicInvitation.validator';
 import { ZodSchema } from 'zod';
+import { publicInvitationLimiter } from '../middlewares/rateLimiter';
 
 const router = Router();
+
+router.use(publicInvitationLimiter);
 
 const validate = (schema: ZodSchema) => (req: Request, res: Response, next: NextFunction) => {
   try {

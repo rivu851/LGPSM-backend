@@ -26,7 +26,8 @@ exports.templateController = {
             });
         }
         catch (error) {
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async getTemplateById(req, res) {
@@ -37,7 +38,8 @@ exports.templateController = {
         catch (error) {
             if (error.message === 'TEMPLATE_NOT_FOUND')
                 return res.status(404).json({ error: 'Not Found', message: 'Template not found' });
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async updateTemplate(req, res) {
@@ -59,7 +61,8 @@ exports.templateController = {
         catch (error) {
             if (error.message === 'TEMPLATE_NOT_FOUND')
                 return res.status(404).json({ error: 'Not Found', message: 'Template not found' });
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     }
 };

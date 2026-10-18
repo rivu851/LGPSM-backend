@@ -1,5 +1,7 @@
 import { mediaService } from '../services/media.service';
 import { mediaIdFromKey } from './mediaKey';
+import { fetchPublicImage } from './safeFetch';
+import { securityEvent } from './securityLog';
 
 // Resolves a stored image reference (see mediaKey.ts: `media:<id>` from an upload, an external
 // https URL, or a site-relative path) into an embeddable `data:` URI. Used to put an organizer's
@@ -23,13 +25,12 @@ export async function resolveImageKeyBase64(key: string | null | undefined): Pro
 
   if (/^https:\/\//.test(key)) {
     try {
-      const res = await fetch(key);
-      if (!res.ok) return '';
-      const contentType = res.headers.get('content-type') || 'image/jpeg';
-      const buffer = Buffer.from(await res.arrayBuffer());
+      const { contentType, buffer } = await fetchPublicImage(key);
       return `data:${contentType};base64,${buffer.toString('base64')}`;
     } catch (err) {
-      console.warn(`Could not fetch external image ${key}:`, err);
+      // Not logging the URL: it is user-supplied and may carry tokens
+      if (err instanceof Error && /not allowed/i.test(err.message)) securityEvent('SSRF_BLOCKED');
+      console.warn('Could not fetch external image:', err instanceof Error ? err.message : 'unknown error');
       return '';
     }
   }

@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.inviteeService = void 0;
+exports.inviteeService = exports.MAX_IMPORT_ROWS = void 0;
 const invitee_repository_1 = require("../repositories/invitee.repository");
 const Invitee_1 = require("../models/Invitee");
 const Session_1 = require("../models/Session");
@@ -46,6 +46,8 @@ const eventAccess_1 = require("../utils/eventAccess");
 const Session_2 = require("../models/Session");
 const Invitee_2 = require("../models/Invitee");
 const CheckIn_1 = require("../models/CheckIn");
+// Upper bound for one spreadsheet import (header row excluded)
+exports.MAX_IMPORT_ROWS = 5000;
 exports.inviteeService = {
     async createInvitee(eventId, organizerId, data, role) {
         const event = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId, role);
@@ -247,7 +249,8 @@ exports.inviteeService = {
         }
         let workbook;
         try {
-            workbook = xlsx.read(fileBuffer, { type: 'buffer' });
+            // sheetRows bounds how much of a (possibly highly compressed) sheet is ever materialised
+            workbook = xlsx.read(fileBuffer, { type: 'buffer', sheetRows: exports.MAX_IMPORT_ROWS + 2 });
         }
         catch {
             throw { statusCode: 400, message: 'The file could not be read as an Excel sheet' };
@@ -271,6 +274,9 @@ exports.inviteeService = {
             const digits = v.replace(/\D/g, '');
             return digits.length >= 7 && digits.length <= 15;
         };
+        if (rowsRaw.length > exports.MAX_IMPORT_ROWS + 1) {
+            throw { statusCode: 400, message: `A sheet can contain at most ${exports.MAX_IMPORT_ROWS} invitees. Split the file and import it in parts.` };
+        }
         const nonBlankRows = rowsRaw.filter(r => Array.isArray(r) && r.some(cell => cleanCellValue(cell) !== ''));
         const results = {
             totalRows: 0,

@@ -13,7 +13,8 @@ exports.notificationController = {
             return res.status(200).json({ success: true, data: result.notifications, meta: { total: result.total, unreadCount: result.unreadCount, page: result.page, totalPages: result.totalPages } });
         }
         catch (error) {
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async markAsRead(req, res) {
@@ -25,7 +26,8 @@ exports.notificationController = {
         catch (error) {
             if (error.message === 'NOTIFICATION_NOT_FOUND')
                 return res.status(404).json({ error: 'Not Found', message: 'Notification not found' });
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async markAllAsRead(req, res) {
@@ -35,7 +37,8 @@ exports.notificationController = {
             return res.status(200).json({ success: true, message: 'All notifications marked as read' });
         }
         catch (error) {
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async createNotification(req, res) {
@@ -54,7 +57,8 @@ exports.notificationController = {
             return res.status(200).json({ success: true, message: 'Notification cleared successfully' });
         }
         catch (error) {
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async clearAllNotifications(req, res) {
@@ -64,7 +68,8 @@ exports.notificationController = {
             return res.status(200).json({ success: true, message: 'All notifications cleared successfully' });
         }
         catch (error) {
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     }
 };

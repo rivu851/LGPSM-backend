@@ -58,7 +58,7 @@ export const userRepository = {
       .sort({ createdAt: -1, _id: -1 })
       .skip(skip)
       .limit(limit)
-      .lean();
+      .lean<IUser[]>();
   },
 
   async count(query: any = {}): Promise<number> {

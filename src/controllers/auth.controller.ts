@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { authService } from '../services/auth.service';
+import { securityEvent } from '../utils/securityLog';
 
 export const authController = {
   async register(req: Request, res: Response, next: NextFunction) {
@@ -15,7 +16,9 @@ export const authController = {
     try {
       const result = await authService.login(req.body);
       res.status(200).json({ success: true, data: result });
-    } catch (error) {
+    } catch (error: any) {
+      // No identifier or password is logged, only that a sign-in failed and why (status)
+      if (error?.statusCode === 401 || error?.statusCode === 403) securityEvent('LOGIN_FAILED', req, { status: error.statusCode });
       next(error);
     }
   },

@@ -37,3 +37,14 @@ if (!_env.success) {
 }
 
 export const env = _env.data;
+
+// Advisory only (never blocks start-up, never prints values): weak or shared signing secrets make
+// every issued token easier to forge, and a leaked access secret would also expose refresh tokens.
+if (env.NODE_ENV === 'production') {
+  if (env.JWT_SECRET.length < 32 || env.JWT_REFRESH_SECRET.length < 32) {
+    console.warn('[security] JWT_SECRET / JWT_REFRESH_SECRET are shorter than 32 characters. Rotate them to long random values.');
+  }
+  if (env.JWT_SECRET === env.JWT_REFRESH_SECRET) {
+    console.warn('[security] JWT_SECRET and JWT_REFRESH_SECRET are identical. Use two different random secrets.');
+  }
+}

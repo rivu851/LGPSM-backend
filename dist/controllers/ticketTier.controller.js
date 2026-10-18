@@ -24,7 +24,8 @@ exports.ticketTierController = {
             return res.status(200).json({ success: true, data: tiers });
         }
         catch (error) {
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async updateTicketTier(req, res) {
@@ -52,7 +53,8 @@ exports.ticketTierController = {
                 return res.status(404).json({ error: 'Not Found', message: 'Ticket tier not found' });
             if (error.message === 'EVENT_NOT_FOUND')
                 return res.status(403).json({ error: 'Forbidden', message: 'Access denied' });
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     }
 };

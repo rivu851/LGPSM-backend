@@ -34,7 +34,8 @@ exports.invitationController = {
                 return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
             if (error.message === 'INVALID_INVITEES')
                 return res.status(400).json({ error: 'Bad Request', message: 'One or more invitees do not belong to this event' });
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async resendInvitations(req, res) {
@@ -53,7 +54,8 @@ exports.invitationController = {
                 return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
             if (error.message === 'INVALID_INVITATIONS')
                 return res.status(400).json({ error: 'Bad Request', message: 'One or more invitations do not belong to this event' });
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async getInvitations(req, res) {
@@ -71,7 +73,8 @@ exports.invitationController = {
         catch (error) {
             if (error.message === 'EVENT_NOT_FOUND')
                 return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async previewInvitationCard(req, res) {
@@ -92,7 +95,8 @@ exports.invitationController = {
         catch (error) {
             if (error.message === 'EVENT_NOT_FOUND')
                 return res.status(404).json({ error: 'Not Found', message: 'Event not found' });
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     }
 };

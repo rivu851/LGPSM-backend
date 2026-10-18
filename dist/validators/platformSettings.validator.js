@@ -18,7 +18,9 @@ exports.notificationPreferencesSchema = zod_1.z.object({
     invitationSendFailed: flag,
     dayBeforeEventAlert: flag,
     reportDownload: flag,
-    customTemplateRequest: flag
+    customTemplateRequest: flag,
+    // Added later than the other keys; optional so clients that don't send it yet keep working
+    newContactMessage: flag.optional()
 }).strict();
 exports.pricingSchema = zod_1.z.object({
     ratePerInvitee: zod_1.z.number().finite().min(0, 'Rate cannot be negative').max(1000, 'Rate looks too high')

@@ -19,6 +19,7 @@ export interface INotificationPreferences {
   dayBeforeEventAlert: boolean;
   reportDownload: boolean;
   customTemplateRequest: boolean;
+  newContactMessage: boolean;
 }
 
 export interface IPlatformSettings extends Document {
@@ -57,7 +58,8 @@ const PlatformSettingsSchema = new Schema<IPlatformSettings>(
       invitationSendFailed: on,
       dayBeforeEventAlert: on,
       reportDownload: off,
-      customTemplateRequest: on
+      customTemplateRequest: on,
+      newContactMessage: on
     },
     pricing: {
       ratePerInvitee: { type: Number, default: null, min: 0 },

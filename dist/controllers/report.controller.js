@@ -21,7 +21,8 @@ exports.reportController = {
             return res.status(200).json({ success: true, data });
         }
         catch (error) {
-            return res.status(500).json({ success: false, message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
         }
     },
     async getAdminOverview(req, res) {
@@ -30,7 +31,8 @@ exports.reportController = {
             return res.status(200).json({ success: true, data });
         }
         catch (error) {
-            return res.status(500).json({ success: false, message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
         }
     },
     async getDashboardStats(req, res) {
@@ -43,7 +45,8 @@ exports.reportController = {
             return res.status(200).json({ success: true, data });
         }
         catch (error) {
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async getEventReport(req, res) {
@@ -59,7 +62,8 @@ exports.reportController = {
         catch (error) {
             if (error.message === 'EVENT_NOT_FOUND')
                 return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     }
 };

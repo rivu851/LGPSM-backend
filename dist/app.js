@@ -50,6 +50,7 @@ const session_routes_1 = require("./routes/session.routes");
 const invitee_routes_1 = require("./routes/invitee.routes");
 const invitation_routes_1 = __importDefault(require("./routes/invitation.routes"));
 const publicInvitation_routes_1 = __importDefault(require("./routes/publicInvitation.routes"));
+const contact_routes_1 = __importDefault(require("./routes/contact.routes"));
 const systemUserAssignment_routes_1 = require("./routes/systemUserAssignment.routes");
 const checkIn_routes_1 = __importStar(require("./routes/checkIn.routes"));
 const category_routes_1 = __importDefault(require("./routes/category.routes"));
@@ -81,7 +82,12 @@ app.use((0, cors_1.default)({
     exposedHeaders: ['X-Invitation-Qr'],
     credentials: true,
 }));
-app.use(express_1.default.json());
+// The raw bytes are kept so webhook signatures can be verified against exactly what the sender signed
+app.use(express_1.default.json({
+    verify: (req, _res, buf) => {
+        req.rawBody = buf;
+    }
+}));
 app.use(express_1.default.urlencoded({ extended: true }));
 // Basic health-check endpoint
 app.get('/api/health', (req, res) => {
@@ -122,6 +128,7 @@ app.use('/api/v1/invitees', invitee_routes_1.inviteeRoutes);
 app.use('/api/v1/events/:eventId/assignments', systemUserAssignment_routes_1.eventAssignmentRoutes);
 app.use('/api/v1/events/:eventId/invitations', invitation_routes_1.default);
 app.use('/api/v1/public/invitations', publicInvitation_routes_1.default);
+app.use('/api/v1/public/contact', contact_routes_1.default);
 app.use('/api/v1/assignments', systemUserAssignment_routes_1.assignmentRoutes);
 app.use('/api/v1/users/me/assignments', systemUserAssignment_routes_1.myAssignmentRoutes);
 app.use('/api/v1/checkins', checkIn_routes_1.default);

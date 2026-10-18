@@ -44,6 +44,8 @@ const User_1 = require("../models/User");
 const Event_1 = require("../models/Event");
 const SystemUserAssignment_1 = require("../models/SystemUserAssignment");
 const whatsapp_service_1 = require("./whatsapp.service");
+const securityLog_1 = require("../utils/securityLog");
+const token_repository_1 = require("../repositories/token.repository");
 // Staff an organizer works with: accounts they created plus staff assigned to their events
 async function staffVisibleToOrganizer(organizerId) {
     const eventIds = await Event_1.Event.find({ organizerId }).distinct('_id');
@@ -103,6 +105,9 @@ exports.userService = {
         }
         user.passwordHash = await hashPassword(newPassword);
         await user.save();
+        // Sign out every other session: a stolen refresh token must not outlive the password it was issued under
+        await token_repository_1.tokenRepository.revokeAllForUser(userId);
+        (0, securityLog_1.securityEvent)('PASSWORD_CHANGED', undefined, { subject: userId });
         return { updated: true };
     },
     async createUser(actor, data) {
@@ -171,6 +176,7 @@ exports.userService = {
         if (!user) {
             throw { statusCode: 404, message: 'User not found' };
         }
+        await token_repository_1.tokenRepository.revokeAllForUser(userId);
         if (target.role === User_1.Role.ORGANIZER && actor.role === User_1.Role.ADMIN) {
             const { alertService } = await Promise.resolve().then(() => __importStar(require('./alert.service')));
             await alertService.notifyAdmins('deactivatedOrganizerBySuperAdmin', {
@@ -204,6 +210,8 @@ exports.userService = {
             updatePayload.passwordHash = await hashPassword(data.password);
         }
         const user = await user_repository_1.userRepository.updateById(userId, updatePayload);
+        if (updatePayload.passwordHash || updatePayload.isActive === false)
+            await token_repository_1.tokenRepository.revokeAllForUser(userId);
         if (!user) {
             throw { statusCode: 404, message: 'User not found' };
         }
