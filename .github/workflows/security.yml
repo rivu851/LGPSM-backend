@@ -13,6 +13,14 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    # Placeholders only: tests use an in-memory MongoDB and mock all mail, so no real service or secret
+    # is needed. src/config/env.ts still validates strictly, so a missing variable fails loudly.
+    env:
+      NODE_ENV: test
+      ATLAS_URL: mongodb://127.0.0.1:27017/ci-placeholder
+      FRONTEND_URL: http://localhost:3000
+      JWT_SECRET: ci-placeholder-access-secret-not-real
+      JWT_REFRESH_SECRET: ci-placeholder-refresh-secret-not-real
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
