@@ -73,6 +73,22 @@ export const invitationController = {
     }
   },
 
+  async clearHistory(req: Request, res: Response) {
+    try {
+      const eventId = req.params.eventId as string;
+      const user = {
+        userId: (req as any).user?.userId,
+        role: (req as any).user?.role
+      };
+      const data = await invitationService.clearHistory(eventId, user);
+      return res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
+    }
+  },
+
   async previewInvitationCard(req: Request, res: Response) {
     try {
       const eventId = req.params.eventId as string;

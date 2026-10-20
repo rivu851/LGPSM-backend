@@ -26,6 +26,9 @@ export interface IInvitation extends Document {
   whatsappStatus?: InvitationDeliveryStatus;
   whatsappMessageId?: string;
   whatsappFailureReason?: string;
+  // Set when the organizer clears the delivery history. The record is kept (resend and QR-supersede checks
+  // depend on it) but is hidden from the history list until the next send or resend of that guest.
+  clearedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -52,7 +55,8 @@ const InvitationSchema: Schema = new Schema(
     emailFailureReason: { type: String },
     whatsappStatus: { type: String, enum: Object.values(InvitationDeliveryStatus) },
     whatsappMessageId: { type: String },
-    whatsappFailureReason: { type: String }
+    whatsappFailureReason: { type: String },
+    clearedAt: { type: Date }
   },
   {
     timestamps: true

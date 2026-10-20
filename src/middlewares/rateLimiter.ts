@@ -92,3 +92,17 @@ export const publicInvitationLimiter = rateLimit({
   legacyHeaders: false,
   skip: skipInTest,
 });
+
+/**
+ * Live card preview in the Add Event form: rendering an image is far more expensive than a normal request, and the
+ * form asks again as the organizer types (debounced), so the ceiling allows steady typing but not a flood.
+ */
+export const cardPreviewLimiter = rateLimit({
+  handler: logged('cardPreviewLimiter'),
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { success: false, message: 'Too many preview requests. Please wait a moment.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipInTest,
+});
