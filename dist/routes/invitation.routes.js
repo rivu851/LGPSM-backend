@@ -26,4 +26,6 @@ router.post('/resend', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZE
 router.get('/preview', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), invitation_controller_1.invitationController.previewInvitationCard);
 // GET /api/v1/events/:eventId/invitations
 router.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), invitation_controller_1.invitationController.getInvitations);
+// DELETE /api/v1/events/:eventId/invitations/history  (hides delivery history; records are kept)
+router.delete('/history', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), invitation_controller_1.invitationController.clearHistory);
 exports.default = router;
