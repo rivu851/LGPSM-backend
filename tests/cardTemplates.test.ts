@@ -217,6 +217,44 @@ describe('rendering', () => {
   });
 });
 
+describe("the designers' sample photos are for previews only", () => {
+  const frameCentre = async (design: 'WEDDING' | 'BIRTHDAY' | 'RICE_CEREMONY', png: Buffer) => {
+    const p = cardLayout(design).photo!;
+    const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const x = Math.round((p.x + p.w / 2) * 2);
+    const y = Math.round((p.y + p.h / 2) * 2);
+    return Array.from(data.subarray((y * info.width + x) * 4, (y * info.width + x) * 4 + 3));
+  };
+
+  it.each(['WEDDING', 'BIRTHDAY', 'RICE_CEREMONY'] as const)('%s shows the sample photo only when asked, and ships it with the app', async (design) => {
+    expect(cardLayout(design).samplePhoto).toMatch(/^samples\/.*\.jpg$/);
+    expect(assetPath('cardTemplates', cardLayout(design).samplePhoto!)).toMatch(/\.jpg$/);
+    const placeholder = await renderTemplateCard({ design, texts: {}, initials: 'AB' });
+    const sample = await renderTemplateCard({ design, texts: {}, useSamplePhoto: true });
+    expect(sample.equals(placeholder)).toBe(false);
+    // the sample photo is a real photograph: the frame is not a flat fill like the placeholder
+    expect(await frameCentre(design, sample)).not.toEqual(await frameCentre(design, placeholder));
+  });
+
+  it('an uploaded photo always wins over the sample', async () => {
+    const photo = await sharp({ create: { width: 200, height: 300, channels: 3, background: '#00ff00' } }).jpeg().toBuffer();
+    const png = await renderTemplateCard({ design: 'BIRTHDAY', texts: {}, photo, useSamplePhoto: true });
+    const [r, g, b] = await frameCentre('BIRTHDAY', png);
+    expect(g).toBeGreaterThan(200);
+    expect(r).toBeLessThan(40);
+    expect(b).toBeLessThan(40);
+  });
+
+  it('a card that is sent never carries the sample photo; a preview does until an image is uploaded', async () => {
+    const base = { invitee: { name: 'A' }, event: { title: 'Riya Birthday' }, sessions: [], cardDesign: 'BIRTHDAY' as const };
+    const sent = await invitationCardService.generateInvitationCardPNG(base);
+    const preview = await invitationCardService.generateInvitationCardPNG({ ...base, isPreview: true });
+    const placeholderCard = await renderTemplateCard({ design: 'BIRTHDAY', texts: buildTemplateTexts({ design: 'BIRTHDAY', title: 'Riya Birthday', invitee: { name: 'A' } }), initials: 'R' });
+    expect(preview.equals(sent)).toBe(false);
+    expect(await frameCentre('BIRTHDAY', sent)).toEqual(await frameCentre('BIRTHDAY', placeholderCard));
+  });
+});
+
 describe('end to end: an event with no template still gets a card for its type', () => {
   let mongoServer: MongoMemoryServer;
   beforeAll(async () => {

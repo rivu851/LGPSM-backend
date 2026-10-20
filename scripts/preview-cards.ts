@@ -17,7 +17,7 @@ import { renderTemplateCard, sampleTexts, TEMPLATE_DESIGNS } from '../src/servic
   const tiles: Buffer[] = [];
   for (const design of TEMPLATE_DESIGNS) {
     const started = Date.now();
-    const png = await renderTemplateCard({ design, texts: sampleTexts(design), qr });
+    const png = await renderTemplateCard({ design, texts: sampleTexts(design), qr, useSamplePhoto: true });
     fs.writeFileSync(path.join(out, `${design}.png`), png);
     tiles.push(await sharp(png).resize({ height: 800 }).toBuffer());
     console.log(`${design.padEnd(14)} ${(png.length / 1024).toFixed(0)} KB  ${Date.now() - started} ms`);

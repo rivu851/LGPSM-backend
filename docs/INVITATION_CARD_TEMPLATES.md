@@ -37,6 +37,20 @@ Figma file. The artwork is **fixed images**; this event's content (names, dates,
 **The server never reads the `.fig` file.** It is only an input to the build script below. Everything the running server
 needs is in the repository, so a deployment does not need the `.fig` or any path on a developer's machine.
 
+## The images in the Figma folder
+
+The folder holds 28 images; the build script accounts for every one and warns if any is left unused:
+
+| Count | What | Where it is used |
+|---|---|---|
+| 11 | Artwork (ornaments, textures, backgrounds, masks) | Baked into each design's `background.png` |
+| 3 | The designers' sample photos (couple, girl, baby) | `src/assets/cardTemplates/samples/`, shown **in previews only**: the Add Event live preview before an image is uploaded, and the default template thumbnails |
+| 14 | Thumbnails Figma generates automatically for the images above | Not needed: each is a low-resolution copy of one of the 14 full-size images |
+
+A card that is actually sent never uses a sample photo. If the organizer uploaded no image it shows initials (or a neutral
+silhouette), so a guest never receives an invitation carrying a stranger's picture. To change that, set `useSamplePhoto`
+in `renderFromTemplate` (`src/services/invitationCard.service.ts`).
+
 ## Deployment
 
 Render runs the compiled code (`node dist/server.js`) and deploys the whole repository. TypeScript does not copy images

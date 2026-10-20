@@ -25,6 +25,8 @@ router.get('/', authorizeRoles(Role.ORGANIZER, Role.ADMIN), templateController.g
 router.get('/defaults', authorizeRoles(Role.ADMIN), templateController.previewDefaults);
 router.post('/defaults', authorizeRoles(Role.ADMIN), templateController.installDefaults);
 
+// The card an event gets when no template is chosen: the design that suits its type (live preview in the Add Event form)
+router.post('/preview', authorizeRoles(Role.ORGANIZER, Role.ADMIN), cardPreviewLimiter, validate(previewTemplateCardSchema), templateController.previewCard);
 // The card a template makes for the event being entered (live preview in the Add Event form)
 router.post('/:id/preview', authorizeRoles(Role.ORGANIZER, Role.ADMIN), cardPreviewLimiter, validate(previewTemplateCardSchema), templateController.previewCard);
 

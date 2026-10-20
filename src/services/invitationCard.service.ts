@@ -41,6 +41,8 @@ export interface InvitationCardData {
     isVirtual?: boolean;
   };
   sessions: CardSessionData[];
+  /** Preview of a template/event being set up: the designers' sample photo may stand in for a missing event image */
+  isPreview?: boolean;
   qrDataUrl?: string;
   invitationUrl?: string;
   cardDesign?: CardDesign;
@@ -359,7 +361,8 @@ async function renderFromTemplate(design: TemplateDesign, data: InvitationCardDa
     photo: eventImage,
     // corporate designs show the host's logo where personal designs show a photo; fall back to the LGPSM logo
     logo: eventImage || dataUrlToBuffer(getLogoBase64()),
-    initials: photoInitials({ design, title: data.event.title || '' }, texts)
+    initials: photoInitials({ design, title: data.event.title || '' }, texts),
+    useSamplePhoto: data.isPreview === true && !eventImage
   });
 }
 

@@ -86,3 +86,74 @@ describe('live card preview for the Add Event form', () => {
     expect([await Template.countDocuments(), await Event.countDocuments()]).toEqual(before);
   });
 });
+
+describe('the Add Event preview and the saved event show the same card', () => {
+  const grabPng = async (res: request.Test) => (await res.buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); })).body as Buffer;
+  const { invitationService } = require('../src/services/invitation.service');
+  const { Category } = require('../src/models/Category');
+  const { Media, MediaPurpose } = require('../src/models/Media');
+
+  let category: any, template: any, mediaKey: string;
+  beforeAll(async () => {
+    category = await Category.create({ name: 'Personal', isActive: true, subcategories: [{ name: 'Birthday' }, { name: 'Wedding' }] });
+    template = await Template.create({ name: 'Birthday Party', cardDesign: 'BIRTHDAY', isPublished: true });
+    const jpeg = await sharp({ create: { width: 300, height: 400, channels: 3, background: '#3366cc' } }).jpeg().toBuffer();
+    const media = await Media.create({ ownerId: organizer._id, purpose: MediaPurpose.EVENT_LOGO, contentType: 'image/jpeg', size: jpeg.length, data: jpeg });
+    mediaKey = `media:${media._id}`;
+  });
+
+  const fields = {
+    title: 'Moloy Birthday Celebration',
+    startIso: '2026-11-07T18:00:00+05:30',
+    endIso: '2026-11-07T22:00:00+05:30',
+    venue: '24, Shanti Pally, Near Ruby Crossing',
+    categoryName: 'Personal',
+    subcategoryName: 'Birthday'
+  };
+
+  it('is pixel-identical to the card of the event once it is saved with the same details', async () => {
+    const event = await Event.create({
+      organizerId: organizer._id, title: fields.title, description: 'd', format: 'PHYSICAL' as never,
+      categoryId: category._id, subcategoryId: category.subcategories[0]._id, templateId: template._id,
+      location: { address: fields.venue } as never, schedule: { start: new Date(fields.startIso), end: new Date(fields.endIso) }, media: { logoKey: mediaKey }
+    });
+    const saved = (await invitationService.previewInvitationCard(String(event._id), String(organizer._id))).png as Buffer;
+    const preview = await grabPng(preview_(String(template._id), organizer, { ...fields, logoKey: mediaKey }));
+    expect(preview.equals(saved)).toBe(true);
+  });
+
+  it('shows the type-based design when no template is chosen, like the saved event does', async () => {
+    const event = await Event.create({
+      organizerId: organizer._id, title: fields.title, description: 'd', format: 'PHYSICAL' as never,
+      categoryId: category._id, subcategoryId: category.subcategories[0]._id,
+      location: { address: fields.venue } as never, schedule: { start: new Date(fields.startIso), end: new Date(fields.endIso) }, media: { logoKey: mediaKey }
+    });
+    const saved = (await invitationService.previewInvitationCard(String(event._id), String(organizer._id))).png as Buffer;
+    const res = await request(app).post('/api/v1/templates/preview').set('Authorization', bearer(organizer)).send({ ...fields, logoKey: mediaKey });
+    expect(res.status).toBe(200);
+    expect((await grabPng(request(app).post('/api/v1/templates/preview').set('Authorization', bearer(organizer)).send({ ...fields, logoKey: mediaKey }))).equals(saved)).toBe(true);
+  });
+
+  it.each([
+    ['BIRTHDAY', ['title', 'startIso', 'venue', 'subcategoryName']],
+    ['CORPORATE_V2', ['title', 'startIso', 'endIso', 'venue']]
+  ] as const)('%s card changes with each detail entered in the event step', async (design, changing) => {
+    const t = await Template.create({ name: `Dynamic ${design}`, cardDesign: design, isPublished: true });
+    const base = { ...fields, endIso: '2026-11-09T22:00:00+05:30' };
+    const variants: Record<string, string> = { title: 'Riya Anniversary Party', startIso: '2026-12-01T09:30:00+05:30', endIso: '2026-11-12T22:00:00+05:30', venue: 'Another Hall, Park Street', subcategoryName: 'First Birthday' };
+    const baseline = await grabPng(preview_(String(t._id), organizer, base));
+    for (const field of changing) {
+      const changed = await grabPng(preview_(String(t._id), organizer, { ...base, [field]: variants[field] }));
+      expect(changed.equals(baseline)).toBe(false); // the card reacts to this field
+    }
+  });
+
+  it('keeps the card unchanged for details it does not show (description-type fields are not accepted at all)', async () => {
+    const t = await Template.create({ name: 'Strict', cardDesign: 'WEDDING', isPublished: true });
+    expect((await preview_(String(t._id), organizer, { ...fields, description: 'x' })).status).toBe(400);
+  });
+});
+
+function preview_(id: string, who: any, body: object) {
+  return request(app).post(`/api/v1/templates/${id}/preview`).set('Authorization', bearer(who)).send(body);
+}

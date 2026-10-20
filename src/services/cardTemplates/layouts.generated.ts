@@ -29,6 +29,8 @@ export interface CardLayout {
   background: string;
   texts: Record<string, TextSlotLayout>;
   photo?: { shape: 'ellipse' | 'rect'; radius: number; x: number; y: number; w: number; h: number };
+  /** the designers' sample photo (relative to src/assets/cardTemplates), shown in previews until a real one is supplied */
+  samplePhoto?: string;
   logo?: { x: number; y: number; w: number; h: number };
   qr?: { x: number; y: number; size: number };
   pin?: { d: string; w: number; h: number; offsetY: number; color: string; side: 'left' };
@@ -426,6 +428,7 @@ export const CARD_LAYOUTS: Record<string, CardLayout> = {
       "w": 166.39,
       "h": 166.39
     },
+    "samplePhoto": "samples/wedding.jpg",
     "qr": {
       "x": 141,
       "y": 419,
@@ -600,6 +603,7 @@ export const CARD_LAYOUTS: Record<string, CardLayout> = {
       "w": 100,
       "h": 100
     },
+    "samplePhoto": "samples/rice-ceremony.jpg",
     "qr": {
       "x": 139,
       "y": 350,
@@ -774,6 +778,7 @@ export const CARD_LAYOUTS: Record<string, CardLayout> = {
       "w": 137,
       "h": 137
     },
+    "samplePhoto": "samples/birthday.jpg",
     "qr": {
       "x": 132,
       "y": 346,

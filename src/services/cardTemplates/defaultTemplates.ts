@@ -81,7 +81,7 @@ async function storePreview(spec: DefaultTemplateSpec, ownerId: string): Promise
   if (existing) return `media:${existing._id}`;
 
   const qr = await QRCode.toBuffer('https://lgpsm.example/sample-card-not-a-real-invitation', { errorCorrectionLevel: 'H', margin: 4, width: 400 });
-  const png = await renderTemplateCard({ design: spec.cardDesign, texts: sampleTexts(spec.cardDesign), qr, scale: 1.5 });
+  const png = await renderTemplateCard({ design: spec.cardDesign, texts: sampleTexts(spec.cardDesign), qr, scale: 1.5, useSamplePhoto: true });
   const { data, info } = await sharp(png).jpeg({ quality: 86, mozjpeg: true }).toBuffer({ resolveWithObject: true });
   const media = await Media.create({
     ownerId: new mongoose.Types.ObjectId(ownerId),

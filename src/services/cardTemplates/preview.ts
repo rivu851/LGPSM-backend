@@ -23,13 +23,14 @@ export interface TemplatePreviewInput {
  * The card a template produces for the event being entered, with a placeholder guest and a clearly marked sample QR.
  * Lets the Add Event form show the real card (and the wording written for this kind of event) before anything is saved.
  */
-export async function renderTemplatePreview(templateId: string, input: TemplatePreviewInput, isAdmin: boolean): Promise<Buffer> {
-  const template = await Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished').lean();
+export async function renderTemplatePreview(templateId: string | null, input: TemplatePreviewInput, isAdmin: boolean): Promise<Buffer> {
+  // With no template chosen the card still gets the design that suits the event type, exactly as it will when sent
+  const template = templateId ? await Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished').lean() : null;
   // organizers only see published templates, exactly as in the template list
-  if (!template || (template.isPublished === false && !isAdmin)) throw new Error('TEMPLATE_NOT_FOUND');
+  if (templateId && (!template || (template.isPublished === false && !isAdmin))) throw new Error('TEMPLATE_NOT_FOUND');
 
   const cardDesign = resolveCardDesign({
-    templateDesign: template.cardDesign,
+    templateDesign: template?.cardDesign,
     categoryName: input.categoryName,
     subcategoryName: input.subcategoryName,
     title: input.title
@@ -49,6 +50,8 @@ export async function renderTemplatePreview(templateId: string, input: TemplateP
       photoBase64: input.logoKey ? await resolveImageKeyBase64(input.logoKey) : undefined
     },
     sessions: [],
+    // This is a preview of the template, so the designers' sample photo stands in until an image is uploaded
+    isPreview: true,
     qrDataUrl: await generateQRCodeDataURL(invitationUrl),
     invitationUrl,
     cardDesign

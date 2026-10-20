@@ -33,6 +33,11 @@ export interface TemplateCardInput {
   qr?: Buffer | null;
   /** Shown in the photo frame when there is no photo; omit for a neutral silhouette */
   initials?: string;
+  /**
+   * For previews only: when there is no photo, show the designers' sample photo in the frame. Cards that are actually
+   * sent never set this, so a guest never receives an invitation carrying a stranger's picture.
+   */
+  useSamplePhoto?: boolean;
   /** Output scale relative to the 393 x 682 Figma frame */
   scale?: number;
 }
@@ -48,6 +53,15 @@ const escapeXml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').
 // eslint-disable-next-line no-control-regex
 const cleanText = (t: string) => t.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT_LENGTH);
 const round = (n: number) => Math.round(n * 100) / 100;
+
+const samplePhotoCache = new Map<string, Buffer | null>();
+function readSamplePhoto(relative: string): Buffer | null {
+  if (!samplePhotoCache.has(relative)) {
+    const file = assetPath('cardTemplates', relative);
+    samplePhotoCache.set(relative, fs.existsSync(file) ? fs.readFileSync(file) : null);
+  }
+  return samplePhotoCache.get(relative) ?? null;
+}
 
 const backgroundCache = new Map<string, Buffer>();
 async function loadBackground(layout: CardLayout, scale: number): Promise<Buffer> {
@@ -248,9 +262,10 @@ export async function renderTemplateCard(input: TemplateCardInput): Promise<Buff
   // photo (personal designs): the organizer's picture in the designers' frame, or a neutral placeholder
   if (layout.photo) {
     let placed = false;
-    if (input.photo) {
+    const photo = input.photo || (input.useSamplePhoto && layout.samplePhoto ? readSamplePhoto(layout.samplePhoto) : null);
+    if (photo) {
       try {
-        layers.push({ input: await shapedPhoto(input.photo, layout.photo, scale), left: Math.round(layout.photo.x * scale), top: Math.round(layout.photo.y * scale) });
+        layers.push({ input: await shapedPhoto(photo, layout.photo, scale), left: Math.round(layout.photo.x * scale), top: Math.round(layout.photo.y * scale) });
         placed = true;
       } catch (err) {
         console.warn('[cards] Event photo could not be used:', err instanceof Error ? err.message : 'unknown error');

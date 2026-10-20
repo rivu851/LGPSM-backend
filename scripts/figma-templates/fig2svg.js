@@ -202,6 +202,7 @@ function makeRenderer(doc, imagesDir, opts = {}) {
   }
 
   return {
+    usedImages: () => [...imageCache.keys()],
     async frameSvg(frame, scale = 1) {
       const w = frame.size.x, h = frame.size.y;
       // render the frame itself at the origin (ignore its canvas position)
