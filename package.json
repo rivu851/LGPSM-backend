@@ -5,9 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "jest",
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-assets.js",
     "start": "node dist/server.js",
-    "dev": "tsx watch src/server.ts"
+    "dev": "tsx watch src/server.ts",
+    "check:deployed-layout": "node scripts/check-deployed-layout.js"
   },
   "keywords": [],
   "author": "",
@@ -48,6 +49,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/supertest": "^7.2.1",
     "jest": "^30.5.1",
+    "kiwi-schema": "^0.5.0",
     "mongodb-memory-server": "^11.2.0",
     "nodemon": "^3.1.14",
     "supertest": "^7.2.2",

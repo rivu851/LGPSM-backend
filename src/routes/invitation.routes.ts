@@ -32,4 +32,7 @@ router.get('/preview', authorizeRoles(Role.ORGANIZER, Role.ADMIN), invitationCon
 // GET /api/v1/events/:eventId/invitations
 router.get('/', authorizeRoles(Role.ORGANIZER, Role.ADMIN), invitationController.getInvitations);
 
+// DELETE /api/v1/events/:eventId/invitations/history  (hides delivery history; records are kept)
+router.delete('/history', authorizeRoles(Role.ORGANIZER, Role.ADMIN), invitationController.clearHistory);
+
 export default router;
