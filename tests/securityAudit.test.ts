@@ -418,3 +418,29 @@ describe('Security event logging never records credentials', () => {
     }
   });
 });
+
+describe('SEC-019: mail credentials are never written to the logs', () => {
+  it('does not print the SMTP password (or user) when sending an email', async () => {
+    jest.resetModules();
+    jest.doMock('nodemailer', () => ({ createTransport: () => ({ sendMail: jest.fn().mockResolvedValue({}) }) }));
+    const saved = { ...process.env };
+    process.env.SMTP_HOST = 'smtp.audit.test';
+    process.env.SMTP_PORT = '587';
+    process.env.SMTP_USER = 'audit-user@example.com';
+    process.env.SMTP_PASS = 'S3cr3t-Smtp-Passw0rd-audit';
+    const out: string[] = [];
+    const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((m) => jest.spyOn(console, m).mockImplementation((...args: unknown[]) => { out.push(args.map(String).join(' ')); }));
+    try {
+      // the real provider, not the mock the rest of this file installs
+      const { sendEmail: realSend } = jest.requireActual('../src/utils/email.provider');
+      await realSend('guest@example.com', 'Hello', '<p>hi</p>');
+    } finally {
+      spies.forEach((s) => s.mockRestore());
+      process.env = saved;
+      jest.dontMock('nodemailer');
+    }
+    const logged = out.join('\n');
+    expect(logged).not.toContain('S3cr3t-Smtp-Passw0rd-audit');
+    expect(logged).not.toContain('audit-user@example.com');
+  });
+});
