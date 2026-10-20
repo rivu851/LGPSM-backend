@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.publicInvitationLimiter = exports.contactRateLimiter = exports.contactAttemptLimiter = exports.resendVerificationRateLimiter = exports.verifyEmailRateLimiter = exports.authRateLimiter = void 0;
+exports.cardPreviewLimiter = exports.publicInvitationLimiter = exports.contactRateLimiter = exports.contactAttemptLimiter = exports.resendVerificationRateLimiter = exports.verifyEmailRateLimiter = exports.authRateLimiter = void 0;
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const securityLog_1 = require("../utils/securityLog");
 // Records every throttled request as a security event, then answers exactly as the default handler would
@@ -86,6 +86,19 @@ exports.publicInvitationLimiter = (0, express_rate_limit_1.default)({
     windowMs: 15 * 60 * 1000,
     max: 300,
     message: { success: false, message: 'Too many requests from this network. Please try again later.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: skipInTest,
+});
+/**
+ * Live card preview in the Add Event form: rendering an image is far more expensive than a normal request, and the
+ * form asks again as the organizer types (debounced), so the ceiling allows steady typing but not a flood.
+ */
+exports.cardPreviewLimiter = (0, express_rate_limit_1.default)({
+    handler: logged('cardPreviewLimiter'),
+    windowMs: 60 * 1000,
+    max: 60,
+    message: { success: false, message: 'Too many preview requests. Please wait a moment.' },
     standardHeaders: true,
     legacyHeaders: false,
     skip: skipInTest,

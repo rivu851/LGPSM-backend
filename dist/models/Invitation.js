@@ -69,7 +69,8 @@ const InvitationSchema = new mongoose_1.Schema({
     emailFailureReason: { type: String },
     whatsappStatus: { type: String, enum: Object.values(InvitationDeliveryStatus) },
     whatsappMessageId: { type: String },
-    whatsappFailureReason: { type: String }
+    whatsappFailureReason: { type: String },
+    clearedAt: { type: Date }
 }, {
     timestamps: true
 });
