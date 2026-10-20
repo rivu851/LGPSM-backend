@@ -12,12 +12,13 @@ const designs_1 = require("./designs");
  * Lets the Add Event form show the real card (and the wording written for this kind of event) before anything is saved.
  */
 async function renderTemplatePreview(templateId, input, isAdmin) {
-    const template = await Template_1.Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished').lean();
+    // With no template chosen the card still gets the design that suits the event type, exactly as it will when sent
+    const template = templateId ? await Template_1.Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished').lean() : null;
     // organizers only see published templates, exactly as in the template list
-    if (!template || (template.isPublished === false && !isAdmin))
+    if (templateId && (!template || (template.isPublished === false && !isAdmin)))
         throw new Error('TEMPLATE_NOT_FOUND');
     const cardDesign = (0, designs_1.resolveCardDesign)({
-        templateDesign: template.cardDesign,
+        templateDesign: template?.cardDesign,
         categoryName: input.categoryName,
         subcategoryName: input.subcategoryName,
         title: input.title
@@ -37,6 +38,8 @@ async function renderTemplatePreview(templateId, input, isAdmin) {
             photoBase64: input.logoKey ? await (0, resolveImageBase64_1.resolveImageKeyBase64)(input.logoKey) : undefined
         },
         sessions: [],
+        // This is a preview of the template, so the designers' sample photo stands in until an image is uploaded
+        isPreview: true,
         qrDataUrl: await (0, qr_util_1.generateQRCodeDataURL)(invitationUrl),
         invitationUrl,
         cardDesign

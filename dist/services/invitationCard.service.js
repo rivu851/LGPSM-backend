@@ -309,7 +309,8 @@ async function renderFromTemplate(design, data) {
         photo: eventImage,
         // corporate designs show the host's logo where personal designs show a photo; fall back to the LGPSM logo
         logo: eventImage || dataUrlToBuffer(getLogoBase64()),
-        initials: (0, content_1.photoInitials)({ design, title: data.event.title || '' }, texts)
+        initials: (0, content_1.photoInitials)({ design, title: data.event.title || '' }, texts),
+        useSamplePhoto: data.isPreview === true && !eventImage
     });
 }
 exports.invitationCardService = {

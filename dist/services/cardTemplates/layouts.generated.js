@@ -396,6 +396,7 @@ exports.CARD_LAYOUTS = {
             "w": 166.39,
             "h": 166.39
         },
+        "samplePhoto": "samples/wedding.jpg",
         "qr": {
             "x": 141,
             "y": 419,
@@ -570,6 +571,7 @@ exports.CARD_LAYOUTS = {
             "w": 100,
             "h": 100
         },
+        "samplePhoto": "samples/rice-ceremony.jpg",
         "qr": {
             "x": 139,
             "y": 350,
@@ -744,6 +746,7 @@ exports.CARD_LAYOUTS = {
             "w": 137,
             "h": 137
         },
+        "samplePhoto": "samples/birthday.jpg",
         "qr": {
             "x": 132,
             "y": 346,

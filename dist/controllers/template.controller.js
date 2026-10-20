@@ -56,7 +56,7 @@ exports.templateController = {
     // The card this template produces for the event being entered (nothing is saved)
     async previewCard(req, res) {
         try {
-            const png = await (0, preview_1.renderTemplatePreview)(req.params.id, req.body, req.user?.role === 'ADMIN');
+            const png = await (0, preview_1.renderTemplatePreview)(req.params.id ?? null, req.body, req.user?.role === 'ADMIN');
             res.setHeader('Content-Type', 'image/png');
             res.setHeader('Cache-Control', 'no-store');
             // the QR on a preview is a placeholder; check-in recognises and rejects it

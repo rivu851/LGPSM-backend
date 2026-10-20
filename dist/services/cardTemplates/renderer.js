@@ -35,6 +35,14 @@ const escapeXml = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(
 // eslint-disable-next-line no-control-regex
 const cleanText = (t) => t.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT_LENGTH);
 const round = (n) => Math.round(n * 100) / 100;
+const samplePhotoCache = new Map();
+function readSamplePhoto(relative) {
+    if (!samplePhotoCache.has(relative)) {
+        const file = (0, assetPath_1.assetPath)('cardTemplates', relative);
+        samplePhotoCache.set(relative, fs_1.default.existsSync(file) ? fs_1.default.readFileSync(file) : null);
+    }
+    return samplePhotoCache.get(relative) ?? null;
+}
 const backgroundCache = new Map();
 async function loadBackground(layout, scale) {
     const key = `${layout.design}@${scale}`;
@@ -201,9 +209,10 @@ async function renderTemplateCard(input) {
     // photo (personal designs): the organizer's picture in the designers' frame, or a neutral placeholder
     if (layout.photo) {
         let placed = false;
-        if (input.photo) {
+        const photo = input.photo || (input.useSamplePhoto && layout.samplePhoto ? readSamplePhoto(layout.samplePhoto) : null);
+        if (photo) {
             try {
-                layers.push({ input: await shapedPhoto(input.photo, layout.photo, scale), left: Math.round(layout.photo.x * scale), top: Math.round(layout.photo.y * scale) });
+                layers.push({ input: await shapedPhoto(photo, layout.photo, scale), left: Math.round(layout.photo.x * scale), top: Math.round(layout.photo.y * scale) });
                 placed = true;
             }
             catch (err) {
