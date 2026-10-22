@@ -4,6 +4,9 @@ exports.templateController = void 0;
 const template_service_1 = require("../services/template.service");
 const defaultTemplates_1 = require("../services/cardTemplates/defaultTemplates");
 const preview_1 = require("../services/cardTemplates/preview");
+const renderForEvent_1 = require("../services/cardTemplates/renderForEvent");
+const viewerOf = (req) => ({ userId: req.user?.userId, isAdmin: req.user?.role === 'ADMIN' });
+const isOrganizer = (req) => req.user?.role !== 'ADMIN';
 exports.templateController = {
     async createTemplate(req, res) {
         try {
@@ -17,10 +20,10 @@ exports.templateController = {
     async getTemplates(req, res) {
         try {
             const categoryId = req.query.categoryId;
-            const isAdmin = req.user?.role === 'ADMIN';
             const page = req.query.page ? parseInt(req.query.page, 10) : undefined;
             const limit = req.query.limit ? parseInt(req.query.limit, 10) : undefined;
-            const result = await template_service_1.templateService.getTemplates(categoryId, isAdmin, { page, limit });
+            const kind = req.query.kind === 'POSTER' || req.query.kind === 'INVITATION' ? req.query.kind : undefined;
+            const result = await template_service_1.templateService.getTemplates(categoryId, viewerOf(req), { page, limit, kind, mineOnly: req.query.scope === 'mine' });
             return res.status(200).json({
                 success: true,
                 data: result.templates,
@@ -56,7 +59,8 @@ exports.templateController = {
     // The card this template produces for the event being entered (nothing is saved)
     async previewCard(req, res) {
         try {
-            const png = await (0, preview_1.renderTemplatePreview)(req.params.id ?? null, req.body, req.user?.role === 'ADMIN');
+            const viewer = viewerOf(req);
+            const png = await (0, preview_1.renderTemplatePreview)(req.params.id ?? null, req.body, viewer.isAdmin, viewer.userId);
             res.setHeader('Content-Type', 'image/png');
             res.setHeader('Cache-Control', 'no-store');
             // the QR on a preview is a placeholder; check-in recognises and rejects it
@@ -66,13 +70,37 @@ exports.templateController = {
         catch (error) {
             if (error.message === 'TEMPLATE_NOT_FOUND')
                 return res.status(404).json({ error: 'Not Found', message: 'Template not found' });
+            if (error.message === 'TEMPLATE_NOT_USABLE')
+                return res.status(409).json({ error: 'Conflict', message: 'This template cannot be drawn. Please regenerate it.' });
             console.error('Request failed:', error?.message);
             return res.status(500).json({ error: 'Internal Server Error', message: 'The preview could not be created. Please try again.' });
         }
     },
+    // The template drawn with a real event's details (posters get their registration QR; invitations a marked sample QR)
+    async renderForEvent(req, res) {
+        try {
+            const user = req.user;
+            const { eventId, registrationUrl, format } = req.body;
+            const out = await (0, renderForEvent_1.renderTemplateForEvent)({ templateId: req.params.id, eventId, registrationUrl, format, userId: user.userId, isAdmin: user.role === 'ADMIN' });
+            res.setHeader('Content-Type', out.contentType);
+            res.setHeader('Cache-Control', 'no-store');
+            res.setHeader('X-Invitation-Qr', out.qr);
+            if (out.warnings.length)
+                res.setHeader('X-Render-Warnings', out.warnings.map((w) => w.replace(/[^\x20-\x7e]/g, ' ')).join('; ').slice(0, 300));
+            return res.status(200).send(out.body);
+        }
+        catch (error) {
+            if (error.message === 'TEMPLATE_NOT_FOUND' || error.message === 'EVENT_NOT_FOUND')
+                return res.status(404).json({ error: 'Not Found', message: error.message === 'EVENT_NOT_FOUND' ? 'Event not found' : 'Template not found' });
+            if (error.message === 'TEMPLATE_NOT_USABLE')
+                return res.status(409).json({ error: 'Conflict', message: 'This template cannot be drawn. Please regenerate it.' });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'The image could not be created. Please try again.' });
+        }
+    },
     async getTemplateById(req, res) {
         try {
-            const template = await template_service_1.templateService.getTemplateById(req.params.id);
+            const template = await template_service_1.templateService.getTemplateById(req.params.id, viewerOf(req));
             return res.status(200).json({ success: true, data: template });
         }
         catch (error) {
@@ -84,7 +112,9 @@ exports.templateController = {
     },
     async updateTemplate(req, res) {
         try {
-            const template = await template_service_1.templateService.updateTemplate(req.params.id, req.body);
+            const template = isOrganizer(req)
+                ? await template_service_1.templateService.updateOwnTemplate(req.params.id, req.user.userId, req.body)
+                : await template_service_1.templateService.updateTemplate(req.params.id, req.body);
             return res.status(200).json({ success: true, data: template });
         }
         catch (error) {
@@ -95,7 +125,9 @@ exports.templateController = {
     },
     async deleteTemplate(req, res) {
         try {
-            const template = await template_service_1.templateService.deleteTemplate(req.params.id);
+            const template = isOrganizer(req)
+                ? await template_service_1.templateService.deleteOwnTemplate(req.params.id, req.user.userId)
+                : await template_service_1.templateService.deleteTemplate(req.params.id);
             return res.status(200).json({ success: true, message: 'Template deactivated successfully', data: template });
         }
         catch (error) {

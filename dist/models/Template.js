@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Template = exports.CARD_DESIGNS = void 0;
+exports.Template = exports.TEMPLATE_KINDS = exports.CARD_DESIGNS = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 exports.CARD_DESIGNS = [
     'CLASSIC',
@@ -41,8 +41,11 @@ exports.CARD_DESIGNS = [
     'CORPORATE_V2',
     'WEDDING',
     'RICE_CEREMONY',
-    'BIRTHDAY'
+    'BIRTHDAY',
+    // Rendered from `designSpec` (see services/cardTemplates/designSpec.ts) instead of fixed Figma artwork
+    'CUSTOM'
 ];
+exports.TEMPLATE_KINDS = ['INVITATION', 'POSTER'];
 const TemplateSchema = new mongoose_1.Schema({
     name: { type: String, required: true },
     categoryId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Category' },
@@ -50,6 +53,12 @@ const TemplateSchema = new mongoose_1.Schema({
     previewImageKey: { type: String },
     templateData: { type: mongoose_1.Schema.Types.Mixed, default: {} },
     cardDesign: { type: String, enum: exports.CARD_DESIGNS, default: 'CLASSIC' },
+    kind: { type: String, enum: exports.TEMPLATE_KINDS, default: 'INVITATION' },
+    ownerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', index: true },
+    designSpec: { type: mongoose_1.Schema.Types.Mixed },
+    source: {
+        type: new mongoose_1.Schema({ provider: { type: String, enum: ['STITCH'] }, jobId: { type: mongoose_1.Schema.Types.ObjectId }, screenId: { type: String } }, { _id: false })
+    },
     isSystemTemplate: { type: Boolean, default: true },
     // Drafts are visible to admins only; organizers can pick published templates
     isPublished: { type: Boolean, default: true },

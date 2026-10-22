@@ -10,6 +10,7 @@ const qrcode_1 = __importDefault(require("qrcode"));
 const assetPath_1 = require("../utils/assetPath");
 const renderer_1 = require("./cardTemplates/renderer");
 const content_1 = require("./cardTemplates/content");
+const specRenderer_1 = require("./cardTemplates/specRenderer");
 const CARD_WIDTH = 1536;
 const CARD_HEIGHT = 2048;
 // The LGPSM logo ships with the app (src/assets/branding), so it is found wherever the server runs.
@@ -313,12 +314,41 @@ async function renderFromTemplate(design, data) {
         useSamplePhoto: data.isPreview === true && !eventImage
     });
 }
+// A custom (AI-generated) design: the stored layout with this event's details and this guest's own QR code
+async function renderFromSpec(spec, data) {
+    const texts = (0, content_1.buildSpecTexts)({
+        title: data.event.title || '',
+        description: data.event.description,
+        startIso: data.event.startIso,
+        endIso: data.event.endIso,
+        venue: data.event.venue,
+        locationSub: data.event.locationSub,
+        isVirtual: data.event.isVirtual,
+        organizerName: data.event.organizerName,
+        invitee: data.invitee
+    });
+    let qr = dataUrlToBuffer(data.qrDataUrl);
+    if (!qr && data.invitationUrl)
+        qr = await qrcode_1.default.toBuffer(data.invitationUrl, { errorCorrectionLevel: 'H', margin: 4, width: 480 });
+    const eventImage = dataUrlToBuffer(data.event.photoBase64);
+    const result = await (0, specRenderer_1.renderDesignSpec)({
+        spec,
+        texts,
+        qr,
+        photo: eventImage,
+        logo: eventImage || dataUrlToBuffer(getLogoBase64()),
+        showPlaceholders: data.isPreview === true
+    });
+    return result.png;
+}
 exports.invitationCardService = {
     /** SVG of the generic design. The template designs are drawn as images, see generateInvitationCardPNG. */
     async generateInvitationCardSVG(data) {
         return buildClassicSVG(data);
     },
     async generateInvitationCardPNG(data) {
+        if (data.designSpec)
+            return renderFromSpec(data.designSpec, data);
         if ((0, renderer_1.isTemplateDesign)(data.cardDesign)) {
             return renderFromTemplate(data.cardDesign, data);
         }

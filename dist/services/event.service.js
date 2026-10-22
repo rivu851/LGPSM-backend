@@ -7,7 +7,7 @@ exports.eventService = exports.EventService = void 0;
 const event_repository_1 = require("../repositories/event.repository");
 const Event_1 = require("../models/Event");
 const Category_1 = require("../models/Category");
-const Template_1 = require("../models/Template");
+const template_service_1 = require("./template.service");
 const Session_1 = require("../models/Session");
 const Invitee_1 = require("../models/Invitee");
 const Invitation_1 = require("../models/Invitation");
@@ -66,8 +66,8 @@ class EventService {
         }
         // Validate Template if provided
         if (eventData.templateId && mongoose_1.default.Types.ObjectId.isValid(eventData.templateId)) {
-            const templateExists = await Template_1.Template.findById(eventData.templateId);
-            if (!templateExists) {
+            // a template another organizer owns is treated like a missing one
+            if (!(await template_service_1.templateService.isUsableByOrganizer(String(eventData.templateId), String(organizerId)))) {
                 delete eventData.templateId;
             }
         }
@@ -156,8 +156,7 @@ class EventService {
                 throw new Error('CATEGORY_NOT_FOUND');
         }
         if (updateData.templateId && updateData.templateId !== existingEvent.templateId?.toString()) {
-            const templateExists = await Template_1.Template.findById(updateData.templateId);
-            if (!templateExists)
+            if (!(await template_service_1.templateService.isUsableByOrganizer(String(updateData.templateId), String(existingEvent.organizerId))))
                 throw new Error('TEMPLATE_NOT_FOUND');
         }
         // Disallow updating organizerId, _id, createdAt and the locked rate

@@ -7,6 +7,7 @@ exports.deriveSubject = deriveSubject;
 exports.initialsOf = initialsOf;
 exports.buildTemplateTexts = buildTemplateTexts;
 exports.photoInitials = photoInitials;
+exports.buildSpecTexts = buildSpecTexts;
 const env_1 = require("../../config/env");
 // ---- dates (platform time zone, never the server's) ----
 const fmt = (d, options) => new Intl.DateTimeFormat('en-US', { timeZone: env_1.env.APP_TIMEZONE, ...options }).format(d).replace(/[  ]/g, ' ');
@@ -188,4 +189,24 @@ function buildTemplateTexts(input) {
 /** Initials for the photo frame when no picture was uploaded: the guest of honour, or the event title. */
 function photoInitials(input, texts) {
     return initialsOf(texts.honoree || texts.names || input.title);
+}
+/** Text for every role a custom design can show. Roles with nothing to say are omitted so the design leaves them empty. */
+function buildSpecTexts(input) {
+    const start = toDate(input.startIso);
+    const end = toDate(input.endIso);
+    const p = start ? parts(start) : null;
+    const clean = (v) => (v || '').trim();
+    const texts = {
+        title: clean(input.title),
+        description: clean(input.description),
+        date: start ? longDate(start, end) : '',
+        time: p ? (end && sameDay(start, end) ? `${p.time} – ${parts(end).time}` : p.time) : '',
+        dateTime: p ? `${p.weekday}, ${longDate(start, end)} · ${p.time}` : '',
+        venue: addressLine({ design: 'CORPORATE_V1', title: '', venue: input.venue, locationSub: input.locationSub, isVirtual: input.isVirtual }),
+        organizer: clean(input.organizerName),
+        inviteeName: clean(input.invitee?.name),
+        inviteeMeta: clean(input.invitee?.employeeId ? `Employee ID #${input.invitee.employeeId}` : input.invitee?.companyName),
+        tagline: ''
+    };
+    return Object.fromEntries(Object.entries(texts).filter(([, v]) => v));
 }

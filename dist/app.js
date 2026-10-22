@@ -55,6 +55,7 @@ const systemUserAssignment_routes_1 = require("./routes/systemUserAssignment.rou
 const checkIn_routes_1 = __importStar(require("./routes/checkIn.routes"));
 const category_routes_1 = __importDefault(require("./routes/category.routes"));
 const template_routes_1 = __importDefault(require("./routes/template.routes"));
+const templateGeneration_routes_1 = __importDefault(require("./routes/templateGeneration.routes"));
 const notification_routes_1 = __importDefault(require("./routes/notification.routes"));
 const auditLog_routes_1 = __importDefault(require("./routes/auditLog.routes"));
 const report_routes_1 = __importDefault(require("./routes/report.routes"));
@@ -135,6 +136,8 @@ app.use('/api/v1/checkins', checkIn_routes_1.default);
 app.use('/api/v1/events/:eventId/checkins', checkIn_routes_1.eventCheckInRoutes);
 // Category, Template, Notification, AuditLog, Report, Ticketing & Payment Routes
 app.use('/api/v1/categories', category_routes_1.default);
+app.use('/api/v1/template-generations/:id', requireObjectIdParam('id', ['options']));
+app.use('/api/v1/template-generations', templateGeneration_routes_1.default);
 app.use('/api/v1/templates', template_routes_1.default);
 app.use('/api/v1/notifications', notification_routes_1.default);
 app.use('/api/v1/audit-logs', auditLog_routes_1.default);

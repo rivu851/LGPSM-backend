@@ -224,12 +224,15 @@ exports.invitationService = {
                         endIso: event.schedule?.end,
                         categoryName: cardContext.categoryName,
                         subcategoryName: cardContext.subcategoryName,
-                        isVirtual: event.format === 'VIRTUAL'
+                        isVirtual: event.format === 'VIRTUAL',
+                        description: event.description,
+                        organizerName: cardContext.organizerName
                     },
                     sessions: assignedSessions,
                     qrDataUrl,
                     invitationUrl,
-                    cardDesign
+                    cardDesign,
+                    designSpec: cardContext.designSpec
                 });
             }
             catch (err) {
@@ -449,12 +452,15 @@ exports.invitationService = {
                         endIso: event.schedule?.end,
                         categoryName: cardContext.categoryName,
                         subcategoryName: cardContext.subcategoryName,
-                        isVirtual: event.format === 'VIRTUAL'
+                        isVirtual: event.format === 'VIRTUAL',
+                        description: event.description,
+                        organizerName: cardContext.organizerName
                     },
                     sessions: assignedSessions,
                     qrDataUrl,
                     invitationUrl,
-                    cardDesign
+                    cardDesign,
+                    designSpec: cardContext.designSpec
                 });
             }
             catch (err) {
@@ -679,12 +685,15 @@ exports.invitationService = {
                 endIso: event.schedule?.end,
                 categoryName: cardContext.categoryName,
                 subcategoryName: cardContext.subcategoryName,
-                isVirtual: event.format === 'VIRTUAL'
+                isVirtual: event.format === 'VIRTUAL',
+                description: event.description,
+                organizerName: cardContext.organizerName
             },
             sessions: assignedSessions,
             qrDataUrl,
             invitationUrl,
-            cardDesign
+            cardDesign,
+            designSpec: cardContext.designSpec
         });
         return { png, qr: issuedToken ? 'ISSUED' : 'SAMPLE' };
     }

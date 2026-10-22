@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.guardedLookup = void 0;
 exports.isPrivateAddress = isPrivateAddress;
 exports.fetchPublicImage = fetchPublicImage;
 const dns_1 = __importDefault(require("dns"));
@@ -48,7 +49,7 @@ function isPrivateAddress(address) {
     return true; // not an IP at all: refuse
 }
 // Used as the socket `lookup`, so the address that is actually connected to is the one checked
-const guardedLookup = ((hostname, options, callback) => {
+exports.guardedLookup = ((hostname, options, callback) => {
     const cb = typeof options === 'function' ? options : callback;
     dns_1.default.lookup(hostname, { all: true, verbatim: true }, (err, addresses) => {
         if (err)
@@ -79,7 +80,7 @@ function fetchPublicImage(rawUrl) {
         if (net_1.default.isIP(url.hostname.replace(/^\[|\]$/g, '')) && isPrivateAddress(url.hostname.replace(/^\[|\]$/g, ''))) {
             return reject(new Error('Destination address is not allowed'));
         }
-        const req = https_1.default.get(url, { lookup: guardedLookup, timeout: TIMEOUT_MS, headers: { Accept: ALLOWED_TYPES.join(', '), 'User-Agent': 'LGPSM-card-renderer' } }, (res) => {
+        const req = https_1.default.get(url, { lookup: exports.guardedLookup, timeout: TIMEOUT_MS, headers: { Accept: ALLOWED_TYPES.join(', '), 'User-Agent': 'LGPSM-card-renderer' } }, (res) => {
             const status = res.statusCode ?? 0;
             const contentType = String(res.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
             if (status !== 200) {
