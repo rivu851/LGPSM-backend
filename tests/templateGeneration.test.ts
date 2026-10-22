@@ -231,6 +231,24 @@ describe('generation API: duplicates, quota, failures', () => {
     await drain();
   });
 
+  it('reports the real daily usage, updates it after each generation, and never counts failures that never reached the provider', async () => {
+    (env as any).STITCH_DAILY_QUOTA_PER_USER = 3;
+    const fresh = (await api('get', '/api/v1/template-generations/options', orgA)).body.data.usage;
+    expect(fresh).toMatchObject({ used: 0, limit: 3, remaining: 3 });
+    const first = await api('post', '/api/v1/template-generations', orgA).send({ ...brief, prompt: 'usage counter idea number one' });
+    expect(first.body.usage).toMatchObject({ used: 1, limit: 3, remaining: 2 });
+    await drain();
+    await api('post', '/api/v1/template-generations', orgA).send({ ...brief, prompt: 'usage counter idea number two', variantCount: 3 });
+    await drain();
+    expect((await api('get', '/api/v1/template-generations/options', orgA)).body.data.usage).toMatchObject({ used: 2, remaining: 1 }); // one request = one use, however many options
+    // the other organizer's count is separate; an admin has no limit
+    expect((await api('get', '/api/v1/template-generations/options', orgB)).body.data.usage).toMatchObject({ used: 0, remaining: 3 });
+    expect((await api('get', '/api/v1/template-generations/options', admin)).body.data.usage).toMatchObject({ limit: null, remaining: null });
+    // a request refused before it started does not use the allowance
+    (await api('post', '/api/v1/template-generations', orgA).send({ ...brief, prompt: 'x' })).status;
+    expect((await api('get', '/api/v1/template-generations/options', orgA)).body.data.usage.used).toBe(2);
+  });
+
   it.each([
     ['PROVIDER_AUTH', new StitchProviderError('AUTH', 'rejected')],
     ['PROVIDER_QUOTA', new StitchProviderError('QUOTA', 'quota')],
@@ -306,6 +324,36 @@ describe('malformed or unusable provider output', () => {
     } finally {
       (fake as any).generate = original;
     }
+  });
+});
+
+describe('several options in one request', () => {
+  it('returns as many distinct designs as were asked for: the first generation plus real variations', async () => {
+    const job = await generated(orgA, { ...brief, variantCount: 3 });
+    expect(job.status).toBe('SUCCEEDED');
+    expect(job.variants).toHaveLength(3);
+    expect(new Set(job.variants.map((v: any) => v.conceptImageKey)).size).toBe(3);
+    expect(calls.map((c) => c.op)).toEqual(['generate', 'variants']);
+    expect(calls[1].input.options.count).toBe(2);
+    expect(calls[1].input.screenId).toMatch(/^screen-/);
+  });
+
+  it('keeps the first design and reports fewer than requested when the extra options fail', async () => {
+    const original = fake.variants;
+    (fake as any).variants = async () => { throw new StitchProviderError('QUOTA', 'busy'); };
+    try {
+      const job = await generated(orgA, { ...brief, variantCount: 2 });
+      expect(job.status).toBe('SUCCEEDED');
+      expect(job.variants).toHaveLength(1);
+      expect(job.variantCount).toBe(2); // what was asked for, so clients can say "1 of 2"
+    } finally {
+      (fake as any).variants = original;
+    }
+  });
+
+  it('makes a single call for a single option', async () => {
+    await generated(orgA, { ...brief, variantCount: 1 });
+    expect(calls.map((c) => c.op)).toEqual(['generate']);
   });
 });
 

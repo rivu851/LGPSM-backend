@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { CANVAS_PRESETS } from '../services/cardTemplates/designSpec';
 import { SPEC_FONTS } from '../services/cardTemplates/designSpec';
-import { GenerationError, templateGenerationService, serializeJob } from '../services/stitch/templateGeneration.service';
+import { GenerationError, templateGenerationService, serializeJob, usageFor, serializeUsage } from '../services/stitch/templateGeneration.service';
 import { getStitchProvider } from '../services/stitch/stitch.provider';
 import { env } from '../config/env';
 import { MOODS } from '../validators/template.validator';
@@ -21,7 +21,8 @@ function fail(req: Request, res: Response, error: unknown) {
 
 export const templateGenerationController = {
   // What the apps need to build the form, so web and mobile never hard-code sizes or limits
-  options(_req: Request, res: Response) {
+  async options(req: Request, res: Response) {
+    const usage = await usageFor(actorOf(req)).catch(() => null);
     return res.status(200).json({
       success: true,
       data: {
@@ -29,7 +30,8 @@ export const templateGenerationController = {
         presets: Object.entries(CANVAS_PRESETS).map(([id, p]) => ({ id, kind: p.kind, width: p.width, height: p.height, label: p.label })),
         moods: MOODS,
         limits: { promptMin: 10, promptMax: 800, changeMax: 500, maxVariants: 3, dailyQuota: env.STITCH_DAILY_QUOTA_PER_USER },
-        fonts: SPEC_FONTS
+        fonts: SPEC_FONTS,
+        usage: usage ? serializeUsage(usage) : undefined
       }
     });
   },
@@ -37,7 +39,7 @@ export const templateGenerationController = {
   async create(req: Request, res: Response) {
     try {
       const { job, deduplicated } = await templateGenerationService.createJob(actorOf(req), req.body);
-      return res.status(deduplicated ? 200 : 202).json({ success: true, deduplicated, data: serializeJob(job) });
+      return res.status(deduplicated ? 200 : 202).json({ success: true, deduplicated, data: serializeJob(job), usage: serializeUsage(await usageFor(actorOf(req))) });
     } catch (error) {
       return fail(req, res, error);
     }
@@ -75,7 +77,7 @@ export const templateGenerationController = {
   async edit(req: Request, res: Response) {
     try {
       const { job, deduplicated } = await templateGenerationService.editVariant(actorOf(req), req.params.id as string, Number(req.params.index), req.body.prompt, req.body.idempotencyKey);
-      return res.status(deduplicated ? 200 : 202).json({ success: true, deduplicated, data: serializeJob(job) });
+      return res.status(deduplicated ? 200 : 202).json({ success: true, deduplicated, data: serializeJob(job), usage: serializeUsage(await usageFor(actorOf(req))) });
     } catch (error) {
       return fail(req, res, error);
     }
@@ -84,7 +86,7 @@ export const templateGenerationController = {
   async variations(req: Request, res: Response) {
     try {
       const { job, deduplicated } = await templateGenerationService.createVariations(actorOf(req), req.params.id as string, Number(req.params.index), req.body.prompt, req.body.variantCount || 2, req.body.idempotencyKey);
-      return res.status(deduplicated ? 200 : 202).json({ success: true, deduplicated, data: serializeJob(job) });
+      return res.status(deduplicated ? 200 : 202).json({ success: true, deduplicated, data: serializeJob(job), usage: serializeUsage(await usageFor(actorOf(req))) });
     } catch (error) {
       return fail(req, res, error);
     }

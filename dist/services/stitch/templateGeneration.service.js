@@ -12,6 +12,8 @@ exports.pump = pump;
 exports.drain = drain;
 exports.recoverOnStartup = recoverOnStartup;
 exports.renderSamplePreviewJpeg = renderSamplePreviewJpeg;
+exports.usageFor = usageFor;
+exports.serializeUsage = serializeUsage;
 exports.serializeJob = serializeJob;
 const crypto_1 = __importDefault(require("crypto"));
 const mongoose_1 = __importDefault(require("mongoose"));
@@ -204,8 +206,28 @@ function providerCall(job) {
     const preset = job.preset;
     const device = deviceFor(preset);
     const prompt = buildStitchPrompt({ kind: job.kind, preset, prompt: job.prompt, style: job.style });
-    if (job.mode === 'CREATE')
-        return provider.generate({ title: `LGPSM ${job.kind.toLowerCase()} template`, prompt, device }).then((a) => [a]);
+    if (job.mode === 'CREATE') {
+        return provider.generate({ title: `LGPSM ${job.kind.toLowerCase()} template`, prompt, device }).then(async (first) => {
+            if (job.variantCount <= 1)
+                return [first];
+            // One generation makes one design. The extra options are genuine alternatives of it from the provider's own
+            // variations call; if that fails we still return the first design and the job reports fewer than requested.
+            try {
+                const extra = await provider.variants({
+                    projectId: first.projectId,
+                    screenId: first.screenId,
+                    prompt: `Create a clearly different alternative of this design (different layout and colour treatment). Original brief: ${(0, exports.cleanPrompt)(job.prompt)}`,
+                    device,
+                    options: { count: job.variantCount - 1, creativeRange: 'EXPLORE' }
+                });
+                return [first, ...extra.slice(0, job.variantCount - 1)];
+            }
+            catch (err) {
+                console.warn('[template-generation] Extra options could not be created:', err instanceof stitch_provider_1.StitchProviderError ? err.kind : 'unknown error');
+                return [first];
+            }
+        });
+    }
     return TemplateGenerationJob_1.TemplateGenerationJob.findById(job.parentJobId)
         .lean()
         .then((parent) => {
@@ -269,12 +291,12 @@ async function enqueue(actor, base) {
             return { job: active, deduplicated: true };
         throw new GenerationError('JOB_ACTIVE', 409, 'A design is already being generated. Wait for it to finish before starting another.');
     }
-    // Daily quota counts runs that reached the provider, so failures caused by our own configuration do not use it up
-    const used = await TemplateGenerationJob_1.TemplateGenerationJob.countDocuments({ ownerId, startedAt: { $gte: new Date(Date.now() - DAY_MS) } });
-    if (!isAdmin(actor) && used >= env_1.env.STITCH_DAILY_QUOTA_PER_USER) {
-        const oldest = await TemplateGenerationJob_1.TemplateGenerationJob.findOne({ ownerId, startedAt: { $gte: new Date(Date.now() - DAY_MS) } }).sort({ startedAt: 1 }).select('startedAt').lean();
-        const retry = oldest?.startedAt ? Math.max(60, Math.ceil((oldest.startedAt.getTime() + DAY_MS - Date.now()) / 1000)) : 3600;
-        throw new GenerationError('QUOTA_EXCEEDED', 429, `You have used today's ${env_1.env.STITCH_DAILY_QUOTA_PER_USER} design generations. Try again later.`, retry);
+    // Daily quota counts requests that reached (or are waiting for) the provider, so failures caused by our own
+    // configuration do not use it up
+    const usage = await usageFor(actor);
+    if (usage.limit !== null && usage.remaining <= 0) {
+        const retry = usage.resetsAt ? Math.max(60, Math.ceil((usage.resetsAt.getTime() - Date.now()) / 1000)) : 3600;
+        throw new GenerationError('QUOTA_EXCEEDED', 429, `You have used today's ${usage.limit} design generations. Try again later.`, retry);
     }
     let job;
     try {
@@ -304,6 +326,21 @@ async function enqueue(actor, base) {
     }
     setImmediate(() => void pump().catch(() => undefined));
     return { job, deduplicated: false };
+}
+const countedSince = (since) => ({ createdAt: { $gte: since }, $or: [{ startedAt: { $exists: true } }, { status: { $in: ['QUEUED', 'RUNNING'] } }] });
+/** How many generations the actor has used in the last 24 hours and how many are left. */
+async function usageFor(actor) {
+    const since = new Date(Date.now() - DAY_MS);
+    const filter = { ownerId: new mongoose_1.default.Types.ObjectId(actor.userId), ...countedSince(since) };
+    const used = await TemplateGenerationJob_1.TemplateGenerationJob.countDocuments(filter);
+    if (isAdmin(actor))
+        return { used, limit: null, remaining: Number.MAX_SAFE_INTEGER, resetsAt: null };
+    const limit = env_1.env.STITCH_DAILY_QUOTA_PER_USER;
+    const oldest = used >= limit ? await TemplateGenerationJob_1.TemplateGenerationJob.findOne(filter).sort({ createdAt: 1 }).select('createdAt').lean() : null;
+    return { used, limit, remaining: Math.max(0, limit - used), resetsAt: oldest ? new Date(oldest.createdAt.getTime() + DAY_MS) : null };
+}
+function serializeUsage(u) {
+    return { used: u.used, limit: u.limit, remaining: u.limit === null ? null : u.remaining, resetsAt: u.resetsAt };
 }
 async function loadOwnedJob(actor, id) {
     if (!mongoose_1.default.Types.ObjectId.isValid(id))

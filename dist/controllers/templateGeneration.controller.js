@@ -22,7 +22,8 @@ function fail(req, res, error) {
 }
 exports.templateGenerationController = {
     // What the apps need to build the form, so web and mobile never hard-code sizes or limits
-    options(_req, res) {
+    async options(req, res) {
+        const usage = await (0, templateGeneration_service_1.usageFor)(actorOf(req)).catch(() => null);
         return res.status(200).json({
             success: true,
             data: {
@@ -30,14 +31,15 @@ exports.templateGenerationController = {
                 presets: Object.entries(designSpec_1.CANVAS_PRESETS).map(([id, p]) => ({ id, kind: p.kind, width: p.width, height: p.height, label: p.label })),
                 moods: template_validator_1.MOODS,
                 limits: { promptMin: 10, promptMax: 800, changeMax: 500, maxVariants: 3, dailyQuota: env_1.env.STITCH_DAILY_QUOTA_PER_USER },
-                fonts: designSpec_2.SPEC_FONTS
+                fonts: designSpec_2.SPEC_FONTS,
+                usage: usage ? (0, templateGeneration_service_1.serializeUsage)(usage) : undefined
             }
         });
     },
     async create(req, res) {
         try {
             const { job, deduplicated } = await templateGeneration_service_1.templateGenerationService.createJob(actorOf(req), req.body);
-            return res.status(deduplicated ? 200 : 202).json({ success: true, deduplicated, data: (0, templateGeneration_service_1.serializeJob)(job) });
+            return res.status(deduplicated ? 200 : 202).json({ success: true, deduplicated, data: (0, templateGeneration_service_1.serializeJob)(job), usage: (0, templateGeneration_service_1.serializeUsage)(await (0, templateGeneration_service_1.usageFor)(actorOf(req))) });
         }
         catch (error) {
             return fail(req, res, error);
@@ -75,7 +77,7 @@ exports.templateGenerationController = {
     async edit(req, res) {
         try {
             const { job, deduplicated } = await templateGeneration_service_1.templateGenerationService.editVariant(actorOf(req), req.params.id, Number(req.params.index), req.body.prompt, req.body.idempotencyKey);
-            return res.status(deduplicated ? 200 : 202).json({ success: true, deduplicated, data: (0, templateGeneration_service_1.serializeJob)(job) });
+            return res.status(deduplicated ? 200 : 202).json({ success: true, deduplicated, data: (0, templateGeneration_service_1.serializeJob)(job), usage: (0, templateGeneration_service_1.serializeUsage)(await (0, templateGeneration_service_1.usageFor)(actorOf(req))) });
         }
         catch (error) {
             return fail(req, res, error);
@@ -84,7 +86,7 @@ exports.templateGenerationController = {
     async variations(req, res) {
         try {
             const { job, deduplicated } = await templateGeneration_service_1.templateGenerationService.createVariations(actorOf(req), req.params.id, Number(req.params.index), req.body.prompt, req.body.variantCount || 2, req.body.idempotencyKey);
-            return res.status(deduplicated ? 200 : 202).json({ success: true, deduplicated, data: (0, templateGeneration_service_1.serializeJob)(job) });
+            return res.status(deduplicated ? 200 : 202).json({ success: true, deduplicated, data: (0, templateGeneration_service_1.serializeJob)(job), usage: (0, templateGeneration_service_1.serializeUsage)(await (0, templateGeneration_service_1.usageFor)(actorOf(req))) });
         }
         catch (error) {
             return fail(req, res, error);
