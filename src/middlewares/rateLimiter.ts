@@ -1,4 +1,4 @@
-import rateLimit, { Options } from 'express-rate-limit';
+import rateLimit, { Options, ipKeyGenerator } from 'express-rate-limit';
 import { securityEvent } from '../utils/securityLog';
 
 // Records every throttled request as a security event, then answers exactly as the default handler would
@@ -102,6 +102,45 @@ export const cardPreviewLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
   message: { success: false, message: 'Too many preview requests. Please wait a moment.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipInTest,
+});
+
+// Keyed by the signed-in user (these routes always sit behind authenticate), so one organizer cannot spend another's allowance
+const perUser = (req: any) => req.user?.userId || ipKeyGenerator(req.ip);
+
+/** Starting a generation costs real provider quota: 10 requests per hour per user (the per-day quota is enforced by the service). */
+export const templateGenerationLimiter = rateLimit({
+  handler: logged('templateGenerationLimiter'),
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  keyGenerator: perUser,
+  message: { success: false, code: 'RATE_LIMITED', message: 'Too many design requests. Please wait before generating again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipInTest,
+});
+
+/** Status polling and previews: generous, because the apps poll while a design is being made. */
+export const templateGenerationReadLimiter = rateLimit({
+  handler: logged('templateGenerationReadLimiter'),
+  windowMs: 60 * 1000,
+  max: 120,
+  keyGenerator: perUser,
+  message: { success: false, code: 'RATE_LIMITED', message: 'Too many requests. Please wait a moment.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipInTest,
+});
+
+/** Full-size renders are heavier than previews. */
+export const templateRenderLimiter = rateLimit({
+  handler: logged('templateRenderLimiter'),
+  windowMs: 60 * 1000,
+  max: 20,
+  keyGenerator: perUser,
+  message: { success: false, message: 'Too many image requests. Please wait a moment.' },
   standardHeaders: true,
   legacyHeaders: false,
   skip: skipInTest,

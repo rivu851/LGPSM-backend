@@ -27,6 +27,11 @@ const envSchema = z.object({
   WHATSAPP_API_VERSION: z.string().default('v25.0'),
   WHATSAPP_INVITATION_TEMPLATE: z.string().default('lgpsm_event_invitation'),
   WHATSAPP_TEMPLATE_LANGUAGE: z.string().default('en_US'),
+  // Google Stitch (AI template generation). Server-side only; generation reports "unavailable" when the key is absent.
+  STITCH_API_KEY: z.string().optional(),
+  STITCH_TIMEOUT_MS: z.coerce.number().int().min(5000).max(300000).default(120000),
+  STITCH_DAILY_QUOTA_PER_USER: z.coerce.number().int().min(1).max(500).default(15),
+  STITCH_MAX_CONCURRENT_JOBS: z.coerce.number().int().min(1).max(10).default(2),
 });
 
 const _env = envSchema.safeParse(process.env);

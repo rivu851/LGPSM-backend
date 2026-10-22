@@ -4,7 +4,9 @@ import QRCode from 'qrcode';
 import type { CardDesign } from '../models/Template';
 import { assetPath } from '../utils/assetPath';
 import { renderTemplateCard, isTemplateDesign, TemplateDesign } from './cardTemplates/renderer';
-import { buildTemplateTexts, photoInitials } from './cardTemplates/content';
+import { buildTemplateTexts, photoInitials, buildSpecTexts } from './cardTemplates/content';
+import type { DesignSpec } from './cardTemplates/designSpec';
+import { renderDesignSpec } from './cardTemplates/specRenderer';
 
 export interface CardSessionData {
   id?: string;
@@ -39,6 +41,8 @@ export interface InvitationCardData {
     categoryName?: string;
     subcategoryName?: string;
     isVirtual?: boolean;
+    description?: string;
+    organizerName?: string;
   };
   sessions: CardSessionData[];
   /** Preview of a template/event being set up: the designers' sample photo may stand in for a missing event image */
@@ -46,6 +50,8 @@ export interface InvitationCardData {
   qrDataUrl?: string;
   invitationUrl?: string;
   cardDesign?: CardDesign;
+  /** A validated custom design (AI-generated template); when present it is drawn instead of a fixed design */
+  designSpec?: DesignSpec;
 }
 
 const CARD_WIDTH = 1536;
@@ -366,6 +372,33 @@ async function renderFromTemplate(design: TemplateDesign, data: InvitationCardDa
   });
 }
 
+// A custom (AI-generated) design: the stored layout with this event's details and this guest's own QR code
+async function renderFromSpec(spec: DesignSpec, data: InvitationCardData): Promise<Buffer> {
+  const texts = buildSpecTexts({
+    title: data.event.title || '',
+    description: data.event.description,
+    startIso: data.event.startIso,
+    endIso: data.event.endIso,
+    venue: data.event.venue,
+    locationSub: data.event.locationSub,
+    isVirtual: data.event.isVirtual,
+    organizerName: data.event.organizerName,
+    invitee: data.invitee
+  });
+  let qr = dataUrlToBuffer(data.qrDataUrl);
+  if (!qr && data.invitationUrl) qr = await QRCode.toBuffer(data.invitationUrl, { errorCorrectionLevel: 'H', margin: 4, width: 480 });
+  const eventImage = dataUrlToBuffer(data.event.photoBase64);
+  const result = await renderDesignSpec({
+    spec,
+    texts,
+    qr,
+    photo: eventImage,
+    logo: eventImage || dataUrlToBuffer(getLogoBase64()),
+    showPlaceholders: data.isPreview === true
+  });
+  return result.png;
+}
+
 export const invitationCardService = {
   /** SVG of the generic design. The template designs are drawn as images, see generateInvitationCardPNG. */
   async generateInvitationCardSVG(data: InvitationCardData): Promise<string> {
@@ -373,6 +406,7 @@ export const invitationCardService = {
   },
 
   async generateInvitationCardPNG(data: InvitationCardData): Promise<Buffer> {
+    if (data.designSpec) return renderFromSpec(data.designSpec, data);
     if (isTemplateDesign(data.cardDesign)) {
       return renderFromTemplate(data.cardDesign, data);
     }

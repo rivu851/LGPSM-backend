@@ -18,6 +18,7 @@ import { eventAssignmentRoutes, assignmentRoutes, myAssignmentRoutes } from './r
 import checkInRoutes, { eventCheckInRoutes } from './routes/checkIn.routes';
 import categoryRoutes from './routes/category.routes';
 import templateRoutes from './routes/template.routes';
+import templateGenerationRoutes from './routes/templateGeneration.routes';
 import notificationRoutes from './routes/notification.routes';
 import auditLogRoutes from './routes/auditLog.routes';
 import reportRoutes from './routes/report.routes';
@@ -107,6 +108,8 @@ app.use('/api/v1/events/:eventId/checkins', eventCheckInRoutes);
 
 // Category, Template, Notification, AuditLog, Report, Ticketing & Payment Routes
 app.use('/api/v1/categories', categoryRoutes);
+app.use('/api/v1/template-generations/:id', requireObjectIdParam('id', ['options']));
+app.use('/api/v1/template-generations', templateGenerationRoutes);
 app.use('/api/v1/templates', templateRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);

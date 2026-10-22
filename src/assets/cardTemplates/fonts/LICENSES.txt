@@ -763,3 +763,9 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 
+
+
+---
+Added for AI-generated templates: Playfair Display (Copyright The Playfair Display Project Authors) and Manrope
+(Copyright 2019 The Manrope Project Authors), both SIL OFL 1.1, from https://github.com/google/fonts (ofl/playfairdisplay, ofl/manrope).
+Static instances (400/600/700 and 500/700) were generated from the variable fonts with fontTools.

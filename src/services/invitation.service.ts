@@ -244,12 +244,15 @@ export const invitationService = {
             endIso: event.schedule?.end,
             categoryName: cardContext.categoryName,
             subcategoryName: cardContext.subcategoryName,
-            isVirtual: (event as any).format === 'VIRTUAL'
+            isVirtual: (event as any).format === 'VIRTUAL',
+            description: (event as any).description,
+            organizerName: cardContext.organizerName
           },
           sessions: assignedSessions,
           qrDataUrl,
           invitationUrl,
-          cardDesign
+          cardDesign,
+          designSpec: cardContext.designSpec
         });
       } catch (err) {
         console.error('Failed to generate high-resolution invitation card PNG:', err);
@@ -489,12 +492,15 @@ export const invitationService = {
             endIso: event.schedule?.end,
             categoryName: cardContext.categoryName,
             subcategoryName: cardContext.subcategoryName,
-            isVirtual: (event as any).format === 'VIRTUAL'
+            isVirtual: (event as any).format === 'VIRTUAL',
+            description: (event as any).description,
+            organizerName: cardContext.organizerName
           },
           sessions: assignedSessions,
           qrDataUrl,
           invitationUrl,
-          cardDesign
+          cardDesign,
+          designSpec: cardContext.designSpec
         });
       } catch (err) {
         console.error('Failed to generate high-resolution invitation card PNG for resend:', err);
@@ -739,12 +745,15 @@ export const invitationService = {
             endIso: event.schedule?.end,
             categoryName: cardContext.categoryName,
             subcategoryName: cardContext.subcategoryName,
-            isVirtual: (event as any).format === 'VIRTUAL'
+            isVirtual: (event as any).format === 'VIRTUAL',
+            description: (event as any).description,
+            organizerName: cardContext.organizerName
       },
       sessions: assignedSessions,
       qrDataUrl,
       invitationUrl,
-      cardDesign
+      cardDesign,
+      designSpec: cardContext.designSpec
     });
     return { png, qr: issuedToken ? ('ISSUED' as const) : ('SAMPLE' as const) };
   }

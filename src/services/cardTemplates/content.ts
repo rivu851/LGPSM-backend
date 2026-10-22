@@ -204,3 +204,38 @@ export function buildTemplateTexts(input: CardContentInput): Record<string, stri
 export function photoInitials(input: CardContentInput, texts: Record<string, string>): string {
   return initialsOf(texts.honoree || texts.names || input.title);
 }
+
+// ---- text for designs that are not tied to the Figma slots (AI-generated templates, see designSpec.ts) ----
+
+export interface SpecContentInput {
+  title: string;
+  description?: string;
+  startIso?: string | Date | null;
+  endIso?: string | Date | null;
+  venue?: string;
+  locationSub?: string;
+  isVirtual?: boolean;
+  organizerName?: string;
+  invitee?: { name?: string; companyName?: string; employeeId?: string };
+}
+
+/** Text for every role a custom design can show. Roles with nothing to say are omitted so the design leaves them empty. */
+export function buildSpecTexts(input: SpecContentInput): Record<string, string> {
+  const start = toDate(input.startIso);
+  const end = toDate(input.endIso);
+  const p = start ? parts(start) : null;
+  const clean = (v?: string) => (v || '').trim();
+  const texts: Record<string, string> = {
+    title: clean(input.title),
+    description: clean(input.description),
+    date: start ? longDate(start, end) : '',
+    time: p ? (end && sameDay(start!, end) ? `${p.time} – ${parts(end).time}` : p.time) : '',
+    dateTime: p ? `${p.weekday}, ${longDate(start, end)} · ${p.time}` : '',
+    venue: addressLine({ design: 'CORPORATE_V1', title: '', venue: input.venue, locationSub: input.locationSub, isVirtual: input.isVirtual }),
+    organizer: clean(input.organizerName),
+    inviteeName: clean(input.invitee?.name),
+    inviteeMeta: clean(input.invitee?.employeeId ? `Employee ID #${input.invitee.employeeId}` : input.invitee?.companyName),
+    tagline: ''
+  };
+  return Object.fromEntries(Object.entries(texts).filter(([, v]) => v));
+}

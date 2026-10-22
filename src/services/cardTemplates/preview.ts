@@ -4,6 +4,8 @@ import { previewSampleUrl } from '../../utils/qrPayload';
 import { resolveImageKeyBase64 } from '../../utils/resolveImageBase64';
 import { invitationCardService } from '../invitationCard.service';
 import { resolveCardDesign } from './designs';
+import { safeParseDesignSpec } from './designSpec';
+import { templateVisibleTo } from '../template.service';
 
 export interface TemplatePreviewInput {
   title?: string;
@@ -23,11 +25,14 @@ export interface TemplatePreviewInput {
  * The card a template produces for the event being entered, with a placeholder guest and a clearly marked sample QR.
  * Lets the Add Event form show the real card (and the wording written for this kind of event) before anything is saved.
  */
-export async function renderTemplatePreview(templateId: string | null, input: TemplatePreviewInput, isAdmin: boolean): Promise<Buffer> {
+export async function renderTemplatePreview(templateId: string | null, input: TemplatePreviewInput, isAdmin: boolean, userId?: string): Promise<Buffer> {
   // With no template chosen the card still gets the design that suits the event type, exactly as it will when sent
-  const template = templateId ? await Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished').lean() : null;
-  // organizers only see published templates, exactly as in the template list
-  if (templateId && (!template || (template.isPublished === false && !isAdmin))) throw new Error('TEMPLATE_NOT_FOUND');
+  const template = templateId ? await Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec').lean() : null;
+  // organizers only see what the template list shows them: published templates and their own, never another organizer's
+  if (templateId && (!template || !templateVisibleTo(template as any, { userId, isAdmin }))) throw new Error('TEMPLATE_NOT_FOUND');
+  // a custom design is drawn from its stored specification
+  const spec = template?.cardDesign === 'CUSTOM' ? safeParseDesignSpec(template.designSpec) : null;
+  if (template?.cardDesign === 'CUSTOM' && !spec?.ok) throw new Error('TEMPLATE_NOT_USABLE');
 
   const cardDesign = resolveCardDesign({
     templateDesign: template?.cardDesign,
@@ -54,6 +59,7 @@ export async function renderTemplatePreview(templateId: string | null, input: Te
     isPreview: true,
     qrDataUrl: await generateQRCodeDataURL(invitationUrl),
     invitationUrl,
-    cardDesign
+    cardDesign: spec?.ok ? 'CUSTOM' : cardDesign,
+    designSpec: spec?.ok ? spec.spec : undefined
   });
 }

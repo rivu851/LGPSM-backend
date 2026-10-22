@@ -21,6 +21,11 @@ const FONT_FILES: Record<string, string> = {
   'Ancizar Serif:400': 'AncizarSerif-Regular.ttf',
   'Alex Brush:400': 'AlexBrush-Regular.ttf',
   'Birthstone:400': 'Birthstone-Regular.ttf',
+  'Playfair Display:400': 'PlayfairDisplay-Regular.ttf',
+  'Playfair Display:600': 'PlayfairDisplay-SemiBold.ttf',
+  'Playfair Display:700': 'PlayfairDisplay-Bold.ttf',
+  'Manrope:500': 'Manrope-Medium.ttf',
+  'Manrope:700': 'Manrope-Bold.ttf',
 };
 
 /** Families tried, in order, when a glyph is missing (Bengali and Devanagari names, for example). */

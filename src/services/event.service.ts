@@ -1,7 +1,7 @@
 import { eventRepository, EventFilter, Pagination } from '../repositories/event.repository';
 import { IEvent, Event, EventStatus } from '../models/Event';
 import { Category } from '../models/Category';
-import { Template } from '../models/Template';
+import { templateService } from './template.service';
 import { Session } from '../models/Session';
 import { Invitee } from '../models/Invitee';
 import { Invitation } from '../models/Invitation';
@@ -64,8 +64,8 @@ export class EventService {
 
     // Validate Template if provided
     if (eventData.templateId && mongoose.Types.ObjectId.isValid(eventData.templateId)) {
-      const templateExists = await Template.findById(eventData.templateId);
-      if (!templateExists) {
+      // a template another organizer owns is treated like a missing one
+      if (!(await templateService.isUsableByOrganizer(String(eventData.templateId), String(organizerId)))) {
         delete eventData.templateId;
       }
     } else {
@@ -161,8 +161,7 @@ export class EventService {
     }
 
     if (updateData.templateId && updateData.templateId !== existingEvent.templateId?.toString()) {
-      const templateExists = await Template.findById(updateData.templateId);
-      if (!templateExists) throw new Error('TEMPLATE_NOT_FOUND');
+      if (!(await templateService.isUsableByOrganizer(String(updateData.templateId), String(existingEvent.organizerId)))) throw new Error('TEMPLATE_NOT_FOUND');
     }
 
     // Disallow updating organizerId, _id, createdAt and the locked rate

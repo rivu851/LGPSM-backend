@@ -48,7 +48,7 @@ export function isPrivateAddress(address: string): boolean {
 }
 
 // Used as the socket `lookup`, so the address that is actually connected to is the one checked
-const guardedLookup: typeof dns.lookup = ((hostname: string, options: any, callback: any) => {
+export const guardedLookup: typeof dns.lookup = ((hostname: string, options: any, callback: any) => {
   const cb = typeof options === 'function' ? options : callback;
   dns.lookup(hostname, { all: true, verbatim: true }, (err, addresses) => {
     if (err) return cb(err);
