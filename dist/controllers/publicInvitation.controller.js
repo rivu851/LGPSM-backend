@@ -13,7 +13,8 @@ exports.publicInvitationController = {
             if (error.message === 'INVITATION_NOT_FOUND' || error.message === 'INVALID_TOKEN') {
                 return res.status(404).json({ success: false, error: 'Not Found', message: 'Invitation not found or token is invalid' });
             }
-            return res.status(500).json({ success: false, error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ success: false, error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async submitRsvp(req, res) {
@@ -36,7 +37,8 @@ exports.publicInvitationController = {
             if (error.message === 'RSVP_CLOSED') {
                 return res.status(400).json({ success: false, message: 'The RSVP deadline for this event has passed.' });
             }
-            return res.status(500).json({ success: false, error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ success: false, error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     }
 };

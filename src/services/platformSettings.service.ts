@@ -12,7 +12,7 @@ async function load() {
 const featureKeys: (keyof IEventFeatures)[] = ['allowEventRSVP', 'acceptInvitedAttendees', 'chooseNotRespondedInvitees', 'chooseRSVPDeclinedInvitees', 'askFoodPreference'];
 const notificationKeys: (keyof INotificationPreferences)[] = [
   'newOrganizerRegistration', 'newEventAdded', 'deactivatedOrganizerBySuperAdmin', 'changeInPrice',
-  'invitationSendFailed', 'dayBeforeEventAlert', 'reportDownload', 'customTemplateRequest'
+  'invitationSendFailed', 'dayBeforeEventAlert', 'reportDownload', 'customTemplateRequest', 'newContactMessage'
 ];
 const pick = <K extends string>(src: any, keys: K[]) => Object.fromEntries(keys.map((k) => [k, !!src?.[k]])) as Record<K, boolean>;
 

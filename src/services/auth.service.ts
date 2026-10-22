@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { OAuth2Client } from 'google-auth-library';
 import { userRepository } from '../repositories/user.repository';
+import { securityEvent } from '../utils/securityLog';
 import { tokenRepository } from '../repositories/token.repository';
 import { emailVerificationRepository } from '../repositories/emailVerification.repository';
 import { hashPassword, verifyPassword } from '../utils/password';
@@ -10,6 +11,7 @@ import {
   generateRefreshToken,
   verifyRefreshToken,
   generatePasswordResetToken,
+  passwordFingerprint,
   verifyPasswordResetToken,
 } from '../utils/token';
 import { sendEmail } from '../utils/email.provider';
@@ -432,7 +434,7 @@ export const authService = {
     const user = await userRepository.findByEmail(email);
     if (!user) return;
 
-    const resetToken = generatePasswordResetToken((user as any)._id.toString(), user.role);
+    const resetToken = generatePasswordResetToken((user as any)._id.toString(), user.role, user.passwordHash);
     const portal = user.role === Role.ADMIN ? 'admin' : user.role === Role.ORGANIZER ? 'organizer' : 'app';
     const resetUrl = `${env.FRONTEND_URL}/forgot-password?mode=${portal}&token=${encodeURIComponent(resetToken)}`;
 
@@ -451,7 +453,8 @@ export const authService = {
     const payload = verifyPasswordResetToken(token);
 
     const user = await userRepository.findById(payload.userId);
-    if (!user) {
+    // Invalid when the user is gone/disabled or the password changed since the link was issued (single use)
+    if (!user || !user.isActive || payload.pwf !== passwordFingerprint(user.passwordHash)) {
       throw { statusCode: 400, message: 'Invalid token' };
     }
 
@@ -461,5 +464,6 @@ export const authService = {
     });
 
     await tokenRepository.revokeAllForUser((user as any)._id.toString());
+    securityEvent('PASSWORD_RESET_COMPLETED', undefined, { subject: String((user as any)._id) });
   },
 };

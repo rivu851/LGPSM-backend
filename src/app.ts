@@ -13,10 +13,12 @@ import { eventSessionRoutes, sessionRoutes } from './routes/session.routes';
 import { eventInviteeRoutes, inviteeRoutes } from './routes/invitee.routes';
 import invitationRoutes from './routes/invitation.routes';
 import publicInvitationRoutes from './routes/publicInvitation.routes';
+import contactRoutes from './routes/contact.routes';
 import { eventAssignmentRoutes, assignmentRoutes, myAssignmentRoutes } from './routes/systemUserAssignment.routes';
 import checkInRoutes, { eventCheckInRoutes } from './routes/checkIn.routes';
 import categoryRoutes from './routes/category.routes';
 import templateRoutes from './routes/template.routes';
+import templateGenerationRoutes from './routes/templateGeneration.routes';
 import notificationRoutes from './routes/notification.routes';
 import auditLogRoutes from './routes/auditLog.routes';
 import reportRoutes from './routes/report.routes';
@@ -47,7 +49,12 @@ app.use(cors({
   exposedHeaders: ['X-Invitation-Qr'],
   credentials: true,
 }));
-app.use(express.json());
+// The raw bytes are kept so webhook signatures can be verified against exactly what the sender signed
+app.use(express.json({
+  verify: (req, _res, buf) => {
+    (req as any).rawBody = buf;
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // Basic health-check endpoint
@@ -75,7 +82,7 @@ app.use('/api/v1/tickets/:id', requireObjectIdParam('id'));
 app.use('/api/v1/reports/events/:eventId', requireObjectIdParam('eventId'));
 app.use('/api/v1/notifications/:id', requireObjectIdParam('id', ['read-all', 'clear-all']));
 app.use('/api/v1/categories/:id', requireObjectIdParam('id'));
-app.use('/api/v1/templates/:id', requireObjectIdParam('id'));
+app.use('/api/v1/templates/:id', requireObjectIdParam('id', ['defaults', 'preview']));
 app.use('/api/users/:id', requireObjectIdParam('id', ['profile', 'me']));
 app.use('/api/v1/orders/:id', requireObjectIdParam('id'));
 app.use('/api/v1/invoices/:id', requireObjectIdParam('id'));
@@ -93,6 +100,7 @@ app.use('/api/v1/invitees', inviteeRoutes);
 app.use('/api/v1/events/:eventId/assignments', eventAssignmentRoutes);
 app.use('/api/v1/events/:eventId/invitations', invitationRoutes);
 app.use('/api/v1/public/invitations', publicInvitationRoutes);
+app.use('/api/v1/public/contact', contactRoutes);
 app.use('/api/v1/assignments', assignmentRoutes);
 app.use('/api/v1/users/me/assignments', myAssignmentRoutes);
 app.use('/api/v1/checkins', checkInRoutes);
@@ -100,6 +108,8 @@ app.use('/api/v1/events/:eventId/checkins', eventCheckInRoutes);
 
 // Category, Template, Notification, AuditLog, Report, Ticketing & Payment Routes
 app.use('/api/v1/categories', categoryRoutes);
+app.use('/api/v1/template-generations/:id', requireObjectIdParam('id', ['options']));
+app.use('/api/v1/template-generations', templateGenerationRoutes);
 app.use('/api/v1/templates', templateRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);

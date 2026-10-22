@@ -19,7 +19,8 @@ export const reportController = {
       });
       return res.status(200).json({ success: true, data });
     } catch (error: any) {
-      return res.status(500).json({ success: false, message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
     }
   },
 
@@ -28,7 +29,8 @@ export const reportController = {
       const data = await reportService.getAdminOverview({ from: parseDate(req.query.from), to: parseDate(req.query.to) });
       return res.status(200).json({ success: true, data });
     } catch (error: any) {
-      return res.status(500).json({ success: false, message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
     }
   },
 
@@ -41,7 +43,8 @@ export const reportController = {
       const data = await reportService.getDashboardStats(user);
       return res.status(200).json({ success: true, data });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   },
 
@@ -56,7 +59,8 @@ export const reportController = {
       return res.status(200).json({ success: true, data });
     } catch (error: any) {
       if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   }
 };

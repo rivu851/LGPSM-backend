@@ -21,8 +21,6 @@ export const sendEmail = async (
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
 
-  console.log(host, port, user, pass);
-  
   if (!host || !user || !pass) {
     // Explicit failure if not configured, rather than silent mock success
     console.error('Email Delivery Error: SMTP credentials are not fully configured in environment variables.');

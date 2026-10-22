@@ -1,0 +1,46 @@
+name: Security and tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: '17 4 * * 1' # weekly: catches newly published advisories even when no code changed
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # Placeholders only: tests use an in-memory MongoDB and mock all mail, so no real service or secret
+    # is needed. src/config/env.ts still validates strictly, so a missing variable fails loudly.
+    env:
+      NODE_ENV: test
+      ATLAS_URL: mongodb://127.0.0.1:27017/ci-placeholder
+      FRONTEND_URL: http://localhost:3000
+      JWT_SECRET: ci-placeholder-access-secret-not-real
+      JWT_REFRESH_SECRET: ci-placeholder-refresh-secret-not-real
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install from the lockfile (fails if package.json and package-lock.json disagree)
+        run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Tests (includes the security regression suite)
+        run: npm test
+      - name: Committed dist/ matches src/ (Render runs dist/server.js)
+        run: |
+          npm run build
+          # status (not diff) so newly added compiled files are caught too; dist/assets is git-ignored on purpose
+          test -z "$(git status --porcelain -- dist)" || { git status --porcelain -- dist; echo "dist/ is stale: run 'npm run build' and commit it"; exit 1; }
+      - name: Invitation cards render from the deployed layout (code in dist/, assets from src/assets)
+        run: node scripts/check-deployed-layout.js
+      - name: Secret scan (reports file:line and rule only)
+        run: bash scripts/secret-scan.sh
+      - name: Production dependency audit (high and critical fail the build)
+        run: npm audit --omit=dev --audit-level=high

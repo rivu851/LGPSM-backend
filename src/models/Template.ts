@@ -6,9 +6,14 @@ export const CARD_DESIGNS = [
   'CORPORATE_V2',
   'WEDDING',
   'RICE_CEREMONY',
-  'BIRTHDAY'
+  'BIRTHDAY',
+  // Rendered from `designSpec` (see services/cardTemplates/designSpec.ts) instead of fixed Figma artwork
+  'CUSTOM'
 ] as const;
 export type CardDesign = (typeof CARD_DESIGNS)[number];
+
+export const TEMPLATE_KINDS = ['INVITATION', 'POSTER'] as const;
+export type TemplateKind = (typeof TEMPLATE_KINDS)[number];
 
 export interface ITemplate extends Document {
   name: string;
@@ -17,6 +22,12 @@ export interface ITemplate extends Document {
   previewImageKey?: string;
   templateData?: Record<string, any>;
   cardDesign: CardDesign;
+  kind: TemplateKind;
+  /** Organizer (or admin) who created an AI template; absent on the designers' system templates */
+  ownerId?: mongoose.Types.ObjectId;
+  /** Validated, versioned design for cardDesign CUSTOM; never contains markup, scripts or URLs */
+  designSpec?: Record<string, any>;
+  source?: { provider: 'STITCH'; jobId?: mongoose.Types.ObjectId; screenId?: string };
   isSystemTemplate: boolean;
   isPublished: boolean;
   isActive: boolean;
@@ -32,6 +43,12 @@ const TemplateSchema: Schema = new Schema(
     previewImageKey: { type: String },
     templateData: { type: Schema.Types.Mixed, default: {} },
     cardDesign: { type: String, enum: CARD_DESIGNS, default: 'CLASSIC' },
+    kind: { type: String, enum: TEMPLATE_KINDS, default: 'INVITATION' },
+    ownerId: { type: Schema.Types.ObjectId, ref: 'User', index: true },
+    designSpec: { type: Schema.Types.Mixed },
+    source: {
+      type: new Schema({ provider: { type: String, enum: ['STITCH'] }, jobId: { type: Schema.Types.ObjectId }, screenId: { type: String } }, { _id: false })
+    },
     isSystemTemplate: { type: Boolean, default: true },
     // Drafts are visible to admins only; organizers can pick published templates
     isPublished: { type: Boolean, default: true },

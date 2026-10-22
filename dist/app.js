@@ -50,10 +50,12 @@ const session_routes_1 = require("./routes/session.routes");
 const invitee_routes_1 = require("./routes/invitee.routes");
 const invitation_routes_1 = __importDefault(require("./routes/invitation.routes"));
 const publicInvitation_routes_1 = __importDefault(require("./routes/publicInvitation.routes"));
+const contact_routes_1 = __importDefault(require("./routes/contact.routes"));
 const systemUserAssignment_routes_1 = require("./routes/systemUserAssignment.routes");
 const checkIn_routes_1 = __importStar(require("./routes/checkIn.routes"));
 const category_routes_1 = __importDefault(require("./routes/category.routes"));
 const template_routes_1 = __importDefault(require("./routes/template.routes"));
+const templateGeneration_routes_1 = __importDefault(require("./routes/templateGeneration.routes"));
 const notification_routes_1 = __importDefault(require("./routes/notification.routes"));
 const auditLog_routes_1 = __importDefault(require("./routes/auditLog.routes"));
 const report_routes_1 = __importDefault(require("./routes/report.routes"));
@@ -81,7 +83,12 @@ app.use((0, cors_1.default)({
     exposedHeaders: ['X-Invitation-Qr'],
     credentials: true,
 }));
-app.use(express_1.default.json());
+// The raw bytes are kept so webhook signatures can be verified against exactly what the sender signed
+app.use(express_1.default.json({
+    verify: (req, _res, buf) => {
+        req.rawBody = buf;
+    }
+}));
 app.use(express_1.default.urlencoded({ extended: true }));
 // Basic health-check endpoint
 app.get('/api/health', (req, res) => {
@@ -105,7 +112,7 @@ app.use('/api/v1/tickets/:id', requireObjectIdParam('id'));
 app.use('/api/v1/reports/events/:eventId', requireObjectIdParam('eventId'));
 app.use('/api/v1/notifications/:id', requireObjectIdParam('id', ['read-all', 'clear-all']));
 app.use('/api/v1/categories/:id', requireObjectIdParam('id'));
-app.use('/api/v1/templates/:id', requireObjectIdParam('id'));
+app.use('/api/v1/templates/:id', requireObjectIdParam('id', ['defaults', 'preview']));
 app.use('/api/users/:id', requireObjectIdParam('id', ['profile', 'me']));
 app.use('/api/v1/orders/:id', requireObjectIdParam('id'));
 app.use('/api/v1/invoices/:id', requireObjectIdParam('id'));
@@ -122,12 +129,15 @@ app.use('/api/v1/invitees', invitee_routes_1.inviteeRoutes);
 app.use('/api/v1/events/:eventId/assignments', systemUserAssignment_routes_1.eventAssignmentRoutes);
 app.use('/api/v1/events/:eventId/invitations', invitation_routes_1.default);
 app.use('/api/v1/public/invitations', publicInvitation_routes_1.default);
+app.use('/api/v1/public/contact', contact_routes_1.default);
 app.use('/api/v1/assignments', systemUserAssignment_routes_1.assignmentRoutes);
 app.use('/api/v1/users/me/assignments', systemUserAssignment_routes_1.myAssignmentRoutes);
 app.use('/api/v1/checkins', checkIn_routes_1.default);
 app.use('/api/v1/events/:eventId/checkins', checkIn_routes_1.eventCheckInRoutes);
 // Category, Template, Notification, AuditLog, Report, Ticketing & Payment Routes
 app.use('/api/v1/categories', category_routes_1.default);
+app.use('/api/v1/template-generations/:id', requireObjectIdParam('id', ['options']));
+app.use('/api/v1/template-generations', templateGeneration_routes_1.default);
 app.use('/api/v1/templates', template_routes_1.default);
 app.use('/api/v1/notifications', notification_routes_1.default);
 app.use('/api/v1/audit-logs', auditLog_routes_1.default);

@@ -8,7 +8,6 @@ const invitationContent_1 = require("../utils/invitationContent");
 const alert_service_1 = require("./alert.service");
 const mongoose_1 = __importDefault(require("mongoose"));
 const Event_1 = require("../models/Event");
-const Template_1 = require("../models/Template");
 const Invitee_1 = require("../models/Invitee");
 const Invitation_1 = require("../models/Invitation");
 const Session_1 = require("../models/Session");
@@ -20,6 +19,7 @@ const tokenCipher_1 = require("../utils/tokenCipher");
 const email_provider_1 = require("../utils/email.provider");
 const whatsapp_service_1 = require("./whatsapp.service");
 const invitationCard_service_1 = require("./invitationCard.service");
+const context_1 = require("./cardTemplates/context");
 const resolveImageBase64_1 = require("../utils/resolveImageBase64");
 function buildFormalInvitationEmailHTML(params) {
     const { eventTitle, inviteeName, eventDate, eventTime, venue, dietaryPreference, invitationUrl, cid, cardCid, isReminder } = params;
@@ -154,8 +154,9 @@ exports.invitationService = {
         }
         if (!event)
             throw new Error('EVENT_NOT_FOUND');
-        const template = event.templateId ? await Template_1.Template.findById(event.templateId).select('cardDesign').lean() : null;
-        const cardDesign = template?.cardDesign;
+        // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
+        const cardContext = await (0, context_1.loadCardContext)(event);
+        const cardDesign = cardContext.cardDesign;
         // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
         // every invitee's card for this event.
         const eventPhotoBase64 = await (0, resolveImageBase64_1.resolveImageKeyBase64)(event.media?.logoKey);
@@ -196,6 +197,7 @@ exports.invitationService = {
                 invitation.channel = channel;
                 invitation.tokenHash = tokenHash;
                 invitation.status = Invitation_1.InvitationDeliveryStatus.PENDING;
+                invitation.clearedAt = undefined; // a fresh delivery belongs in the visible history again
             }
             let emailSuccess = false;
             let whatsappSuccess = false;
@@ -207,7 +209,7 @@ exports.invitationService = {
             let cardBuffer;
             try {
                 cardBuffer = await invitationCard_service_1.invitationCardService.generateInvitationCardPNG({
-                    invitee: { id: invitee._id.toString(), name: invitee.name },
+                    invitee: { id: invitee._id.toString(), name: invitee.name, companyName: invitee.companyName || invitee.company },
                     event: {
                         id: event._id.toString(),
                         title: event.title,
@@ -217,12 +219,20 @@ exports.invitationService = {
                         timeSub: 'ONWARDS',
                         venue,
                         locationSub,
-                        photoBase64: eventPhotoBase64
+                        photoBase64: eventPhotoBase64,
+                        startIso: event.schedule?.start,
+                        endIso: event.schedule?.end,
+                        categoryName: cardContext.categoryName,
+                        subcategoryName: cardContext.subcategoryName,
+                        isVirtual: event.format === 'VIRTUAL',
+                        description: event.description,
+                        organizerName: cardContext.organizerName
                     },
                     sessions: assignedSessions,
                     qrDataUrl,
                     invitationUrl,
-                    cardDesign
+                    cardDesign,
+                    designSpec: cardContext.designSpec
                 });
             }
             catch (err) {
@@ -375,8 +385,9 @@ exports.invitationService = {
         }
         if (!event)
             throw new Error('EVENT_NOT_FOUND');
-        const template = event.templateId ? await Template_1.Template.findById(event.templateId).select('cardDesign').lean() : null;
-        const cardDesign = template?.cardDesign;
+        // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
+        const cardContext = await (0, context_1.loadCardContext)(event);
+        const cardDesign = cardContext.cardDesign;
         // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
         // every invitee's card for this event.
         const eventPhotoBase64 = await (0, resolveImageBase64_1.resolveImageKeyBase64)(event.media?.logoKey);
@@ -436,12 +447,20 @@ exports.invitationService = {
                         timeSub: 'ONWARDS',
                         venue,
                         locationSub,
-                        photoBase64: eventPhotoBase64
+                        photoBase64: eventPhotoBase64,
+                        startIso: event.schedule?.start,
+                        endIso: event.schedule?.end,
+                        categoryName: cardContext.categoryName,
+                        subcategoryName: cardContext.subcategoryName,
+                        isVirtual: event.format === 'VIRTUAL',
+                        description: event.description,
+                        organizerName: cardContext.organizerName
                     },
                     sessions: assignedSessions,
                     qrDataUrl,
                     invitationUrl,
-                    cardDesign
+                    cardDesign,
+                    designSpec: cardContext.designSpec
                 });
             }
             catch (err) {
@@ -600,6 +619,20 @@ exports.invitationService = {
             totalPages: Math.ceil(total / limit)
         };
     },
+    // Hides the event's delivery history. Records are kept: Resend addresses them by id and check-in uses them to
+    // tell a superseded QR from an unknown one. Sending or resending to a guest makes that guest's entry visible again.
+    async clearHistory(eventId, userOrOrganizerId) {
+        const isUserObj = typeof userOrOrganizerId === 'object' && userOrOrganizerId !== null;
+        const organizerId = isUserObj ? userOrOrganizerId.userId : userOrOrganizerId;
+        const userRole = isUserObj ? userOrOrganizerId.role : undefined;
+        const event = userRole === User_1.Role.ADMIN || userRole === 'ADMIN'
+            ? await Event_1.Event.findById(eventId)
+            : await Event_1.Event.findOne({ _id: eventId, organizerId });
+        if (!event)
+            throw new Error('EVENT_NOT_FOUND');
+        const result = await Invitation_1.Invitation.updateMany({ eventId, clearedAt: { $exists: false } }, { $set: { clearedAt: new Date() } });
+        return { cleared: result.modifiedCount };
+    },
     async previewInvitationCard(eventId, userOrOrganizerId, inviteeId) {
         const isUserObj = typeof userOrOrganizerId === 'object' && userOrOrganizerId !== null;
         const organizerId = isUserObj ? userOrOrganizerId.userId : userOrOrganizerId;
@@ -613,8 +646,9 @@ exports.invitationService = {
         }
         if (!event)
             throw new Error('EVENT_NOT_FOUND');
-        const template = event.templateId ? await Template_1.Template.findById(event.templateId).select('cardDesign').lean() : null;
-        const cardDesign = template?.cardDesign;
+        // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
+        const cardContext = await (0, context_1.loadCardContext)(event);
+        const cardDesign = cardContext.cardDesign;
         // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
         // every invitee's card for this event.
         const eventPhotoBase64 = await (0, resolveImageBase64_1.resolveImageKeyBase64)(event.media?.logoKey);
@@ -646,12 +680,20 @@ exports.invitationService = {
                 timeSub: 'ONWARDS',
                 venue,
                 locationSub,
-                photoBase64: eventPhotoBase64
+                photoBase64: eventPhotoBase64,
+                startIso: event.schedule?.start,
+                endIso: event.schedule?.end,
+                categoryName: cardContext.categoryName,
+                subcategoryName: cardContext.subcategoryName,
+                isVirtual: event.format === 'VIRTUAL',
+                description: event.description,
+                organizerName: cardContext.organizerName
             },
             sessions: assignedSessions,
             qrDataUrl,
             invitationUrl,
-            cardDesign
+            cardDesign,
+            designSpec: cardContext.designSpec
         });
         return { png, qr: issuedToken ? 'ISSUED' : 'SAMPLE' };
     }

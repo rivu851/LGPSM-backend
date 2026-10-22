@@ -8,6 +8,7 @@ const crypto_1 = __importDefault(require("crypto"));
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const google_auth_library_1 = require("google-auth-library");
 const user_repository_1 = require("../repositories/user.repository");
+const securityLog_1 = require("../utils/securityLog");
 const token_repository_1 = require("../repositories/token.repository");
 const emailVerification_repository_1 = require("../repositories/emailVerification.repository");
 const password_1 = require("../utils/password");
@@ -344,7 +345,7 @@ exports.authService = {
         const user = await user_repository_1.userRepository.findByEmail(email);
         if (!user)
             return;
-        const resetToken = (0, token_1.generatePasswordResetToken)(user._id.toString(), user.role);
+        const resetToken = (0, token_1.generatePasswordResetToken)(user._id.toString(), user.role, user.passwordHash);
         const portal = user.role === User_1.Role.ADMIN ? 'admin' : user.role === User_1.Role.ORGANIZER ? 'organizer' : 'app';
         const resetUrl = `${env_1.env.FRONTEND_URL}/forgot-password?mode=${portal}&token=${encodeURIComponent(resetToken)}`;
         try {
@@ -357,7 +358,8 @@ exports.authService = {
     async resetPassword(token, newPassword) {
         const payload = (0, token_1.verifyPasswordResetToken)(token);
         const user = await user_repository_1.userRepository.findById(payload.userId);
-        if (!user) {
+        // Invalid when the user is gone/disabled or the password changed since the link was issued (single use)
+        if (!user || !user.isActive || payload.pwf !== (0, token_1.passwordFingerprint)(user.passwordHash)) {
             throw { statusCode: 400, message: 'Invalid token' };
         }
         const hashedPassword = await (0, password_1.hashPassword)(newPassword);
@@ -365,5 +367,6 @@ exports.authService = {
             passwordHash: hashedPassword,
         });
         await token_repository_1.tokenRepository.revokeAllForUser(user._id.toString());
+        (0, securityLog_1.securityEvent)('PASSWORD_RESET_COMPLETED', undefined, { subject: String(user._id) });
     },
 };

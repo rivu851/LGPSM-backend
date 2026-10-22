@@ -31,6 +31,11 @@ const envSchema = zod_1.z.object({
     WHATSAPP_API_VERSION: zod_1.z.string().default('v25.0'),
     WHATSAPP_INVITATION_TEMPLATE: zod_1.z.string().default('lgpsm_event_invitation'),
     WHATSAPP_TEMPLATE_LANGUAGE: zod_1.z.string().default('en_US'),
+    // Google Stitch (AI template generation). Server-side only; generation reports "unavailable" when the key is absent.
+    STITCH_API_KEY: zod_1.z.string().optional(),
+    STITCH_TIMEOUT_MS: zod_1.z.coerce.number().int().min(5000).max(300000).default(120000),
+    STITCH_DAILY_QUOTA_PER_USER: zod_1.z.coerce.number().int().min(1).max(500).default(15),
+    STITCH_MAX_CONCURRENT_JOBS: zod_1.z.coerce.number().int().min(1).max(10).default(2),
 });
 const _env = envSchema.safeParse(process.env);
 if (!_env.success) {
@@ -38,3 +43,13 @@ if (!_env.success) {
     process.exit(1);
 }
 exports.env = _env.data;
+// Advisory only (never blocks start-up, never prints values): weak or shared signing secrets make
+// every issued token easier to forge, and a leaked access secret would also expose refresh tokens.
+if (exports.env.NODE_ENV === 'production') {
+    if (exports.env.JWT_SECRET.length < 32 || exports.env.JWT_REFRESH_SECRET.length < 32) {
+        console.warn('[security] JWT_SECRET / JWT_REFRESH_SECRET are shorter than 32 characters. Rotate them to long random values.');
+    }
+    if (exports.env.JWT_SECRET === exports.env.JWT_REFRESH_SECRET) {
+        console.warn('[security] JWT_SECRET and JWT_REFRESH_SECRET are identical. Use two different random secrets.');
+    }
+}

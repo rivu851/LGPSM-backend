@@ -2,7 +2,6 @@ import { buildInvitationContent } from '../utils/invitationContent';
 import { alertService } from './alert.service';
 import mongoose from 'mongoose';
 import { Event } from '../models/Event';
-import { Template } from '../models/Template';
 import { Invitee, InvitationStatus } from '../models/Invitee';
 import { Invitation, DeliveryChannel, InvitationDeliveryStatus } from '../models/Invitation';
 import { Session } from '../models/Session';
@@ -14,6 +13,7 @@ import { decryptToken, encryptToken } from '../utils/tokenCipher';
 import { sendEmail } from '../utils/email.provider';
 import { whatsappService } from './whatsapp.service';
 import { invitationCardService } from './invitationCard.service';
+import { loadCardContext } from './cardTemplates/context';
 import { resolveImageKeyBase64 } from '../utils/resolveImageBase64';
 
 function buildFormalInvitationEmailHTML(params: {
@@ -162,8 +162,9 @@ export const invitationService = {
     }
     if (!event) throw new Error('EVENT_NOT_FOUND');
 
-    const template = event.templateId ? await Template.findById(event.templateId).select('cardDesign').lean() : null;
-    const cardDesign = template?.cardDesign;
+    // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
+    const cardContext = await loadCardContext(event);
+    const cardDesign = cardContext.cardDesign;
     // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
     // every invitee's card for this event.
     const eventPhotoBase64 = await resolveImageKeyBase64((event as any).media?.logoKey);
@@ -210,6 +211,7 @@ export const invitationService = {
         invitation.channel = channel;
         invitation.tokenHash = tokenHash;
         invitation.status = InvitationDeliveryStatus.PENDING;
+        invitation.clearedAt = undefined; // a fresh delivery belongs in the visible history again
       }
 
       let emailSuccess = false;
@@ -227,7 +229,7 @@ export const invitationService = {
       let cardBuffer: Buffer;
       try {
         cardBuffer = await invitationCardService.generateInvitationCardPNG({
-          invitee: { id: (invitee._id as any).toString(), name: invitee.name },
+          invitee: { id: (invitee._id as any).toString(), name: invitee.name, companyName: invitee.companyName || invitee.company },
           event: {
             id: (event._id as any).toString(),
             title: event.title,
@@ -237,12 +239,20 @@ export const invitationService = {
             timeSub: 'ONWARDS',
             venue,
             locationSub,
-            photoBase64: eventPhotoBase64
+            photoBase64: eventPhotoBase64,
+            startIso: event.schedule?.start,
+            endIso: event.schedule?.end,
+            categoryName: cardContext.categoryName,
+            subcategoryName: cardContext.subcategoryName,
+            isVirtual: (event as any).format === 'VIRTUAL',
+            description: (event as any).description,
+            organizerName: cardContext.organizerName
           },
           sessions: assignedSessions,
           qrDataUrl,
           invitationUrl,
-          cardDesign
+          cardDesign,
+          designSpec: cardContext.designSpec
         });
       } catch (err) {
         console.error('Failed to generate high-resolution invitation card PNG:', err);
@@ -401,8 +411,9 @@ export const invitationService = {
       event = await Event.findOne({ _id: eventId, organizerId });
     }
     if (!event) throw new Error('EVENT_NOT_FOUND');
-    const template = event.templateId ? await Template.findById(event.templateId).select('cardDesign').lean() : null;
-    const cardDesign = template?.cardDesign;
+    // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
+    const cardContext = await loadCardContext(event);
+    const cardDesign = cardContext.cardDesign;
     // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
     // every invitee's card for this event.
     const eventPhotoBase64 = await resolveImageKeyBase64((event as any).media?.logoKey);
@@ -476,12 +487,20 @@ export const invitationService = {
             timeSub: 'ONWARDS',
             venue,
             locationSub,
-            photoBase64: eventPhotoBase64
+            photoBase64: eventPhotoBase64,
+            startIso: event.schedule?.start,
+            endIso: event.schedule?.end,
+            categoryName: cardContext.categoryName,
+            subcategoryName: cardContext.subcategoryName,
+            isVirtual: (event as any).format === 'VIRTUAL',
+            description: (event as any).description,
+            organizerName: cardContext.organizerName
           },
           sessions: assignedSessions,
           qrDataUrl,
           invitationUrl,
-          cardDesign
+          cardDesign,
+          designSpec: cardContext.designSpec
         });
       } catch (err) {
         console.error('Failed to generate high-resolution invitation card PNG for resend:', err);
@@ -651,6 +670,25 @@ export const invitationService = {
     };
   },
 
+  // Hides the event's delivery history. Records are kept: Resend addresses them by id and check-in uses them to
+  // tell a superseded QR from an unknown one. Sending or resending to a guest makes that guest's entry visible again.
+  async clearHistory(eventId: string, userOrOrganizerId: any): Promise<{ cleared: number }> {
+    const isUserObj = typeof userOrOrganizerId === 'object' && userOrOrganizerId !== null;
+    const organizerId = isUserObj ? userOrOrganizerId.userId : userOrOrganizerId;
+    const userRole = isUserObj ? userOrOrganizerId.role : undefined;
+
+    const event = userRole === Role.ADMIN || userRole === 'ADMIN'
+      ? await Event.findById(eventId)
+      : await Event.findOne({ _id: eventId, organizerId });
+    if (!event) throw new Error('EVENT_NOT_FOUND');
+
+    const result = await Invitation.updateMany(
+      { eventId, clearedAt: { $exists: false } },
+      { $set: { clearedAt: new Date() } }
+    );
+    return { cleared: result.modifiedCount };
+  },
+
   async previewInvitationCard(eventId: string, userOrOrganizerId: any, inviteeId?: string): Promise<{ png: Buffer; qr: "ISSUED" | "SAMPLE" }> {
     const isUserObj = typeof userOrOrganizerId === 'object' && userOrOrganizerId !== null;
     const organizerId = isUserObj ? userOrOrganizerId.userId : userOrOrganizerId;
@@ -663,8 +701,9 @@ export const invitationService = {
       event = await Event.findOne({ _id: eventId, organizerId });
     }
     if (!event) throw new Error('EVENT_NOT_FOUND');
-    const template = event.templateId ? await Template.findById(event.templateId).select('cardDesign').lean() : null;
-    const cardDesign = template?.cardDesign;
+    // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
+    const cardContext = await loadCardContext(event);
+    const cardDesign = cardContext.cardDesign;
     // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
     // every invitee's card for this event.
     const eventPhotoBase64 = await resolveImageKeyBase64((event as any).media?.logoKey);
@@ -701,12 +740,20 @@ export const invitationService = {
         timeSub: 'ONWARDS',
         venue,
         locationSub,
-        photoBase64: eventPhotoBase64
+        photoBase64: eventPhotoBase64,
+            startIso: event.schedule?.start,
+            endIso: event.schedule?.end,
+            categoryName: cardContext.categoryName,
+            subcategoryName: cardContext.subcategoryName,
+            isVirtual: (event as any).format === 'VIRTUAL',
+            description: (event as any).description,
+            organizerName: cardContext.organizerName
       },
       sessions: assignedSessions,
       qrDataUrl,
       invitationUrl,
-      cardDesign
+      cardDesign,
+      designSpec: cardContext.designSpec
     });
     return { png, qr: issuedToken ? ('ISSUED' as const) : ('SAMPLE' as const) };
   }

@@ -2,6 +2,7 @@ import dns from 'dns';
 import app from './app';
 import connectDatabase from './config/database';
 import { env } from './config/env';
+import { recoverOnStartup } from './services/stitch/templateGeneration.service';
 
 // Render containers have no outbound IPv6 route. Node's default DNS ordering can still return an
 // IPv6 address first for dual-stack hosts (smtp.gmail.com, some third-party APIs), which then
@@ -12,6 +13,8 @@ dns.setDefaultResultOrder('ipv4first');
 async function startServer() {
   try {
     await connectDatabase();
+    // generation jobs a restart interrupted are failed (not left "running"), and queued ones resume
+    await recoverOnStartup().catch((e) => console.error('Template generation recovery failed:', e?.message));
 
     app.listen(env.PORT, () => {
       console.log(`Server is running on port ${env.PORT}`);

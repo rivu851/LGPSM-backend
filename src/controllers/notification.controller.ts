@@ -12,7 +12,8 @@ export const notificationController = {
       const result = await notificationService.getUserNotifications(userId, unreadOnly, page, limit);
       return res.status(200).json({ success: true, data: result.notifications, meta: { total: result.total, unreadCount: result.unreadCount, page: result.page, totalPages: result.totalPages } });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   },
 
@@ -23,7 +24,8 @@ export const notificationController = {
       return res.status(200).json({ success: true, data: notification });
     } catch (error: any) {
       if (error.message === 'NOTIFICATION_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Notification not found' });
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   },
 
@@ -33,7 +35,8 @@ export const notificationController = {
       await notificationService.markAllAsRead(userId);
       return res.status(200).json({ success: true, message: 'All notifications marked as read' });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   },
 
@@ -52,7 +55,8 @@ export const notificationController = {
       await notificationService.deleteNotification(req.params.id as string, userId);
       return res.status(200).json({ success: true, message: 'Notification cleared successfully' });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   },
 
@@ -62,7 +66,8 @@ export const notificationController = {
       await notificationService.clearAllNotifications(userId);
       return res.status(200).json({ success: true, message: 'All notifications cleared successfully' });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   }
 };

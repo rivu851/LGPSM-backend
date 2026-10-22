@@ -34,7 +34,8 @@ exports.categoryController = {
             return res.status(200).json({ success: true, data: categories });
         }
         catch (error) {
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async getCategoryById(req, res) {
@@ -45,7 +46,8 @@ exports.categoryController = {
         catch (error) {
             if (error.message === 'CATEGORY_NOT_FOUND')
                 return res.status(404).json({ error: 'Not Found', message: 'Category not found' });
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
     async updateCategory(req, res) {
@@ -67,7 +69,8 @@ exports.categoryController = {
         catch (error) {
             if (error.message === 'CATEGORY_NOT_FOUND')
                 return res.status(404).json({ error: 'Not Found', message: 'Category not found' });
-            return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     }
 };

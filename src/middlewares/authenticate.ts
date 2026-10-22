@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken, TokenPayload } from '../utils/token';
 import { User } from '../models/User';
+import { securityEvent } from '../utils/securityLog';
 
 declare global {
   namespace Express {
@@ -23,6 +24,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     try {
       payload = verifyAccessToken(token);
     } catch (err: any) {
+      securityEvent('AUTH_TOKEN_REJECTED', req, { reason: err?.name || 'invalid' });
       res.status(401).json({ success: false, message: 'Invalid or expired token.' });
       return;
     }
@@ -34,12 +36,14 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       return;
     }
     if (!user.isActive) {
+      securityEvent('AUTH_INACTIVE_USER', req, { subject: String(user._id) });
       res.status(403).json({ success: false, message: 'User account is inactive.' });
       return;
     }
 
-    // Attach user payload
-    req.user = payload;
+    // The role is read from the database, not the token, so demotions apply immediately instead of
+    // surviving until the access token expires.
+    req.user = { ...payload, role: user.role };
     next();
   } catch (error) {
     next(error);

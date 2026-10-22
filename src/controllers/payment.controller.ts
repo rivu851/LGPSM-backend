@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { securityEvent } from '../utils/securityLog';
 import { paymentService } from '../services/payment.service';
 
 export const paymentController = {
@@ -15,7 +16,8 @@ export const paymentController = {
       if (error.message === 'TIER_CAPACITY_EXCEEDED') return res.status(400).json({ error: 'Bad Request', message: 'Ticket tier capacity exceeded' });
       if (error.message === 'PAYMENT_PROVIDER_NOT_CONFIGURED') return res.status(503).json({ success: false, error: 'Service Unavailable', message: 'Online payments are not configured on this server' });
       if (error.message === 'PAYMENT_PROVIDER_ERROR') return res.status(502).json({ success: false, error: 'Bad Gateway', message: 'Payment provider could not create the order' });
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Payment request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   },
 
@@ -28,23 +30,27 @@ export const paymentController = {
       return res.status(200).json({ success: true, message: 'Payment verified successfully', data: result });
     } catch (error: any) {
       if (error.message === 'PAYMENT_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Payment record not found' });
+      if (error.message === 'INVALID_PAYMENT_SIGNATURE') securityEvent('PAYMENT_SIGNATURE_INVALID', req);
       if (error.message === 'INVALID_PAYMENT_SIGNATURE') return res.status(400).json({ error: 'Bad Request', message: 'Payment signature verification failed' });
       if (error.message === 'PAYMENT_PROVIDER_NOT_CONFIGURED') return res.status(503).json({ success: false, error: 'Service Unavailable', message: 'Online payments are not configured on this server' });
       if (error.message === 'PAYMENT_PROVIDER_ERROR') return res.status(502).json({ success: false, error: 'Bad Gateway', message: 'Payment provider could not create the order' });
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Payment request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   },
 
   async handleWebhook(req: Request, res: Response) {
     try {
       const signature = req.headers['x-razorpay-signature'] as string;
-      const result = await paymentService.handleWebhook(req.body, signature);
+      const result = await paymentService.handleWebhook((req as any).rawBody, signature);
       return res.status(200).json(result);
     } catch (error: any) {
+      if (error.message === 'INVALID_WEBHOOK_SIGNATURE') securityEvent('WEBHOOK_SIGNATURE_INVALID', req);
       if (error.message === 'INVALID_WEBHOOK_SIGNATURE') return res.status(400).json({ error: 'Bad Request', message: 'Invalid webhook signature' });
       if (error.message === 'PAYMENT_PROVIDER_NOT_CONFIGURED') return res.status(503).json({ success: false, error: 'Service Unavailable', message: 'Online payments are not configured on this server' });
       if (error.message === 'PAYMENT_PROVIDER_ERROR') return res.status(502).json({ success: false, error: 'Bad Gateway', message: 'Payment provider could not create the order' });
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Payment request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   },
 
@@ -59,7 +65,8 @@ export const paymentController = {
     } catch (error: any) {
       if (error.message === 'PAYMENT_PROVIDER_NOT_CONFIGURED') return res.status(503).json({ success: false, error: 'Service Unavailable', message: 'Online payments are not configured on this server' });
       if (error.message === 'PAYMENT_PROVIDER_ERROR') return res.status(502).json({ success: false, error: 'Bad Gateway', message: 'Payment provider could not create the order' });
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Payment request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   },
 
@@ -72,7 +79,8 @@ export const paymentController = {
       if (error.message === 'ORDER_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Order not found' });
       if (error.message === 'PAYMENT_PROVIDER_NOT_CONFIGURED') return res.status(503).json({ success: false, error: 'Service Unavailable', message: 'Online payments are not configured on this server' });
       if (error.message === 'PAYMENT_PROVIDER_ERROR') return res.status(502).json({ success: false, error: 'Bad Gateway', message: 'Payment provider could not create the order' });
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Payment request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   },
 
@@ -85,7 +93,8 @@ export const paymentController = {
       if (error.message === 'INVOICE_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Invoice not found' });
       if (error.message === 'PAYMENT_PROVIDER_NOT_CONFIGURED') return res.status(503).json({ success: false, error: 'Service Unavailable', message: 'Online payments are not configured on this server' });
       if (error.message === 'PAYMENT_PROVIDER_ERROR') return res.status(502).json({ success: false, error: 'Bad Gateway', message: 'Payment provider could not create the order' });
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Payment request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   }
 };

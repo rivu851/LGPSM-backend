@@ -7,7 +7,7 @@ exports.eventService = exports.EventService = void 0;
 const event_repository_1 = require("../repositories/event.repository");
 const Event_1 = require("../models/Event");
 const Category_1 = require("../models/Category");
-const Template_1 = require("../models/Template");
+const template_service_1 = require("./template.service");
 const Session_1 = require("../models/Session");
 const Invitee_1 = require("../models/Invitee");
 const Invitation_1 = require("../models/Invitation");
@@ -19,6 +19,20 @@ const eventAccess_1 = require("../utils/eventAccess");
 const platformSettings_service_1 = require("./platformSettings.service");
 const alert_service_1 = require("./alert.service");
 const invitationContent_1 = require("../utils/invitationContent");
+// Client-writable event fields. Anything else in a request body (organizerId, status flags,
+// operationalDataCleared, pricing, ...) is server-controlled and is dropped before it reaches the database.
+const EVENT_WRITABLE_FIELDS = [
+    'title', 'description', 'categoryId', 'subcategoryId', 'format', 'location', 'contactNumber',
+    'schedule', 'rsvp', 'attendeeSettings', 'dietaryPreference', 'templateId', 'media'
+];
+const pickEventFields = (data, extra = []) => {
+    const out = {};
+    for (const key of [...EVENT_WRITABLE_FIELDS, ...extra]) {
+        if (data && data[key] !== undefined)
+            out[key] = data[key];
+    }
+    return out;
+};
 class EventService {
     /**
      * Creates a new event for an organizer.
@@ -30,7 +44,9 @@ class EventService {
      * - Subsequent changes to the platform's global price rate (by Super Admin) do NOT modify existing
      *   or historical event rates.
      */
-    async createEvent(organizerId, eventData) {
+    async createEvent(organizerId, rawEventData) {
+        // The owner is always the authenticated caller (or, for admins, the id the controller passes in)
+        const eventData = pickEventFields(rawEventData, ['startDate', 'endDate']);
         // Resolve Category
         let categoryId = eventData.categoryId;
         let categoryExists = categoryId && mongoose_1.default.Types.ObjectId.isValid(categoryId)
@@ -50,8 +66,8 @@ class EventService {
         }
         // Validate Template if provided
         if (eventData.templateId && mongoose_1.default.Types.ObjectId.isValid(eventData.templateId)) {
-            const templateExists = await Template_1.Template.findById(eventData.templateId);
-            if (!templateExists) {
+            // a template another organizer owns is treated like a missing one
+            if (!(await template_service_1.templateService.isUsableByOrganizer(String(eventData.templateId), String(organizerId)))) {
                 delete eventData.templateId;
             }
         }
@@ -64,10 +80,7 @@ class EventService {
         const endVal = eventData.schedule?.end || eventData.endDate || tomorrow;
         // Admin event settings apply on the server too
         await platformSettings_service_1.platformSettingsService.applyEventFeatureRules(eventData, true);
-        // Resolve target organizer ID from eventData.organizerId or organizerId argument
-        const targetOrganizer = (eventData.organizerId && mongoose_1.default.Types.ObjectId.isValid(eventData.organizerId))
-            ? eventData.organizerId
-            : organizerId;
+        const targetOrganizer = organizerId;
         // Force organizerId and default status to PUBLISHED so it shows on event listing
         const dataToCreate = {
             ...eventData,
@@ -131,7 +144,8 @@ class EventService {
             delete category.subcategories;
         return json;
     }
-    async updateEvent(eventId, organizerId, updateData, role) {
+    async updateEvent(eventId, organizerId, rawUpdateData, role) {
+        const updateData = pickEventFields(rawUpdateData, ['status']);
         const existingEvent = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId, role);
         if (!existingEvent)
             throw new Error('EVENT_NOT_FOUND');
@@ -142,8 +156,7 @@ class EventService {
                 throw new Error('CATEGORY_NOT_FOUND');
         }
         if (updateData.templateId && updateData.templateId !== existingEvent.templateId?.toString()) {
-            const templateExists = await Template_1.Template.findById(updateData.templateId);
-            if (!templateExists)
+            if (!(await template_service_1.templateService.isUsableByOrganizer(String(updateData.templateId), String(existingEvent.organizerId))))
                 throw new Error('TEMPLATE_NOT_FOUND');
         }
         // Disallow updating organizerId, _id, createdAt and the locked rate

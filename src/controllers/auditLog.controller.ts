@@ -16,7 +16,8 @@ export const auditLogController = {
       const result = await auditLogService.getLogs(filters);
       return res.status(200).json({ success: true, data: result.logs, meta: { total: result.total, page: result.page, totalPages: result.totalPages } });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   }
 };

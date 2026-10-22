@@ -54,7 +54,8 @@ const PlatformSettingsSchema = new mongoose_1.Schema({
         invitationSendFailed: on,
         dayBeforeEventAlert: on,
         reportDownload: off,
-        customTemplateRequest: on
+        customTemplateRequest: on,
+        newContactMessage: on
     },
     pricing: {
         ratePerInvitee: { type: Number, default: null, min: 0 },

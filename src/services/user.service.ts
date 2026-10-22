@@ -4,6 +4,8 @@ import { Role, User } from '../models/User';
 import { Event } from '../models/Event';
 import { SystemUserAssignment } from '../models/SystemUserAssignment';
 import { normalizePhoneNumber } from './whatsapp.service';
+import { securityEvent } from '../utils/securityLog';
+import { tokenRepository } from '../repositories/token.repository';
 
 export interface Actor {
   userId: string;
@@ -75,6 +77,9 @@ export const userService = {
 
     user.passwordHash = await hashPassword(newPassword);
     await user.save();
+    // Sign out every other session: a stolen refresh token must not outlive the password it was issued under
+    await tokenRepository.revokeAllForUser(userId);
+    securityEvent('PASSWORD_CHANGED', undefined, { subject: userId });
     return { updated: true };
   },
 
@@ -160,6 +165,7 @@ export const userService = {
     if (!user) {
       throw { statusCode: 404, message: 'User not found' };
     }
+    await tokenRepository.revokeAllForUser(userId);
     if (target.role === Role.ORGANIZER && actor.role === Role.ADMIN) {
       const { alertService } = await import('./alert.service');
       await alertService.notifyAdmins('deactivatedOrganizerBySuperAdmin', {
@@ -192,6 +198,7 @@ export const userService = {
       updatePayload.passwordHash = await hashPassword(data.password);
     }
     const user = await userRepository.updateById(userId, updatePayload);
+    if (updatePayload.passwordHash || updatePayload.isActive === false) await tokenRepository.revokeAllForUser(userId);
     if (!user) {
       throw { statusCode: 404, message: 'User not found' };
     }

@@ -15,7 +15,7 @@ async function load() {
 const featureKeys = ['allowEventRSVP', 'acceptInvitedAttendees', 'chooseNotRespondedInvitees', 'chooseRSVPDeclinedInvitees', 'askFoodPreference'];
 const notificationKeys = [
     'newOrganizerRegistration', 'newEventAdded', 'deactivatedOrganizerBySuperAdmin', 'changeInPrice',
-    'invitationSendFailed', 'dayBeforeEventAlert', 'reportDownload', 'customTemplateRequest'
+    'invitationSendFailed', 'dayBeforeEventAlert', 'reportDownload', 'customTemplateRequest', 'newContactMessage'
 ];
 const pick = (src, keys) => Object.fromEntries(keys.map((k) => [k, !!src?.[k]]));
 exports.platformSettingsService = {

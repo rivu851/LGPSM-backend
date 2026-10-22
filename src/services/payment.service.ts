@@ -34,6 +34,41 @@ async function createRazorpayOrder(amountInPaise: number, currency: string, rece
   return data;
 }
 
+// Constant-time comparison of two hex digests (different lengths simply do not match)
+function safeEqualHex(expected: string, provided: string): boolean {
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(String(provided), 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// Settles a payment exactly once. Only the call that actually flips the payment to PAID updates the
+// order, the tier's sold count and the invoice, so replays and concurrent confirmations are no-ops.
+async function settlePaid(providerOrderId: string, providerPaymentId: string): Promise<void> {
+  const payment = await paymentRepository.claimPaid(providerOrderId, providerPaymentId);
+  if (!payment) return;
+
+  const order = await orderRepository.updateStatus((payment.orderId as any).toString(), OrderStatus.PAID);
+  if (order) {
+    await TicketTier.findByIdAndUpdate(order.ticketTierId, { $inc: { sold: order.quantity } });
+  }
+
+  const existing = await invoiceRepository.findByPaymentId((payment._id as any).toString());
+  if (!existing) {
+    await invoiceRepository.create({
+      invoiceNumber: `INV-${Date.now()}-${crypto.randomInt(1000, 10000)}`,
+      paymentId: payment._id as any,
+      userId: payment.userId as any,
+      eventId: payment.eventId as any,
+      subtotal: payment.amountBase,
+      tax: payment.taxAmount,
+      total: payment.totalAmount,
+      paymentMethod: 'RAZORPAY',
+      paymentStatus: 'PAID',
+      issuedAt: new Date()
+    });
+  }
+}
+
 export const paymentService = {
   async createTicketOrder(userId: string, eventId: string, ticketTierId: string, quantity: number) {
     const event = await Event.findById(eventId);
@@ -99,67 +134,45 @@ export const paymentService = {
     const payment = await paymentRepository.findByProviderOrderId(providerOrderId);
     if (!payment || payment.userId.toString() !== userId) throw new Error('PAYMENT_NOT_FOUND');
 
-    let isValid = false;
-    if (signature) {
-      const generatedSignature = crypto
-        .createHmac('sha256', keySecret)
-        .update(`${providerOrderId}|${providerPaymentId}`)
-        .digest('hex');
-      isValid = generatedSignature === signature;
-    }
+    const expected = crypto.createHmac('sha256', keySecret).update(`${providerOrderId}|${providerPaymentId}`).digest('hex');
+    const isValid = !!signature && safeEqualHex(expected, signature);
 
     if (!isValid) {
-      await paymentRepository.updatePaymentStatus(providerOrderId, PaymentStatus.FAILED, providerPaymentId, false);
-      await orderRepository.updateStatus((payment.orderId as any).toString(), OrderStatus.FAILED);
+      // A bad signature can fail a pending payment but must never undo one that is already settled
+      const failed = await paymentRepository.claimFailed(providerOrderId, providerPaymentId);
+      if (failed) await orderRepository.updateStatus((payment.orderId as any).toString(), OrderStatus.FAILED);
       throw new Error('INVALID_PAYMENT_SIGNATURE');
     }
 
-    const updatedPayment = await paymentRepository.updatePaymentStatus(providerOrderId, PaymentStatus.PAID, providerPaymentId, true);
-    const updatedOrder = await orderRepository.updateStatus((payment.orderId as any).toString(), OrderStatus.PAID);
+    await settlePaid(providerOrderId, providerPaymentId);
 
-    // Update tier sold count
-    if (updatedOrder) {
-      await TicketTier.findByIdAndUpdate(updatedOrder.ticketTierId, { $inc: { sold: updatedOrder.quantity } });
-    }
-
-    // Generate Invoice
-    let invoice = await invoiceRepository.findByPaymentId((payment._id as any).toString());
-    if (!invoice && updatedPayment) {
-      const invoiceNumber = `INV-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      invoice = await invoiceRepository.create({
-        invoiceNumber,
-        paymentId: updatedPayment._id as any,
-        userId: userId as any,
-        eventId: updatedPayment.eventId as any,
-        subtotal: updatedPayment.amountBase,
-        tax: updatedPayment.taxAmount,
-        total: updatedPayment.totalAmount,
-        paymentMethod: 'RAZORPAY',
-        paymentStatus: 'PAID',
-        issuedAt: new Date()
-      });
-    }
-
-    return { order: updatedOrder, payment: updatedPayment, invoice };
+    const current = await paymentRepository.findByProviderOrderId(providerOrderId);
+    const order = await orderRepository.findById((payment.orderId as any).toString());
+    const invoice = current ? await invoiceRepository.findByPaymentId((current._id as any).toString()) : null;
+    return { order, payment: current, invoice };
   },
 
-  async handleWebhook(eventBody: any, signature?: string) {
+  // `rawBody` is the exact bytes Razorpay sent: the signature is computed over those, not over a
+  // re-serialised copy, which can differ in whitespace, key order and escaping.
+  async handleWebhook(rawBody: Buffer | undefined, signature?: string) {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     if (!webhookSecret) {
       throw new Error('PAYMENT_PROVIDER_NOT_CONFIGURED');
     }
-    if (!signature) {
+    if (!signature || !rawBody) {
       throw new Error('INVALID_WEBHOOK_SIGNATURE');
     }
-    {
-      const expectedSignature = crypto
-        .createHmac('sha256', webhookSecret)
-        .update(JSON.stringify(eventBody))
-        .digest('hex');
 
-      if (expectedSignature !== signature) {
-        throw new Error('INVALID_WEBHOOK_SIGNATURE');
-      }
+    const expectedSignature = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+    if (!safeEqualHex(expectedSignature, signature)) {
+      throw new Error('INVALID_WEBHOOK_SIGNATURE');
+    }
+
+    let eventBody: any;
+    try {
+      eventBody = JSON.parse(rawBody.toString('utf8'));
+    } catch {
+      throw new Error('INVALID_WEBHOOK_SIGNATURE');
     }
 
     const eventName = eventBody.event;
@@ -170,33 +183,10 @@ export const paymentService = {
     const providerPaymentId = paymentEntity.id;
 
     if (eventName === 'payment.captured' || eventName === 'order.paid') {
-      const payment = await paymentRepository.findByProviderOrderId(providerOrderId);
-      if (payment && payment.status !== PaymentStatus.PAID) {
-        await paymentRepository.updatePaymentStatus(providerOrderId, PaymentStatus.PAID, providerPaymentId, true);
-        const order = await orderRepository.updateStatus((payment.orderId as any).toString(), OrderStatus.PAID);
-        if (order) {
-          await TicketTier.findByIdAndUpdate(order.ticketTierId, { $inc: { sold: order.quantity } });
-          const invoiceNumber = `INV-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-          await invoiceRepository.create({
-            invoiceNumber,
-            paymentId: payment._id as any,
-            userId: payment.userId as any,
-            eventId: payment.eventId as any,
-            subtotal: payment.amountBase,
-            tax: payment.taxAmount,
-            total: payment.totalAmount,
-            paymentMethod: 'RAZORPAY',
-            paymentStatus: 'PAID',
-            issuedAt: new Date()
-          });
-        }
-      }
+      await settlePaid(providerOrderId, providerPaymentId);
     } else if (eventName === 'payment.failed') {
-      await paymentRepository.updatePaymentStatus(providerOrderId, PaymentStatus.FAILED, providerPaymentId, false);
-      const payment = await paymentRepository.findByProviderOrderId(providerOrderId);
-      if (payment) {
-        await orderRepository.updateStatus((payment.orderId as any).toString(), OrderStatus.FAILED);
-      }
+      const failed = await paymentRepository.claimFailed(providerOrderId, providerPaymentId);
+      if (failed) await orderRepository.updateStatus((failed.orderId as any).toString(), OrderStatus.FAILED);
     }
 
     return { success: true, event: eventName };
