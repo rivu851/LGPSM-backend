@@ -19,6 +19,7 @@ const tokenCipher_1 = require("../utils/tokenCipher");
 const email_provider_1 = require("../utils/email.provider");
 const whatsapp_service_1 = require("./whatsapp.service");
 const invitationCard_service_1 = require("./invitationCard.service");
+const concurrency_1 = require("../utils/concurrency");
 const context_1 = require("./cardTemplates/context");
 const resolveImageBase64_1 = require("../utils/resolveImageBase64");
 function buildFormalInvitationEmailHTML(params) {
@@ -140,6 +141,9 @@ function buildFormalInvitationEmailHTML(params) {
     </html>
   `;
 }
+// Guests in one batch are prepared a few at a time: each one is mostly waiting on image rendering and the mail /
+// WhatsApp providers, so a small amount of overlap cuts a big batch's time without flooding either provider.
+const sendConcurrency = () => Math.min(Math.max(parseInt(process.env.INVITATION_SEND_CONCURRENCY || '3', 10) || 3, 1), 8);
 exports.invitationService = {
     async sendInvitations(eventId, userOrOrganizerId, inviteeIds, channel) {
         const isUserObj = typeof userOrOrganizerId === 'object' && userOrOrganizerId !== null;
@@ -175,7 +179,7 @@ exports.invitationService = {
         const shouldSendWhatsApp = channel === Invitation_1.DeliveryChannel.WHATSAPP || channel === Invitation_1.DeliveryChannel.BOTH;
         // Load all sessions for this event once
         const allSessions = await Session_1.Session.find({ eventId }).sort({ 'schedule.start': 1 }).lean();
-        for (const invitee of invitees) {
+        const outcomes = await (0, concurrency_1.mapLimit)(invitees, sendConcurrency(), async (invitee) => {
             // Core Rule: Generate ONE secure token & ONE QR per event/invitee per send batch
             const rawToken = (0, invitation_util_1.generateSecureToken)();
             const tokenHash = (0, invitation_util_1.hashToken)(rawToken);
@@ -346,7 +350,7 @@ exports.invitationService = {
             const cleanMobile = invitee.mobile ? whatsapp_service_1.whatsappService.normalizePhoneNumber(invitee.mobile) : '';
             const waText = `Dear ${invitee.name},\n\nYou are cordially invited to ${event.title}!\n\n📅 Date: ${eventDate}\n⏰ Time: ${eventTime}\n📍 Venue: ${venue}\n\nView your official Invitation Pass & QR Code here:\n${invitationUrl}\n\nWe look forward to seeing you!`;
             const whatsappWebUrl = cleanMobile ? `https://api.whatsapp.com/send?phone=${cleanMobile}&text=${encodeURIComponent(waText)}` : undefined;
-            results.push({
+            return {
                 inviteeId: invitee._id,
                 inviteeName: invitee.name,
                 inviteeMobile: invitee.mobile,
@@ -356,8 +360,9 @@ exports.invitationService = {
                 whatsappMessageId: invitation.whatsappMessageId,
                 failureReason: invitation.failureReason,
                 whatsappWebUrl,
-            });
-        }
+            };
+        });
+        results.push(...outcomes);
         const failedCount = results.filter((r) => r.status === 'FAILED').length;
         if (failedCount > 0) {
             const content = {
@@ -402,14 +407,13 @@ exports.invitationService = {
         if (invitations.length === 0)
             throw new Error('INVALID_INVITATIONS');
         const results = [];
-        for (const invitation of invitations) {
+        const outcomes = await (0, concurrency_1.mapLimit)(invitations, sendConcurrency(), async (invitation) => {
             const invitee = invitation.inviteeId;
             if (!invitee) {
                 invitation.status = Invitation_1.InvitationDeliveryStatus.FAILED;
                 invitation.failureReason = 'INVITEE_DELETED';
                 await invitation.save();
-                results.push({ invitationId: invitation._id, status: 'FAILED', failureReason: 'INVITEE_DELETED' });
-                continue;
+                return { invitationId: invitation._id, status: 'FAILED', failureReason: 'INVITEE_DELETED' };
             }
             const rawToken = (0, invitation_util_1.generateSecureToken)();
             const tokenHash = (0, invitation_util_1.hashToken)(rawToken);
@@ -559,7 +563,7 @@ exports.invitationService = {
             const cleanMobile = invitee.mobile ? whatsapp_service_1.whatsappService.normalizePhoneNumber(invitee.mobile) : '';
             const waText = `Dear ${invitee.name},\n\nYou are cordially invited to ${event.title}!\n\n📅 Date: ${eventDate}\n⏰ Time: ${eventTime}\n📍 Venue: ${venue}\n\nView your official Invitation Pass & QR Code here:\n${invitationUrl}\n\nWe look forward to seeing you!`;
             const whatsappWebUrl = cleanMobile ? `https://api.whatsapp.com/send?phone=${cleanMobile}&text=${encodeURIComponent(waText)}` : undefined;
-            results.push({
+            return {
                 invitationId: resendInvitation._id,
                 inviteeId: invitee._id,
                 inviteeName: invitee.name,
@@ -570,8 +574,9 @@ exports.invitationService = {
                 whatsappMessageId: resendInvitation.whatsappMessageId,
                 failureReason: resendInvitation.failureReason,
                 whatsappWebUrl,
-            });
-        }
+            };
+        });
+        results.push(...outcomes);
         const failedCount = results.filter((r) => r.status === 'FAILED').length;
         if (failedCount > 0) {
             const content = {

@@ -7,6 +7,8 @@ import { ensureCardFonts, fontStack, measureText } from './fonts';
 // validated spec values reach the SVG and every piece of text is escaped, so nothing a generator or an organizer
 // supplies can become markup, script, a font download or a network request.
 
+// zlib level 6: about 4x faster to encode than 9 for a card that is only ~40 KB larger (measured: 66 ms -> 18 ms)
+const PNG_LEVEL = 6;
 const MAX_TEXT_LENGTH = 400;
 const MAX_OUTPUT_EDGE = 4096;
 const FIT_STEP = 0.04;
@@ -279,6 +281,6 @@ export async function renderDesignSpec(input: SpecRenderInput): Promise<SpecRend
   const bg = new SvgChunk(s);
   const fill = bg.fill(spec.background, { x: 0, y: 0, w: spec.canvas.width, h: spec.canvas.height });
   bg.add(`<rect width="${width}" height="${height}" ${fill}/>`);
-  const png = await sharp(bg.toSvg(width, height)).composite(layers).png({ compressionLevel: 9 }).toBuffer();
+  const png = await sharp(bg.toSvg(width, height)).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
   return { png, width, height, warnings };
 }

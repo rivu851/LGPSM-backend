@@ -13,6 +13,7 @@ import { decryptToken, encryptToken } from '../utils/tokenCipher';
 import { sendEmail } from '../utils/email.provider';
 import { whatsappService } from './whatsapp.service';
 import { invitationCardService } from './invitationCard.service';
+import { mapLimit } from '../utils/concurrency';
 import { loadCardContext } from './cardTemplates/context';
 import { resolveImageKeyBase64 } from '../utils/resolveImageBase64';
 
@@ -148,6 +149,10 @@ function buildFormalInvitationEmailHTML(params: {
   `;
 }
 
+// Guests in one batch are prepared a few at a time: each one is mostly waiting on image rendering and the mail /
+// WhatsApp providers, so a small amount of overlap cuts a big batch's time without flooding either provider.
+const sendConcurrency = () => Math.min(Math.max(parseInt(process.env.INVITATION_SEND_CONCURRENCY || '3', 10) || 3, 1), 8);
+
 export const invitationService = {
   async sendInvitations(eventId: string, userOrOrganizerId: any, inviteeIds: string[], channel: DeliveryChannel) {
     const isUserObj = typeof userOrOrganizerId === 'object' && userOrOrganizerId !== null;
@@ -188,7 +193,7 @@ export const invitationService = {
     // Load all sessions for this event once
     const allSessions = await Session.find({ eventId }).sort({ 'schedule.start': 1 }).lean();
 
-    for (const invitee of invitees) {
+    const outcomes = await mapLimit(invitees, sendConcurrency(), async (invitee) => {
       // Core Rule: Generate ONE secure token & ONE QR per event/invitee per send batch
       const rawToken = generateSecureToken();
       const tokenHash = hashToken(rawToken);
@@ -371,7 +376,7 @@ export const invitationService = {
       const waText = `Dear ${invitee.name},\n\nYou are cordially invited to ${event.title}!\n\n📅 Date: ${eventDate}\n⏰ Time: ${eventTime}\n📍 Venue: ${venue}\n\nView your official Invitation Pass & QR Code here:\n${invitationUrl}\n\nWe look forward to seeing you!`;
       const whatsappWebUrl = cleanMobile ? `https://api.whatsapp.com/send?phone=${cleanMobile}&text=${encodeURIComponent(waText)}` : undefined;
 
-      results.push({
+      return {
         inviteeId: invitee._id,
         inviteeName: invitee.name,
         inviteeMobile: invitee.mobile,
@@ -381,8 +386,9 @@ export const invitationService = {
         whatsappMessageId: invitation.whatsappMessageId,
         failureReason: invitation.failureReason,
         whatsappWebUrl,
-      });
-    }
+      };
+    });
+    results.push(...outcomes);
 
     const failedCount = results.filter((r: any) => r.status === 'FAILED').length;
     if (failedCount > 0) {
@@ -431,14 +437,13 @@ export const invitationService = {
 
     const results = [];
 
-    for (const invitation of invitations) {
+    const outcomes = await mapLimit(invitations, sendConcurrency(), async (invitation) => {
       const invitee = invitation.inviteeId as any;
       if (!invitee) {
         invitation.status = InvitationDeliveryStatus.FAILED;
         invitation.failureReason = 'INVITEE_DELETED';
         await invitation.save();
-        results.push({ invitationId: invitation._id, status: 'FAILED', failureReason: 'INVITEE_DELETED' });
-        continue;
+        return { invitationId: invitation._id, status: 'FAILED', failureReason: 'INVITEE_DELETED' } as any;
       }
 
       const rawToken = generateSecureToken();
@@ -604,7 +609,7 @@ export const invitationService = {
       const waText = `Dear ${invitee.name},\n\nYou are cordially invited to ${event.title}!\n\n📅 Date: ${eventDate}\n⏰ Time: ${eventTime}\n📍 Venue: ${venue}\n\nView your official Invitation Pass & QR Code here:\n${invitationUrl}\n\nWe look forward to seeing you!`;
       const whatsappWebUrl = cleanMobile ? `https://api.whatsapp.com/send?phone=${cleanMobile}&text=${encodeURIComponent(waText)}` : undefined;
 
-      results.push({
+      return {
         invitationId: resendInvitation._id,
         inviteeId: invitee._id,
         inviteeName: invitee.name,
@@ -615,8 +620,9 @@ export const invitationService = {
         whatsappMessageId: resendInvitation.whatsappMessageId,
         failureReason: resendInvitation.failureReason,
         whatsappWebUrl,
-      });
-    }
+      } as any;
+    });
+    results.push(...outcomes);
 
     const failedCount = results.filter((r: any) => r.status === 'FAILED').length;
     if (failedCount > 0) {

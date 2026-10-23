@@ -60,4 +60,7 @@ const TemplateSchema: Schema = new Schema(
   }
 );
 
+// the template list filters on isActive and sorts newest first
+TemplateSchema.index({ isActive: 1, createdAt: -1 });
+
 export const Template = mongoose.model<ITemplate>('Template', TemplateSchema);

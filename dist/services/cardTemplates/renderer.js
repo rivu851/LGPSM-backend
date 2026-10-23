@@ -24,6 +24,8 @@ const SOURCE_SCALE = 3; // the exported artwork is 3x the Figma frame (1179 x 20
 exports.SOURCE_SCALE = SOURCE_SCALE;
 exports.DEFAULT_SCALE = 2; // delivered cards are 786 x 1364: sharp on phones, small enough for email and WhatsApp
 const EDGE_MARGIN = 24; // text never gets closer than this to the card edge (Figma px)
+// zlib level 6: far quicker to encode than 9 for a few KB more per card
+const PNG_LEVEL = 6;
 const MAX_TEXT_LENGTH = 160;
 // Neutral colours for the photo frame when the organizer has not uploaded one
 const PHOTO_FALLBACK = {
@@ -277,7 +279,7 @@ async function renderTemplateCard(input) {
         });
     }
     const background = await loadBackground(layout, scale);
-    return (0, sharp_1.default)(background).composite(layers).png({ compressionLevel: 9 }).toBuffer();
+    return (0, sharp_1.default)(background).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
 }
 /** The designers' sample text for each slot, used for template previews. */
 function sampleTexts(design) {
