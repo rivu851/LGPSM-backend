@@ -69,7 +69,9 @@ export const saveVariantSchema = z
     name: z.string().trim().min(2).max(100),
     categoryId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
     subcategoryId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
-    publish: z.boolean().optional()
+    publish: z.boolean().optional(),
+    /** save the design over this existing template instead of creating a new one */
+    replaceTemplateId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional()
   })
   .strict();
 

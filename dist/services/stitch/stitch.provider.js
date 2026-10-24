@@ -22,11 +22,21 @@ let sdkLoader = () => new Function('m', 'return import(m)')('@google/stitch-sdk'
 function setStitchSdkLoader(loader) {
     sdkLoader = loader || (() => new Function('m', 'return import(m)')('@google/stitch-sdk'));
 }
+/** What the SDK said, for the server log only: truncated, and with the credential redacted if it ever appears. */
+function describeForLog(err) {
+    const code = String(err?.code || '');
+    let message = err instanceof Error ? err.message : String(err);
+    if (env_1.env.STITCH_API_KEY)
+        message = message.split(env_1.env.STITCH_API_KEY).join('[redacted]');
+    return `${code ? code + ': ' : ''}${message.replace(/\s+/g, ' ').slice(0, 240)}`;
+}
 function classify(err) {
     if (err instanceof StitchProviderError)
         return err;
+    if (!(err instanceof safeFetchBounded_1.BoundedFetchError))
+        console.error('[stitch] Provider call failed:', describeForLog(err));
     if (err instanceof safeFetchBounded_1.BoundedFetchError) {
-        return new StitchProviderError(err.code === 'TIMEOUT' ? 'TIMEOUT' : err.code === 'NETWORK' ? 'NETWORK' : 'MALFORMED', `Generated artifact could not be downloaded (${err.code})`);
+        return new StitchProviderError(err.code === 'TIMEOUT' ? 'TIMEOUT' : err.code === 'NETWORK' ? 'NETWORK' : 'MALFORMED', `Generated artifact could not be downloaded (${err.code}${err.code === 'BAD_STATUS' ? ': ' + err.message : ''})`);
     }
     const code = String(err?.code || '');
     const text = `${code} ${err instanceof Error ? err.message : ''}`.toLowerCase();
@@ -52,13 +62,19 @@ async function artifactsOf(screen) {
     if (typeof htmlUrl !== 'string' || !htmlUrl || typeof imageUrl !== 'string' || !imageUrl || typeof screen.id !== 'string' || typeof screen.projectId !== 'string') {
         throw new StitchProviderError('MALFORMED', 'The design provider returned an incomplete design');
     }
-    const [html, shot] = await Promise.all([
-        (0, safeFetchBounded_1.fetchBounded)(htmlUrl, { hostSuffixes: ARTIFACT_HOSTS, maxBytes: MAX_HTML_BYTES }),
-        (0, safeFetchBounded_1.fetchBounded)(imageUrl, { hostSuffixes: ARTIFACT_HOSTS, maxBytes: MAX_IMAGE_BYTES })
-    ]);
-    const text = html.buffer.toString('utf8');
-    if (!/<html[\s>]|<body[\s>]|<div[\s>]/i.test(text))
-        throw new StitchProviderError('MALFORMED', 'The generated design was not HTML');
+    const getHtml = () => (0, safeFetchBounded_1.fetchBounded)(htmlUrl, { hostSuffixes: ARTIFACT_HOSTS, maxBytes: MAX_HTML_BYTES });
+    // the provider answers with an HTML page, or sometimes with an SVG drawing; both are read as text only
+    const looksLikeHtml = (t) => /<html[\s>]|<body[\s>]|<div[\s>]|<svg[\s>]/i.test(t);
+    const [firstHtml, shot] = await Promise.all([getHtml(), (0, safeFetchBounded_1.fetchBounded)(imageUrl, { hostSuffixes: ARTIFACT_HOSTS, maxBytes: MAX_IMAGE_BYTES })]);
+    let text = firstHtml.buffer.toString('utf8');
+    if (!looksLikeHtml(text)) {
+        // The download link sometimes answers with something other than the page for a moment after generation: say what, then ask once more
+        console.warn(`[stitch] Download was not a page or drawing (type ${firstHtml.contentType || 'unknown'}, ${firstHtml.buffer.length} bytes, starts: "${text.slice(0, 80).replace(/\s+/g, ' ')}")`);
+        await new Promise((r) => setTimeout(r, 2000));
+        text = (await getHtml()).buffer.toString('utf8');
+        if (!looksLikeHtml(text))
+            throw new StitchProviderError('MALFORMED', 'The generated design was neither a page nor a drawing');
+    }
     return { projectId: screen.projectId, screenId: screen.id, html: text, screenshot: shot.buffer };
 }
 async function withClient(fn) {

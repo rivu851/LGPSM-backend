@@ -497,6 +497,88 @@ describe('saving, using, editing and deleting a template', () => {
   });
 });
 
+describe('editing a design after it was saved', () => {
+  let template: any;
+  beforeAll(async () => {
+    await drain();
+    await TemplateGenerationJob.deleteMany({});
+    const j = await generated(orgA, { ...brief, prompt: 'a design that will be edited after saving' });
+    template = (await api('post', `/api/v1/template-generations/${j.id}/variants/0/save`, orgA).send({ name: 'Editable', publish: true })).body.data;
+  });
+
+  it('remembers which provider design it came from', async () => {
+    const stored = await Template.findById(template._id).lean();
+    expect(stored!.source).toMatchObject({ provider: 'STITCH', projectId: 'proj-1' });
+    expect(stored!.source!.screenId).toMatch(/^screen-/);
+  });
+
+  it('edits the saved design from a written request, then replaces the template with the result', async () => {
+    const before = await Template.findById(template._id).lean();
+    const res = await api('post', `/api/v1/template-generations/from-template/${template._id}/edit`, orgA).send({ prompt: 'use a deep blue background instead' });
+    expect(res.status).toBe(202);
+    expect(res.body.data).toMatchObject({ mode: 'EDIT', parentTemplateId: String(template._id) });
+    expect(res.body.usage.used).toBeGreaterThan(0);
+    const job = await waitFor(res.body.data.id, orgA);
+    expect(job.status).toBe('SUCCEEDED');
+    expect(calls.filter((c) => c.op === 'edit').pop()!.input).toMatchObject({ projectId: 'proj-1', screenId: before!.source!.screenId, prompt: 'use a deep blue background instead' });
+
+    const saved = await api('post', `/api/v1/template-generations/${job.id}/variants/0/save`, orgA).send({ name: 'Editable v2', replaceTemplateId: String(template._id) });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toMatchObject({ replaced: true });
+    expect(saved.body.data._id).toBe(String(template._id)); // the same template, updated in place
+    const after = await Template.findById(template._id).lean();
+    expect(after!.name).toBe('Editable v2');
+    expect(after!.previewImageKey).toBe(job.variants[0].previewImageKey);
+    expect(after!.previewImageKey).not.toBe(before!.previewImageKey);
+    expect(String(after!.source!.jobId)).toBe(job.id);
+    expect(after!.isPublished).toBe(true); // visibility is untouched by an edit
+    expect(await Media.exists({ _id: before!.previewImageKey!.replace('media:', '') })).toBeNull(); // the replaced picture is not left behind
+    expect(await Template.countDocuments({ ownerId: orgA._id, name: /^Editable/ })).toBe(1); // no duplicate template
+    // saving the same option again is idempotent
+    expect((await api('post', `/api/v1/template-generations/${job.id}/variants/0/save`, orgA).send({ name: 'Editable v2', replaceTemplateId: String(template._id) })).body.alreadySaved).toBe(true);
+  });
+
+  it('can instead keep the original and save the edited design as a new template', async () => {
+    const res = await api('post', `/api/v1/template-generations/from-template/${template._id}/edit`, orgA).send({ prompt: 'try a warmer colour scheme' });
+    const job = await waitFor(res.body.data.id, orgA);
+    const saved = await api('post', `/api/v1/template-generations/${job.id}/variants/0/save`, orgA).send({ name: 'Warm copy' });
+    expect(saved.status).toBe(201);
+    expect(saved.body.data._id).not.toBe(String(template._id));
+    expect((await Template.findById(template._id).lean())!.name).toBe('Editable v2');
+  });
+
+  it("will not let another organizer edit or replace someone else's template", async () => {
+    expect((await api('post', `/api/v1/template-generations/from-template/${template._id}/edit`, orgB).send({ prompt: 'steal this design please' })).status).toBe(404);
+    const mine = await generated(orgB, { ...brief, prompt: 'organizer B own design to try replacing with' });
+    const attempt = await api('post', `/api/v1/template-generations/${mine.id}/variants/0/save`, orgB).send({ name: 'Takeover', replaceTemplateId: String(template._id) });
+    expect(attempt.status).toBe(404);
+    expect((await Template.findById(template._id).lean())!.name).toBe('Editable v2');
+    expect((await api('post', `/api/v1/template-generations/from-template/${template._id}/edit`).send({ prompt: 'not signed in at all' })).status).toBe(401);
+    expect((await api('post', `/api/v1/template-generations/from-template/${template._id}/edit`, staff).send({ prompt: 'staff cannot design' })).status).toBe(403);
+    expect((await api('post', `/api/v1/template-generations/from-template/nope/edit`, orgA).send({ prompt: 'not a valid id' })).status).toBe(400);
+  });
+
+  it('says so, honestly, for a template that was saved before editing existed', async () => {
+    const old = await Template.create({ name: 'Old', cardDesign: 'CUSTOM', kind: 'INVITATION', designSpec: template.designSpec, ownerId: orgA._id, isSystemTemplate: false, isPublished: false });
+    const res = await api('post', `/api/v1/template-generations/from-template/${old._id}/edit`, orgA).send({ prompt: 'make it a bit bigger please' });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('NOT_EDITABLE');
+    expect(await TemplateGenerationJob.countDocuments({ parentTemplateId: old._id })).toBe(0);
+    // the designers' templates and deleted ones cannot be edited this way either
+    const system = await Template.create({ name: 'Designers', cardDesign: 'WEDDING', isPublished: true });
+    expect((await api('post', `/api/v1/template-generations/from-template/${system._id}/edit`, orgA).send({ prompt: 'edit a system template' })).status).toBe(404);
+  });
+
+  it('keeps a poster a poster: an edited invitation cannot replace a poster', async () => {
+    const pj = await generated(orgA, { kind: 'POSTER', preset: 'POSTER_A4', prompt: 'a poster to test replacing across kinds' });
+    const poster = (await api('post', `/api/v1/template-generations/${pj.id}/variants/0/save`, orgA).send({ name: 'Poster one' })).body.data;
+    const ij = await generated(orgA, { ...brief, prompt: 'an invitation to test replacing across kinds' });
+    const res = await api('post', `/api/v1/template-generations/${ij.id}/variants/0/save`, orgA).send({ name: 'Wrong kind', replaceTemplateId: poster._id });
+    expect(res.status).toBe(400);
+    expect((await Template.findById(poster._id).lean())!.kind).toBe('POSTER');
+  });
+});
+
 describe('real events: rendering, QR codes and exports', () => {
   let template: any, event: any;
   beforeAll(async () => {

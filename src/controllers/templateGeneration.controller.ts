@@ -83,6 +83,15 @@ export const templateGenerationController = {
     }
   },
 
+  async editSaved(req: Request, res: Response) {
+    try {
+      const { job, deduplicated } = await templateGenerationService.editTemplate(actorOf(req), req.params.templateId as string, req.body.prompt, req.body.idempotencyKey);
+      return res.status(deduplicated ? 200 : 202).json({ success: true, deduplicated, data: serializeJob(job), usage: serializeUsage(await usageFor(actorOf(req))) });
+    } catch (error) {
+      return fail(req, res, error);
+    }
+  },
+
   async variations(req: Request, res: Response) {
     try {
       const { job, deduplicated } = await templateGenerationService.createVariations(actorOf(req), req.params.id as string, Number(req.params.index), req.body.prompt, req.body.variantCount || 2, req.body.idempotencyKey);
@@ -94,8 +103,8 @@ export const templateGenerationController = {
 
   async save(req: Request, res: Response) {
     try {
-      const { template, alreadySaved } = await templateGenerationService.saveVariant(actorOf(req), req.params.id as string, Number(req.params.index), req.body);
-      return res.status(alreadySaved ? 200 : 201).json({ success: true, alreadySaved, data: template });
+      const { template, alreadySaved, replaced } = await templateGenerationService.saveVariant(actorOf(req), req.params.id as string, Number(req.params.index), req.body);
+      return res.status(alreadySaved || replaced ? 200 : 201).json({ success: true, alreadySaved, replaced: !!replaced, data: template });
     } catch (error) {
       return fail(req, res, error);
     }

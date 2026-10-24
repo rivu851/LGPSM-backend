@@ -27,7 +27,7 @@ export interface ITemplate extends Document {
   ownerId?: mongoose.Types.ObjectId;
   /** Validated, versioned design for cardDesign CUSTOM; never contains markup, scripts or URLs */
   designSpec?: Record<string, any>;
-  source?: { provider: 'STITCH'; jobId?: mongoose.Types.ObjectId; screenId?: string };
+  source?: { provider: 'STITCH'; jobId?: mongoose.Types.ObjectId; projectId?: string; screenId?: string };
   isSystemTemplate: boolean;
   isPublished: boolean;
   isActive: boolean;
@@ -47,7 +47,7 @@ const TemplateSchema: Schema = new Schema(
     ownerId: { type: Schema.Types.ObjectId, ref: 'User', index: true },
     designSpec: { type: Schema.Types.Mixed },
     source: {
-      type: new Schema({ provider: { type: String, enum: ['STITCH'] }, jobId: { type: Schema.Types.ObjectId }, screenId: { type: String } }, { _id: false })
+      type: new Schema({ provider: { type: String, enum: ['STITCH'] }, jobId: { type: Schema.Types.ObjectId }, projectId: { type: String }, screenId: { type: String } }, { _id: false })
     },
     isSystemTemplate: { type: Boolean, default: true },
     // Drafts are visible to admins only; organizers can pick published templates

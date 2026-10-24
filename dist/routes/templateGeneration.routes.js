@@ -27,6 +27,8 @@ router.use(authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(Use
 router.get('/options', rateLimiter_1.templateGenerationReadLimiter, templateGeneration_controller_1.templateGenerationController.options);
 router.get('/', rateLimiter_1.templateGenerationReadLimiter, templateGeneration_controller_1.templateGenerationController.list);
 router.post('/', rateLimiter_1.templateGenerationLimiter, validate(template_validator_1.createGenerationSchema), templateGeneration_controller_1.templateGenerationController.create);
+// change a design that is already saved as a template (the owner's, or any for an admin)
+router.post('/from-template/:templateId/edit', rateLimiter_1.templateGenerationLimiter, validate(template_validator_1.changeGenerationSchema), templateGeneration_controller_1.templateGenerationController.editSaved);
 router.get('/:id', rateLimiter_1.templateGenerationReadLimiter, templateGeneration_controller_1.templateGenerationController.get);
 router.delete('/:id', templateGeneration_controller_1.templateGenerationController.remove);
 router.post('/:id/variants/:index/edit', rateLimiter_1.templateGenerationLimiter, validIndex, validate(template_validator_1.changeGenerationSchema), templateGeneration_controller_1.templateGenerationController.edit);

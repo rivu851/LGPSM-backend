@@ -57,7 +57,7 @@ const TemplateSchema = new mongoose_1.Schema({
     ownerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', index: true },
     designSpec: { type: mongoose_1.Schema.Types.Mixed },
     source: {
-        type: new mongoose_1.Schema({ provider: { type: String, enum: ['STITCH'] }, jobId: { type: mongoose_1.Schema.Types.ObjectId }, screenId: { type: String } }, { _id: false })
+        type: new mongoose_1.Schema({ provider: { type: String, enum: ['STITCH'] }, jobId: { type: mongoose_1.Schema.Types.ObjectId }, projectId: { type: String }, screenId: { type: String } }, { _id: false })
     },
     isSystemTemplate: { type: Boolean, default: true },
     // Drafts are visible to admins only; organizers can pick published templates

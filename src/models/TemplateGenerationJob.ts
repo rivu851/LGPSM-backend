@@ -37,6 +37,8 @@ export interface ITemplateGenerationJob extends Document {
   variantCount: number;
   parentJobId?: mongoose.Types.ObjectId;
   parentVariantIndex?: number;
+  /** EDIT of an already saved template (instead of a variant of an earlier job) */
+  parentTemplateId?: mongoose.Types.ObjectId;
   status: JobStatus;
   error?: { code: string; message: string };
   variants: IJobVariant[];
@@ -77,6 +79,7 @@ const JobSchema = new Schema<ITemplateGenerationJob>(
     variantCount: { type: Number, default: 1, min: 1, max: 3 },
     parentJobId: { type: Schema.Types.ObjectId, ref: 'TemplateGenerationJob' },
     parentVariantIndex: Number,
+    parentTemplateId: { type: Schema.Types.ObjectId, ref: 'Template' },
     status: { type: String, enum: JOB_STATUSES, default: 'QUEUED', index: true },
     error: { type: new Schema({ code: String, message: String }, { _id: false }) },
     variants: { type: [VariantSchema], default: [] },
