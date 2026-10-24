@@ -38,12 +38,18 @@ app.use(helmet());
 if (env.NODE_ENV !== 'test') {
   app.use(morgan('dev'));
 }
+// Browsers send the origin without a trailing slash, so entries are normalised before matching
+const allowedOrigins = [
+  env.FRONTEND_URL,
+  'http://localhost:3000',
+  'https://lgpsm-frontend.vercel.app',
+  'https://lgpsm-frontend-beta.vercel.app',
+  ...(env.CORS_ORIGINS?.split(',') ?? []),
+]
+  .map((origin) => origin.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
 app.use(cors({
-  origin: [
-    env.FRONTEND_URL,
-    'http://localhost:3000',
-    'https://lgpsm-frontend.vercel.app',
-  ],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Authorization', 'Content-Type'],
   exposedHeaders: ['X-Invitation-Qr'],
