@@ -43,7 +43,7 @@ function resolveStatus(err) {
     if (status !== undefined) {
         return {
             statusCode: status,
-            message: status < 500 ? err.message || 'Request failed' : 'Internal Server Error',
+            message: status < 500 || err.exposeMessage ? err.message || 'Request failed' : 'Internal Server Error',
         };
     }
     return { statusCode: 500, message: 'Internal Server Error' };

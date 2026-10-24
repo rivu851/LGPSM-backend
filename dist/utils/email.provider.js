@@ -18,6 +18,10 @@ const sendEmail = async (to, subject, html, attachments) => {
     const transporter = nodemailer_1.default.createTransport({
         host,
         port: parseInt(port || '587', 10),
+        // Without these a blocked or unreachable SMTP host leaves the request hanging for minutes
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 20_000,
         auth: {
             user,
             pass

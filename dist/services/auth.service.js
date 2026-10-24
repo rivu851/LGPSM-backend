@@ -106,6 +106,7 @@ exports.authService = {
             console.error('[auth.service] Failed to send verification email for', data.email, ':', err instanceof Error ? err.message : 'unknown error');
             throw {
                 statusCode: 503,
+                exposeMessage: true,
                 message: 'Unable to send verification email. Please try again later.',
             };
         }

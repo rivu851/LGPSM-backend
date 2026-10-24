@@ -13,6 +13,8 @@ type ErrorLike = {
   statusCode?: unknown;
   code?: unknown;
   type?: unknown;
+  // Set by code that throws a 5xx whose message is safe and useful to show the client
+  exposeMessage?: boolean;
   path?: string;
   issues?: Array<{ path?: PropertyKey[]; message?: string }>;
 };
@@ -57,7 +59,7 @@ function resolveStatus(err: ErrorLike): { statusCode: number; message: string } 
   if (status !== undefined) {
     return {
       statusCode: status,
-      message: status < 500 ? err.message || 'Request failed' : 'Internal Server Error',
+      message: status < 500 || err.exposeMessage ? err.message || 'Request failed' : 'Internal Server Error',
     };
   }
 
