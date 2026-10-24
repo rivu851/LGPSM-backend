@@ -67,8 +67,14 @@ async function run(make: () => StitchScreenArtifacts[]) {
 
 const brief = { kind: 'INVITATION', preset: 'INVITATION_PORTRAIT', prompt: 'Elegant black and gold awards gala invitation', style: { mood: 'elegant' } };
 const waitFor = async (id: string, who: any, until = ['SUCCEEDED', 'CONCEPT_ONLY', 'FAILED']) => {
-  await drain();
-  const res = await api('get', `/api/v1/template-generations/${id}`, who);
+  // drain() can return before a queued job has been picked up when the machine is busy, so poll for the final state
+  let res: any;
+  for (let i = 0; i < 40; i++) {
+    await drain();
+    res = await api('get', `/api/v1/template-generations/${id}`, who);
+    if (until.includes(res.body.data.status)) break;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
   expect(until).toContain(res.body.data.status);
   return res.body.data;
 };
