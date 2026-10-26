@@ -108,7 +108,8 @@ app.use('/api/v1/events/:eventId/checkins', eventCheckInRoutes);
 
 // Category, Template, Notification, AuditLog, Report, Ticketing & Payment Routes
 app.use('/api/v1/categories', categoryRoutes);
-app.use('/api/v1/template-generations/:id', requireObjectIdParam('id', ['options']));
+app.use('/api/v1/template-generations/:id', requireObjectIdParam('id', ['options', 'from-template']));
+app.use('/api/v1/template-generations/from-template/:templateId', requireObjectIdParam('templateId'));
 app.use('/api/v1/template-generations', templateGenerationRoutes);
 app.use('/api/v1/templates', templateRoutes);
 app.use('/api/v1/notifications', notificationRoutes);

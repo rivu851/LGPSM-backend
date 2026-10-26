@@ -28,6 +28,7 @@ router.use(authenticate, authorizeRoles(Role.ORGANIZER, Role.ADMIN));
 router.get('/options', templateGenerationReadLimiter, templateGenerationController.options);
 router.get('/', templateGenerationReadLimiter, templateGenerationController.list);
 router.post('/', templateGenerationLimiter, validate(createGenerationSchema), templateGenerationController.create);
+router.post('/from-template/:templateId/edit', templateGenerationLimiter, validate(changeGenerationSchema), templateGenerationController.editSaved);
 router.get('/:id', templateGenerationReadLimiter, templateGenerationController.get);
 router.delete('/:id', templateGenerationController.remove);
 router.post('/:id/variants/:index/edit', templateGenerationLimiter, validIndex, validate(changeGenerationSchema), templateGenerationController.edit);

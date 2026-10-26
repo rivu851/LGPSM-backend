@@ -299,7 +299,7 @@ async function processJob(job: ITemplateGenerationJob): Promise<void> {
 
 // ---------- public API ----------
 
-async function enqueue(actor: Actor, base: Omit<CreateJobInput, 'idempotencyKey'> & { mode: JobMode; parentJobId?: string; parentVariantIndex?: number; idempotencyKey?: string }) {
+async function enqueue(actor: Actor, base: Omit<CreateJobInput, 'idempotencyKey'> & { mode: JobMode; parentJobId?: string; parentVariantIndex?: number; parentTemplateId?: string; idempotencyKey?: string }) {
   if (!getStitchProvider().isConfigured()) throw new GenerationError('PROVIDER_UNAVAILABLE', 503, PROVIDER_MESSAGES.NOT_CONFIGURED.message);
   const preset = CANVAS_PRESETS[base.preset];
   if (!preset || preset.kind !== base.kind) throw new GenerationError('INVALID_REQUEST', 400, 'That size does not suit this kind of template');
@@ -341,6 +341,7 @@ async function enqueue(actor: Actor, base: Omit<CreateJobInput, 'idempotencyKey'
       variantCount: Math.min(Math.max(base.variantCount || 1, 1), 3),
       parentJobId: base.parentJobId ? new mongoose.Types.ObjectId(base.parentJobId) : undefined,
       parentVariantIndex: base.parentVariantIndex,
+      parentTemplateId: base.parentTemplateId ? new mongoose.Types.ObjectId(base.parentTemplateId) : undefined,
       idempotencyKey: base.idempotencyKey,
       expiresAt: new Date(Date.now() + JOB_TTL_MS)
     });
@@ -398,6 +399,31 @@ export const templateGenerationService = {
     const variant = parent.variants.find((v) => v.index === index);
     if (!variant) throw new GenerationError('VARIANT_NOT_FOUND', 404, 'Design not found');
     return enqueue(actor, { kind: parent.kind, preset: parent.preset as CanvasPresetId, prompt, style: parent.style as any, variantCount: 1, mode: 'EDIT', parentJobId: String(parent._id), parentVariantIndex: index, idempotencyKey });
+  },
+
+  /**
+   * Changes a design that is already saved as a template, from a written request. Works for both AI-generated templates
+   * (CUSTOM cardDesign with a live Stitch project reference → EDIT mode) and pre-existing / uploaded templates
+   * (any other cardDesign or CUSTOM without source → CREATE mode with template name as visual context).
+   * Only the owner (or an admin) may call this.
+   */
+  async editTemplate(actor: Actor, templateId: string, prompt: string, idempotencyKey?: string) {
+    if (!mongoose.Types.ObjectId.isValid(templateId)) throw new GenerationError('JOB_NOT_FOUND', 404, 'Template not found');
+    const template = await Template.findOne({ _id: templateId, isActive: { $ne: false }, ...(isAdmin(actor) ? {} : { ownerId: actor.userId }) }).lean();
+    if (!template) throw new GenerationError('JOB_NOT_FOUND', 404, 'Template not found');
+    const kind = template.kind === 'POSTER' ? 'POSTER' : 'INVITATION';
+
+    // AI-generated template with a live Stitch project reference → EDIT mode (provider revises the exact screen)
+    if (template.cardDesign === 'CUSTOM' && template.source?.projectId && template.source.screenId) {
+      const preset = (template.designSpec as any)?.canvas?.preset as CanvasPresetId | undefined;
+      return enqueue(actor, { kind, preset: preset && CANVAS_PRESETS[preset]?.kind === kind ? preset : kind === 'POSTER' ? 'POSTER_PORTRAIT' : 'INVITATION_PORTRAIT', prompt, variantCount: 1, mode: 'EDIT', parentTemplateId: String(template._id), idempotencyKey });
+    }
+
+    // Pre-existing or uploaded template (no live Stitch screen) → CREATE mode with visual context in the prompt
+    const contextHint = `Based on the existing "${template.name}" ${kind.toLowerCase()} template design as visual context: `;
+    const enrichedPrompt = cleanPrompt(`${contextHint}${prompt}`);
+    const defaultPreset = kind === 'POSTER' ? 'POSTER_PORTRAIT' : 'INVITATION_PORTRAIT';
+    return enqueue(actor, { kind, preset: defaultPreset, prompt: enrichedPrompt, variantCount: 1, mode: 'CREATE', parentTemplateId: String(template._id), idempotencyKey });
   },
 
   async createVariations(actor: Actor, jobId: string, index: number, prompt: string, count: number, idempotencyKey?: string) {
