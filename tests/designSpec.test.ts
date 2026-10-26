@@ -141,6 +141,22 @@ describe('Stitch concept conversion', () => {
     if (r.ready) expect(safeParseDesignSpec(r.spec).ok).toBe(true);
   });
 
+  it('converts a concept the provider sent as an SVG drawing, reading colours and fonts as text only', async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+      <script>require('fs').writeFileSync('/tmp/pwned-svg','x')</script>
+      <rect width="1080" height="1920" fill="#0b0c10"/><rect x="40" y="40" width="1000" height="1840" fill="none" stroke="#d4af37" stroke-width="4"/>
+      <text x="540" y="400" font-family="'Playfair Display', serif" fill="#f5f5f5" onload="alert(1)">Sample Title</text>
+      <text x="540" y="600" font-family="Manrope, sans-serif" fill="#d4af37">Sample label</text>
+      <image href="https://evil.example/x.png" width="10" height="10"/></svg>`;
+    const r = await convertStitchDesign({ html: svg, screenshot: fixture('stitch-gala.png'), kind: 'INVITATION', preset: 'INVITATION_PORTRAIT' });
+    expect(fs.existsSync('/tmp/pwned-svg')).toBe(false);
+    expect(r.ready).toBe(true);
+    expect(r.style).toMatchObject({ headingFont: 'Playfair Display', bodyFont: 'Manrope' });
+    expect(r.style!.accent.toLowerCase()).toBe('#d4af37');
+    const json = JSON.stringify(r.spec);
+    for (const leaked of ['Sample Title', 'evil.example', 'svg', 'alert', 'script', 'http']) expect(json).not.toContain(leaked);
+  });
+
   it('says honestly when a concept cannot become a template', async () => {
     const empty = await convertStitchDesign({ html: '<html><body></body></html>', kind: 'INVITATION', preset: 'INVITATION_PORTRAIT' });
     expect(empty.ready).toBe(false);

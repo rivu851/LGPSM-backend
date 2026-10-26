@@ -75,7 +75,7 @@ function buildStitchPrompt(input) {
         : 'event title, a short description, date and time, venue, the organizer name or logo, and a large square QR-code area with a white background for registration';
     const style = [input.style?.mood ? `mood: ${input.style.mood}` : '', input.style?.colorHint ? `colours: ${input.style.colorHint}` : ''].filter(Boolean).join('; ');
     return [
-        `Design ${what} template as ONE static graphic of ${width}x${height} pixels (aspect ${(width / height).toFixed(2)}). It is a printable/shareable graphic, not an app screen: no navigation bars, buttons, menus or scrolling.`,
+        `Design ${what} template as ONE static screen with aspect ratio ${(width / height).toFixed(2)} (${width}x${height}). Make it as an HTML page. It is a printable/shareable layout, not an app screen: no navigation bars, buttons, menus or scrolling.`,
         `Clear zones for: ${zones}. Use only generic placeholder wording and no real people, brands or phone numbers.`,
         style ? `Style preferences - ${style}.` : '',
         `Creative brief from the organizer: ${(0, exports.cleanPrompt)(input.prompt)}`
@@ -165,7 +165,7 @@ async function normalizeConcept(png) {
     }
     catch (err) {
         // not an image, truncated, or absurdly large: the provider's answer is unusable, not our failure
-        throw err instanceof stitch_provider_1.StitchProviderError ? err : new stitch_provider_1.StitchProviderError('MALFORMED', 'Unusable concept image');
+        throw err instanceof stitch_provider_1.StitchProviderError ? err : new stitch_provider_1.StitchProviderError('MALFORMED', `Unusable concept image (${err instanceof Error ? err.message.slice(0, 80) : 'unknown'})`);
     }
 }
 async function decodeConcept(png) {
@@ -201,13 +201,28 @@ async function buildVariant(job, art, index) {
     }
     return variant;
 }
+/**
+ * One more try for problems that are usually momentary (the provider hiccuped, an answer was unusable, the connection
+ * dropped). Never for credentials, quota or a timeout: retrying those cannot help and only costs allowance or time.
+ */
+async function withOneRetry(call) {
+    try {
+        return await call();
+    }
+    catch (err) {
+        if (!(err instanceof stitch_provider_1.StitchProviderError) || !['MALFORMED', 'PROVIDER', 'NETWORK'].includes(err.kind))
+            throw err;
+        console.warn(`[template-generation] Retrying once after ${err.kind}: ${err.message}`);
+        return call();
+    }
+}
 function providerCall(job) {
     const provider = (0, stitch_provider_1.getStitchProvider)();
     const preset = job.preset;
     const device = deviceFor(preset);
     const prompt = buildStitchPrompt({ kind: job.kind, preset, prompt: job.prompt, style: job.style });
     if (job.mode === 'CREATE') {
-        return provider.generate({ title: `LGPSM ${job.kind.toLowerCase()} template`, prompt, device }).then(async (first) => {
+        return withOneRetry(() => provider.generate({ title: `LGPSM ${job.kind.toLowerCase()} template`, prompt, device })).then(async (first) => {
             if (job.variantCount <= 1)
                 return [first];
             // One generation makes one design. The extra options are genuine alternatives of it from the provider's own
@@ -228,10 +243,16 @@ function providerCall(job) {
             }
         });
     }
-    return TemplateGenerationJob_1.TemplateGenerationJob.findById(job.parentJobId)
-        .lean()
-        .then((parent) => {
-        const source = parent?.variants.find((v) => v.index === job.parentVariantIndex);
+    const sourceOf = async () => {
+        if (job.parentTemplateId) {
+            const t = await Template_1.Template.findById(job.parentTemplateId).select('source').lean();
+            return t?.source?.projectId && t.source.screenId ? { projectId: t.source.projectId, screenId: t.source.screenId } : undefined;
+        }
+        const parent = await TemplateGenerationJob_1.TemplateGenerationJob.findById(job.parentJobId).lean();
+        return parent?.variants.find((v) => v.index === job.parentVariantIndex);
+    };
+    return sourceOf()
+        .then((source) => {
         if (!source)
             throw new GenerationError('VARIANT_NOT_FOUND', 404, 'The design to change no longer exists');
         const ref = { projectId: source.projectId, screenId: source.screenId, device };
@@ -259,8 +280,8 @@ async function processJob(job) {
             return failJob(job._id, err.code, err.message);
         if (err instanceof stitch_provider_1.StitchProviderError) {
             const m = PROVIDER_MESSAGES[err.kind];
-            if (err.kind === 'AUTH' || err.kind === 'NOT_CONFIGURED')
-                console.error('[template-generation] Provider credentials were rejected or are missing');
+            // our own wording only (never the credential or the provider's text), so the logs say which step failed
+            console.error(`[template-generation] Job failed (${err.kind}): ${err.message}`);
             return failJob(job._id, m.code, m.message);
         }
         console.error('[template-generation] Generation failed:', err instanceof Error ? err.message : 'unknown error');
@@ -279,7 +300,7 @@ async function enqueue(actor, base) {
         throw new GenerationError('INVALID_REQUEST', 400, 'Please describe the design in a little more detail');
     await failExpiredJobs();
     const ownerId = new mongoose_1.default.Types.ObjectId(actor.userId);
-    const promptHash = hashOf(JSON.stringify([base.kind, base.preset, base.mode, base.parentJobId || '', base.parentVariantIndex ?? '', base.variantCount ?? 1, prompt.toLowerCase(), base.style || {}]));
+    const promptHash = hashOf(JSON.stringify([base.kind, base.preset, base.mode, base.parentJobId || '', base.parentVariantIndex ?? '', base.parentTemplateId || '', base.variantCount ?? 1, prompt.toLowerCase(), base.style || {}]));
     if (base.idempotencyKey) {
         const existing = await TemplateGenerationJob_1.TemplateGenerationJob.findOne({ ownerId, idempotencyKey: base.idempotencyKey });
         if (existing)
@@ -311,6 +332,7 @@ async function enqueue(actor, base) {
             variantCount: Math.min(Math.max(base.variantCount || 1, 1), 3),
             parentJobId: base.parentJobId ? new mongoose_1.default.Types.ObjectId(base.parentJobId) : undefined,
             parentVariantIndex: base.parentVariantIndex,
+            parentTemplateId: base.parentTemplateId ? new mongoose_1.default.Types.ObjectId(base.parentTemplateId) : undefined,
             idempotencyKey: base.idempotencyKey,
             expiresAt: new Date(Date.now() + JOB_TTL_MS)
         });
@@ -358,6 +380,23 @@ exports.templateGenerationService = {
         if (!variant)
             throw new GenerationError('VARIANT_NOT_FOUND', 404, 'Design not found');
         return enqueue(actor, { kind: parent.kind, preset: parent.preset, prompt, style: parent.style, variantCount: 1, mode: 'EDIT', parentJobId: String(parent._id), parentVariantIndex: index, idempotencyKey });
+    },
+    /**
+     * Changes a design that is already saved as a template, from a written request. The result is a new job whose options
+     * can replace the template (save with `replaceTemplateId`) or be saved as a new one. Only the owner (or an admin).
+     */
+    async editTemplate(actor, templateId, prompt, idempotencyKey) {
+        if (!mongoose_1.default.Types.ObjectId.isValid(templateId))
+            throw new GenerationError('JOB_NOT_FOUND', 404, 'Template not found');
+        const template = await Template_1.Template.findOne({ _id: templateId, isActive: { $ne: false }, ...(isAdmin(actor) ? {} : { ownerId: actor.userId }) }).lean();
+        if (!template || template.cardDesign !== 'CUSTOM')
+            throw new GenerationError('JOB_NOT_FOUND', 404, 'Template not found');
+        if (!template.source?.projectId || !template.source.screenId) {
+            throw new GenerationError('NOT_EDITABLE', 409, 'This template was saved before editing was available, so it cannot be changed with AI. Generate a new design instead.');
+        }
+        const preset = template.designSpec?.canvas?.preset;
+        const kind = template.kind === 'POSTER' ? 'POSTER' : 'INVITATION';
+        return enqueue(actor, { kind, preset: preset && designSpec_1.CANVAS_PRESETS[preset]?.kind === kind ? preset : kind === 'POSTER' ? 'POSTER_PORTRAIT' : 'INVITATION_PORTRAIT', prompt, variantCount: 1, mode: 'EDIT', parentTemplateId: String(template._id), idempotencyKey });
     },
     async createVariations(actor, jobId, index, prompt, count, idempotencyKey) {
         const parent = await loadOwnedJob(actor, jobId);
@@ -407,6 +446,34 @@ exports.templateGenerationService = {
             if (existing)
                 return { template: existing, alreadySaved: true };
         }
+        // Replace an existing template with this design (editing a saved design). Same kind, and only the owner's (or an admin's).
+        if (input.replaceTemplateId) {
+            if (!mongoose_1.default.Types.ObjectId.isValid(input.replaceTemplateId))
+                throw new GenerationError('INVALID_REQUEST', 400, 'Template not found');
+            const target = await Template_1.Template.findOne({ _id: input.replaceTemplateId, isActive: { $ne: false }, cardDesign: 'CUSTOM', ...(isAdmin(actor) ? {} : { ownerId: actor.userId }) });
+            if (!target)
+                throw new GenerationError('JOB_NOT_FOUND', 404, 'Template not found');
+            if (target.kind !== parsed.spec.kind)
+                throw new GenerationError('INVALID_REQUEST', 400, 'A poster cannot replace an invitation (or the other way round)');
+            const claimedReplace = await TemplateGenerationJob_1.TemplateGenerationJob.updateOne({ _id: job._id, variants: { $elemMatch: { index, templateId: { $exists: false } } } }, { $set: { 'variants.$.templateId': target._id } });
+            if (claimedReplace.modifiedCount === 0)
+                throw new GenerationError('JOB_ACTIVE', 409, 'This design is already being saved. Please try again.');
+            const oldPreview = target.previewImageKey;
+            target.designSpec = parsed.spec;
+            target.previewImageKey = variant.previewImageKey;
+            target.source = { provider: 'STITCH', jobId: job._id, projectId: variant.projectId, screenId: variant.screenId };
+            if (input.name)
+                target.name = input.name;
+            target.markModified('designSpec');
+            await target.save();
+            // the replaced design's preview picture is no longer used by anything
+            if (oldPreview && oldPreview !== variant.previewImageKey && !(await Template_1.Template.exists({ previewImageKey: oldPreview, _id: { $ne: target._id } }))) {
+                const mediaId = oldPreview.replace(/^media:/, '');
+                if (mongoose_1.default.Types.ObjectId.isValid(mediaId))
+                    await Media_1.Media.deleteOne({ _id: mediaId, originalName: new RegExp(`^${MEDIA_PREFIX}`) });
+            }
+            return { template: target, alreadySaved: false, replaced: true };
+        }
         if (input.categoryId) {
             if (!(await Category_1.Category.exists({ _id: input.categoryId })))
                 throw new GenerationError('INVALID_REQUEST', 400, 'Category not found');
@@ -434,7 +501,7 @@ exports.templateGenerationService = {
                 ...(input.categoryId ? { categoryId: input.categoryId } : {}),
                 ...(input.subcategoryId ? { subcategoryId: input.subcategoryId } : {}),
                 previewImageKey: variant.previewImageKey,
-                source: { provider: 'STITCH', jobId: job._id, screenId: variant.screenId },
+                source: { provider: 'STITCH', jobId: job._id, projectId: variant.projectId, screenId: variant.screenId },
                 // an admin's published template is available to every organizer; an organizer's is theirs alone
                 isSystemTemplate: admin,
                 isPublished: input.publish === true,
@@ -462,6 +529,7 @@ function serializeJob(job) {
         error: job.error?.code ? { code: job.error.code, message: job.error.message } : undefined,
         parentJobId: job.parentJobId ? String(job.parentJobId) : undefined,
         parentVariantIndex: job.parentVariantIndex,
+        parentTemplateId: job.parentTemplateId ? String(job.parentTemplateId) : undefined,
         variants: (job.variants || []).map((v) => ({
             index: v.index,
             ready: v.ready,

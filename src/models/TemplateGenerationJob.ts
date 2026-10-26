@@ -37,6 +37,7 @@ export interface ITemplateGenerationJob extends Document {
   variantCount: number;
   parentJobId?: mongoose.Types.ObjectId;
   parentVariantIndex?: number;
+  /** EDIT of an already saved template (instead of a variant of an earlier job) */
   parentTemplateId?: mongoose.Types.ObjectId;
   status: JobStatus;
   error?: { code: string; message: string };

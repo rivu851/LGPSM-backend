@@ -13,6 +13,8 @@ const envSchema = zod_1.z.object({
     ATLAS_URL: zod_1.z.string().min(1, 'ATLAS_URL is required'),
     DNS_SERVER: zod_1.z.string().optional().default('8.8.8.8'),
     FRONTEND_URL: zod_1.z.string().default('http://localhost:3000'),
+    // Extra browser origins allowed by CORS (comma-separated), e.g. beta or preview deployments
+    CORS_ORIGINS: zod_1.z.string().optional(),
     // Time zone used when dates are rendered on the server (invitation cards, emails, WhatsApp)
     APP_TIMEZONE: zod_1.z.string().default('Asia/Kolkata'),
     JWT_SECRET: zod_1.z.string().min(1, 'JWT_SECRET is required'),

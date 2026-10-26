@@ -152,7 +152,15 @@ function mapFont(name, role) {
     return role === 'heading' ? 'Inter' : 'Inter';
 }
 function pickFonts(html) {
+    // families named by the page's Google Fonts links, then by font-family declarations (the only way an SVG names its fonts)
     const families = googleFamilies(html);
+    for (const m of html.matchAll(/font-family\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|([^;}>]+))/gi)) {
+        for (const raw of (m[1] ?? m[2] ?? m[3] ?? '').split(',')) {
+            const name = raw.replace(/["'\\]/g, '').trim();
+            if (name && !/^(sans-serif|serif|monospace|system-ui|inherit|initial|cursive|ui-\w+)$/i.test(name) && !families.includes(name) && families.length < 8)
+                families.push(name);
+        }
+    }
     const fromConfig = {};
     const re = /["']((?:display|headline|title|heading|body|label)[a-z0-9-]*)["']\s*:\s*\[\s*["']([^"']+)["']/g;
     let m;

@@ -72,12 +72,18 @@ app.use((0, helmet_1.default)());
 if (env_1.env.NODE_ENV !== 'test') {
     app.use((0, morgan_1.default)('dev'));
 }
+// Browsers send the origin without a trailing slash, so entries are normalised before matching
+const allowedOrigins = [
+    env_1.env.FRONTEND_URL,
+    'http://localhost:3000',
+    'https://lgpsm-frontend.vercel.app',
+    'https://lgpsm-frontend-beta.vercel.app',
+    ...(env_1.env.CORS_ORIGINS?.split(',') ?? []),
+]
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
 app.use((0, cors_1.default)({
-    origin: [
-        env_1.env.FRONTEND_URL,
-        'http://localhost:3000',
-        'https://lgpsm-frontend.vercel.app',
-    ],
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Authorization', 'Content-Type'],
     exposedHeaders: ['X-Invitation-Qr'],
@@ -136,7 +142,8 @@ app.use('/api/v1/checkins', checkIn_routes_1.default);
 app.use('/api/v1/events/:eventId/checkins', checkIn_routes_1.eventCheckInRoutes);
 // Category, Template, Notification, AuditLog, Report, Ticketing & Payment Routes
 app.use('/api/v1/categories', category_routes_1.default);
-app.use('/api/v1/template-generations/:id', requireObjectIdParam('id', ['options']));
+app.use('/api/v1/template-generations/:id', requireObjectIdParam('id', ['options', 'from-template']));
+app.use('/api/v1/template-generations/from-template/:templateId', requireObjectIdParam('templateId'));
 app.use('/api/v1/template-generations', templateGeneration_routes_1.default);
 app.use('/api/v1/templates', template_routes_1.default);
 app.use('/api/v1/notifications', notification_routes_1.default);

@@ -103,8 +103,8 @@ export const templateGenerationController = {
 
   async save(req: Request, res: Response) {
     try {
-      const { template, alreadySaved } = await templateGenerationService.saveVariant(actorOf(req), req.params.id as string, Number(req.params.index), req.body);
-      return res.status(alreadySaved ? 200 : 201).json({ success: true, alreadySaved, data: template });
+      const { template, alreadySaved, replaced } = await templateGenerationService.saveVariant(actorOf(req), req.params.id as string, Number(req.params.index), req.body);
+      return res.status(alreadySaved || replaced ? 200 : 201).json({ success: true, alreadySaved, replaced: !!replaced, data: template });
     } catch (error) {
       return fail(req, res, error);
     }

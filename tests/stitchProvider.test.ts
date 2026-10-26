@@ -129,6 +129,18 @@ describe('Stitch provider adapter (mocked SDK)', () => {
     expect(await kindOf(generate())).toBe('MALFORMED');
   });
 
+  it('accepts an SVG drawing as the design (the provider sometimes answers with one), and asks once more if it was not a design at all', async () => {
+    use(fakeSdk().sdk);
+    const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920"><rect width="1080" height="1920" fill="#000"/></svg>';
+    download.mockImplementation(async (url: string) => (url.includes('/html') ? { buffer: Buffer.from(SVG), contentType: 'image/svg+xml' } : { buffer: PNG, contentType: 'image/png' }));
+    expect((await generate()).html).toBe(SVG);
+    // a first answer that is not a design, then a good one: the second download is used
+    let htmlCalls = 0;
+    download.mockImplementation(async (url: string) => (url.includes('/html') ? { buffer: Buffer.from(++htmlCalls === 1 ? 'oops, not a design' : HTML), contentType: 'text/html' } : { buffer: PNG, contentType: 'image/png' }));
+    expect((await generate()).html).toBe(HTML);
+    expect(htmlCalls).toBe(2);
+  });
+
   it('rejects an empty variants answer', async () => {
     use(fakeSdk({ variants: async () => [] }).sdk);
     expect(await kindOf(sdkStitchProvider.variants({ projectId: 'p', screenId: 's', prompt: 'x', device: 'MOBILE', options: { count: 2, creativeRange: 'EXPLORE' } }))).toBe('MALFORMED');

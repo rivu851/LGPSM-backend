@@ -136,6 +136,7 @@ export const authService = {
       );
       throw {
         statusCode: 503,
+        exposeMessage: true,
         message:
           'Unable to send verification email. Please try again later.',
       };

@@ -63,6 +63,7 @@ const JobSchema = new mongoose_1.Schema({
     variantCount: { type: Number, default: 1, min: 1, max: 3 },
     parentJobId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'TemplateGenerationJob' },
     parentVariantIndex: Number,
+    parentTemplateId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Template' },
     status: { type: String, enum: exports.JOB_STATUSES, default: 'QUEUED', index: true },
     error: { type: new mongoose_1.Schema({ code: String, message: String }, { _id: false }) },
     variants: { type: [VariantSchema], default: [] },

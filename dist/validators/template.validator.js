@@ -64,7 +64,9 @@ exports.saveVariantSchema = zod_1.z
     name: zod_1.z.string().trim().min(2).max(100),
     categoryId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
     subcategoryId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
-    publish: zod_1.z.boolean().optional()
+    publish: zod_1.z.boolean().optional(),
+    /** save the design over this existing template instead of creating a new one */
+    replaceTemplateId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/).optional()
 })
     .strict();
 // What the Add Event form has entered so far; everything is optional and short, and only uploaded media may be used
