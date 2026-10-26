@@ -426,17 +426,31 @@ export const templateGenerationService = {
   /**
    * Changes a design that is already saved as a template, from a written request. The result is a new job whose options
    * can replace the template (save with `replaceTemplateId`) or be saved as a new one. Only the owner (or an admin).
+   *
+   * Works for both AI-generated templates (CUSTOM cardDesign with a live Stitch project reference, uses EDIT mode so
+   * the provider revises the exact screen) and pre-existing / manually uploaded templates (any other cardDesign, or
+   * CUSTOM without a source ref). For the latter, the provider cannot load the original screen, so the job runs in
+   * CREATE mode with the user's prompt and the template's name/kind as visual context so the output is thematically
+   * consistent with the original design.
    */
   async editTemplate(actor: Actor, templateId: string, prompt: string, idempotencyKey?: string) {
     if (!mongoose.Types.ObjectId.isValid(templateId)) throw new GenerationError('JOB_NOT_FOUND', 404, 'Template not found');
     const template = await Template.findOne({ _id: templateId, isActive: { $ne: false }, ...(isAdmin(actor) ? {} : { ownerId: actor.userId }) }).lean();
-    if (!template || template.cardDesign !== 'CUSTOM') throw new GenerationError('JOB_NOT_FOUND', 404, 'Template not found');
-    if (!template.source?.projectId || !template.source.screenId) {
-      throw new GenerationError('NOT_EDITABLE', 409, 'This template was saved before editing was available, so it cannot be changed with AI. Generate a new design instead.');
-    }
-    const preset = (template.designSpec as any)?.canvas?.preset as CanvasPresetId | undefined;
+    if (!template) throw new GenerationError('JOB_NOT_FOUND', 404, 'Template not found');
     const kind = template.kind === 'POSTER' ? 'POSTER' : 'INVITATION';
-    return enqueue(actor, { kind, preset: preset && CANVAS_PRESETS[preset]?.kind === kind ? preset : kind === 'POSTER' ? 'POSTER_PORTRAIT' : 'INVITATION_PORTRAIT', prompt, variantCount: 1, mode: 'EDIT', parentTemplateId: String(template._id), idempotencyKey });
+
+    // AI-generated template with a live Stitch project reference → use EDIT mode (provider revises the exact screen)
+    if (template.cardDesign === 'CUSTOM' && template.source?.projectId && template.source.screenId) {
+      const preset = (template.designSpec as any)?.canvas?.preset as CanvasPresetId | undefined;
+      return enqueue(actor, { kind, preset: preset && CANVAS_PRESETS[preset]?.kind === kind ? preset : kind === 'POSTER' ? 'POSTER_PORTRAIT' : 'INVITATION_PORTRAIT', prompt, variantCount: 1, mode: 'EDIT', parentTemplateId: String(template._id), idempotencyKey });
+    }
+
+    // Pre-existing or uploaded template (no live Stitch screen) → use CREATE mode with visual context in the prompt
+    // so the new design is thematically inspired by the original template's name and style.
+    const contextHint = `Based on the existing "${template.name}" ${kind.toLowerCase()} template design as visual context: `;
+    const enrichedPrompt = cleanPrompt(`${contextHint}${prompt}`);
+    const defaultPreset = kind === 'POSTER' ? 'POSTER_PORTRAIT' : 'INVITATION_PORTRAIT';
+    return enqueue(actor, { kind, preset: defaultPreset, prompt: enrichedPrompt, variantCount: 1, mode: 'CREATE', parentTemplateId: String(template._id), idempotencyKey });
   },
 
   async createVariations(actor: Actor, jobId: string, index: number, prompt: string, count: number, idempotencyKey?: string) {
