@@ -558,12 +558,17 @@ describe('editing a design after it was saved', () => {
     expect((await api('post', `/api/v1/template-generations/from-template/nope/edit`, orgA).send({ prompt: 'not a valid id' })).status).toBe(400);
   });
 
-  it('says so, honestly, for a template that was saved before editing existed', async () => {
+  it('uses a legacy template as visual context when it has no editable Stitch screen', async () => {
     const old = await Template.create({ name: 'Old', cardDesign: 'CUSTOM', kind: 'INVITATION', designSpec: template.designSpec, ownerId: orgA._id, isSystemTemplate: false, isPublished: false });
     const res = await api('post', `/api/v1/template-generations/from-template/${old._id}/edit`, orgA).send({ prompt: 'make it a bit bigger please' });
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('NOT_EDITABLE');
-    expect(await TemplateGenerationJob.countDocuments({ parentTemplateId: old._id })).toBe(0);
+    expect(res.status).toBe(202);
+    expect(res.body.data).toMatchObject({ mode: 'CREATE', parentTemplateId: String(old._id) });
+    const job = await waitFor(res.body.data.id, orgA);
+    expect(job.status).toBe('SUCCEEDED');
+    expect(calls.filter((call) => call.op === 'generate').pop()!.input.prompt).toContain(
+      'Based on the existing "Old" invitation template design as visual context: make it a bit bigger please'
+    );
+    expect(await TemplateGenerationJob.countDocuments({ parentTemplateId: old._id })).toBe(1);
     // the designers' templates and deleted ones cannot be edited this way either
     const system = await Template.create({ name: 'Designers', cardDesign: 'WEDDING', isPublished: true });
     expect((await api('post', `/api/v1/template-generations/from-template/${system._id}/edit`, orgA).send({ prompt: 'edit a system template' })).status).toBe(404);
