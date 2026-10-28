@@ -20,11 +20,25 @@ const EVENT_WRITABLE_FIELDS = [
   'title', 'description', 'categoryId', 'subcategoryId', 'format', 'location', 'contactNumber',
   'schedule', 'rsvp', 'attendeeSettings', 'dietaryPreference', 'templateId', 'cardInfo', 'media'
 ] as const;
+/**
+ * Clients send a pin as [longitude, latitude]; the database keeps a GeoJSON Point (which the 2dsphere index needs).
+ * Anything that is not a real coordinate pair is dropped, so a bad value can never reach the index.
+ */
+export function normalizeLocation(location: any) {
+  if (!location || typeof location !== 'object' || Array.isArray(location)) return location;
+  const { coordinates, ...rest } = location;
+  const pair = Array.isArray(coordinates) ? coordinates : coordinates?.type === 'Point' ? coordinates.coordinates : null;
+  const valid = Array.isArray(pair) && pair.length === 2 && pair.every((n: unknown) => typeof n === 'number' && Number.isFinite(n))
+    && Math.abs(pair[0]) <= 180 && Math.abs(pair[1]) <= 90;
+  return valid ? { ...rest, coordinates: { type: 'Point', coordinates: [pair[0], pair[1]] } } : rest;
+}
+
 const pickEventFields = (data: any, extra: readonly string[] = []) => {
   const out: Record<string, any> = {};
   for (const key of [...EVENT_WRITABLE_FIELDS, ...extra]) {
     if (data && data[key] !== undefined) out[key] = data[key];
   }
+  if (out.location !== undefined) out.location = normalizeLocation(out.location);
   return out;
 };
 

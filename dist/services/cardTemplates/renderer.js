@@ -8,7 +8,7 @@ exports.renderTemplateCard = renderTemplateCard;
 exports.sampleTexts = sampleTexts;
 const fs_1 = __importDefault(require("fs"));
 const sharp_1 = __importDefault(require("sharp"));
-const layouts_generated_1 = require("./layouts.generated");
+const layoutOverrides_1 = require("./layoutOverrides");
 const fonts_1 = require("./fonts");
 const assetPath_1 = require("../../utils/assetPath");
 // Draws an invitation card from the designers' Figma template: the fixed artwork exported from Figma
@@ -199,7 +199,7 @@ async function qrImage(qr, size, scale) {
 const silhouette = (cx, cy, r, ink) => `<g fill="${ink}" fill-opacity="0.35"><circle cx="${round(cx)}" cy="${round(cy - r * 0.18)}" r="${round(r * 0.28)}"/><path d="M${round(cx - r * 0.55)} ${round(cy + r * 0.62)} C${round(cx - r * 0.55)} ${round(cy + r * 0.2)} ${round(cx - r * 0.25)} ${round(cy + r * 0.12)} ${round(cx)} ${round(cy + r * 0.12)} C${round(cx + r * 0.25)} ${round(cy + r * 0.12)} ${round(cx + r * 0.55)} ${round(cy + r * 0.2)} ${round(cx + r * 0.55)} ${round(cy + r * 0.62)}Z"/></g>`;
 /** Renders a card and returns it as PNG bytes. */
 async function renderTemplateCard(input) {
-    const layout = layouts_generated_1.CARD_LAYOUTS[input.design];
+    const layout = layoutOverrides_1.LAYOUTS[input.design];
     if (!layout)
         throw new Error(`Unknown card design: ${input.design}`);
     const scale = input.scale && input.scale > 0 ? input.scale : exports.DEFAULT_SCALE;
@@ -283,8 +283,8 @@ async function renderTemplateCard(input) {
 }
 /** The designers' sample text for each slot, used for template previews. */
 function sampleTexts(design) {
-    const layout = layouts_generated_1.CARD_LAYOUTS[design];
+    const layout = layoutOverrides_1.LAYOUTS[design];
     return Object.fromEntries(Object.entries(layout.texts).map(([name, slot]) => [name, slot.sample]));
 }
-const cardLayout = (design) => layouts_generated_1.CARD_LAYOUTS[design];
+const cardLayout = (design) => layoutOverrides_1.LAYOUTS[design];
 exports.cardLayout = cardLayout;

@@ -317,3 +317,26 @@ describe('fitting stays fast on awkward input', () => {
     }
   });
 });
+
+describe('date line next to the calendar icon', () => {
+  // The Corporate card prints a calendar icon at the left end of its date pill (it ends about x=66 of 393); a long date once ran into it.
+  it.each([
+    ['one day', '2026-10-28T23:00:00+05:30'],
+    ['days of one month', '2026-10-29T23:00:00+05:30'],
+    ['across months', '2026-11-02T23:00:00+05:30'],
+  ])('keeps the text clear of the icon (%s)', async (_label, endIso) => {
+    const texts = buildTemplateTexts({ design: 'CORPORATE_V2', title: 'Launch', startIso: '2026-10-28T19:00:00+05:30', endIso, invitee: { name: 'Guest' } } as any);
+    const png = await renderTemplateCard({ design: 'CORPORATE_V2', texts });
+    const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const scale = info.width / 393;
+    const pill = (x: number, y: number) => { const i = (Math.round(y * scale) * info.width + Math.round(x * scale)) * 4; return [data[i], data[i + 1], data[i + 2]]; };
+    const base = pill(348, 575); // the pill's plain colour, right of any text
+    // between the icon (ends ~66) and where the text may start (~83) the pill must still be its plain colour on every row of the band
+    for (let y = 562; y < 590; y += 2) {
+      for (let x = 70; x < 80; x++) {
+        const p = pill(x, y);
+        expect(Math.abs(p[0] - base[0]) + Math.abs(p[1] - base[1]) + Math.abs(p[2] - base[2])).toBeLessThan(40);
+      }
+    }
+  });
+});

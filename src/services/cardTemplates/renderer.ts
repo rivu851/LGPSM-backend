@@ -1,6 +1,7 @@
 import fs from 'fs';
 import sharp from 'sharp';
-import { CARD_LAYOUTS, CardLayout, TextSlotLayout } from './layouts.generated';
+import { CardLayout, TextSlotLayout } from './layouts.generated';
+import { LAYOUTS as CARD_LAYOUTS } from './layoutOverrides';
 import { ensureCardFonts, fontStack, measureText } from './fonts';
 import { assetPath } from '../../utils/assetPath';
 
