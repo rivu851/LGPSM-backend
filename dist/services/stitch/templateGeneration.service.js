@@ -382,14 +382,12 @@ exports.templateGenerationService = {
         return enqueue(actor, { kind: parent.kind, preset: parent.preset, prompt, style: parent.style, variantCount: 1, mode: 'EDIT', parentJobId: String(parent._id), parentVariantIndex: index, idempotencyKey });
     },
     /**
-     * Changes a design that is already saved as a template, from a written request. The result is a new job whose options
-     * can replace the template (save with `replaceTemplateId`) or be saved as a new one. Only the owner (or an admin).
+     * Changes a saved template from a written request. The result is a new job whose options can replace the template
+     * (using `replaceTemplateId`) or be saved as a new one. Only the owner (or an admin) may call this.
      *
-     * Works for both AI-generated templates (CUSTOM cardDesign with a live Stitch project reference, uses EDIT mode so
-     * the provider revises the exact screen) and pre-existing / manually uploaded templates (any other cardDesign, or
-     * CUSTOM without a source ref). For the latter, the provider cannot load the original screen, so the job runs in
-     * CREATE mode with the user's prompt and the template's name/kind as visual context so the output is thematically
-     * consistent with the original design.
+     * AI-generated templates with a live Stitch project reference use EDIT mode so the provider revises the exact screen.
+     * Pre-existing or uploaded templates without a live screen use CREATE mode, with the template name and kind as visual
+     * context, so the new design is thematically inspired by the original.
      */
     async editTemplate(actor, templateId, prompt, idempotencyKey) {
         if (!mongoose_1.default.Types.ObjectId.isValid(templateId))
