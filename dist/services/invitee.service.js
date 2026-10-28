@@ -45,9 +45,12 @@ const xlsx = __importStar(require("xlsx"));
 const eventAccess_1 = require("../utils/eventAccess");
 const Session_2 = require("../models/Session");
 const Invitee_2 = require("../models/Invitee");
+const whatsapp_service_1 = require("./whatsapp.service");
 const CheckIn_1 = require("../models/CheckIn");
 // Upper bound for one spreadsheet import (header row excluded)
 exports.MAX_IMPORT_ROWS = 5000;
+/** One identity per phone number regardless of formatting or a missing +91 (same normalisation WhatsApp uses). */
+const mobileIdentity = (mobile) => whatsapp_service_1.whatsappService.normalizePhoneNumber(mobile);
 exports.inviteeService = {
     async createInvitee(eventId, organizerId, data, role) {
         const event = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId, role);
@@ -285,7 +288,9 @@ exports.inviteeService = {
             removed: 0,
             rejected: 0,
             duplicateCount: 0,
-            errors: []
+            errors: [],
+            // Rows that matched an existing guest whose details differ: the existing details were kept
+            notices: []
         };
         if (nonBlankRows.length === 0) {
             throw { statusCode: 400, message: 'The sheet has no invitee rows' };
@@ -339,7 +344,7 @@ exports.inviteeService = {
             if (inv.email)
                 byEmail.set(inv.email.toLowerCase(), inv);
             if (inv.mobile)
-                byMobile.set(inv.mobile.replace(/\D/g, ''), inv);
+                byMobile.set(mobileIdentity(inv.mobile), inv);
         }
         const ownSessionIds = eventSessions.filter((s) => s.inviteeSource !== Session_2.InviteeSource.COPY_SESSION).map((s) => String(s._id));
         const matchedIds = new Set();
@@ -379,7 +384,7 @@ exports.inviteeService = {
                 results.errors.push({ row: rowNum, error: 'Email or mobile is required' });
                 continue;
             }
-            const mobileKey = mobile.replace(/\D/g, '');
+            const mobileKey = mobileIdentity(mobile);
             if ((email && seenEmails.has(email)) || (mobileKey && seenMobiles.has(mobileKey))) {
                 results.rejected++;
                 results.duplicateCount++;
@@ -404,7 +409,14 @@ exports.inviteeService = {
             else {
                 rowAccess = ownSessionIds.map((sessionId) => ({ sessionId, allowed: true }));
             }
-            const existing = (email && byEmail.get(email)) || (mobileKey && byMobile.get(mobileKey)) || null;
+            const emailMatch = email ? byEmail.get(email) : undefined;
+            const mobileMatch = mobileKey ? byMobile.get(mobileKey) : undefined;
+            if (emailMatch && mobileMatch && String(emailMatch._id) !== String(mobileMatch._id)) {
+                results.rejected++;
+                results.errors.push({ row: rowNum, error: `Email ${email} belongs to ${emailMatch.name} but mobile ${mobile} belongs to ${mobileMatch.name}` });
+                continue;
+            }
+            const existing = emailMatch || mobileMatch || null;
             if (existing && matchedIds.has(String(existing._id))) {
                 results.rejected++;
                 results.duplicateCount++;
@@ -428,17 +440,44 @@ exports.inviteeService = {
                     access.clear();
                     rowAccess.forEach((a) => access.set(a.sessionId, a.allowed));
                 }
-                existing.name = name;
-                if (email)
-                    existing.email = email;
-                if (mobile)
-                    existing.mobile = mobile;
-                if (company) {
-                    existing.companyName = company;
-                    existing.company = company;
+                // Only fill what the guest is missing; never replace their details with different (or blank) values, and
+                // never take an email or number another guest on this event already has
+                const kept = [];
+                if (name !== existing.name)
+                    kept.push(`name '${existing.name}'`);
+                if (email) {
+                    if (!existing.email && !byEmail.has(email)) {
+                        existing.email = email;
+                        byEmail.set(email, existing);
+                    }
+                    else if (existing.email && existing.email.toLowerCase() !== email)
+                        kept.push(`email '${existing.email}'`);
                 }
-                if (dietary)
-                    existing.dietaryPreference = dietary;
+                if (mobileKey) {
+                    if (!existing.mobile && !byMobile.has(mobileKey)) {
+                        existing.mobile = mobile;
+                        byMobile.set(mobileKey, existing);
+                    }
+                    else if (existing.mobile && mobileIdentity(existing.mobile) !== mobileKey)
+                        kept.push(`mobile '${existing.mobile}'`);
+                }
+                const existingCompany = existing.companyName || existing.company;
+                if (company) {
+                    if (!existingCompany) {
+                        existing.companyName = company;
+                        existing.company = company;
+                    }
+                    else if (existingCompany !== company)
+                        kept.push(`company '${existingCompany}'`);
+                }
+                if (dietary) {
+                    if (!existing.dietaryPreference)
+                        existing.dietaryPreference = dietary;
+                    else if (existing.dietaryPreference !== dietary)
+                        kept.push(`dietary preference '${existing.dietaryPreference}'`);
+                }
+                if (kept.length)
+                    results.notices.push({ row: rowNum, message: `Matches ${existing.name}; kept the existing ${kept.join(', ')}` });
                 existing.sessionAccess = [...access.entries()].map(([sessionId, allowed]) => ({ sessionId: new mongoose_1.default.Types.ObjectId(sessionId), allowed }));
                 await existing.save();
                 results.updated++;

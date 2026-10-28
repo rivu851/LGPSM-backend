@@ -2,6 +2,13 @@ import { Request, Response } from 'express';
 import { invitationService } from '../services/invitation.service';
 import { DeliveryChannel } from '../models/Invitation';
 
+// Per-guest outcome counts for a send or resend ("All" delivery skips guests with no usable contact)
+const deliverySummary = (results: { status: string }[]) => ({
+  sent: results.filter((r) => r.status === 'SENT').length,
+  failed: results.filter((r) => r.status === 'FAILED').length,
+  skipped: results.filter((r) => r.status === 'SKIPPED').length,
+});
+
 export const invitationController = {
   async sendInvitations(req: Request, res: Response) {
     try {
@@ -26,7 +33,7 @@ export const invitationController = {
       }
 
       const results = await invitationService.sendInvitations(eventId, user, inviteeIds, selectedChannel || DeliveryChannel.EMAIL);
-      return res.status(200).json({ success: true, message: 'Invitations processed successfully', results });
+      return res.status(200).json({ success: true, message: 'Invitations processed successfully', results, summary: deliverySummary(results) });
     } catch (error: any) {
       if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
       if (error.message === 'INVALID_INVITEES') return res.status(400).json({ error: 'Bad Request', message: 'One or more invitees do not belong to this event' });
@@ -45,7 +52,7 @@ export const invitationController = {
       };
 
       const results = await invitationService.resendInvitations(eventId, user, invitationIds, channel);
-      return res.status(200).json({ success: true, message: 'Invitations resent successfully', results });
+      return res.status(200).json({ success: true, message: 'Invitations resent successfully', results, summary: deliverySummary(results) });
     } catch (error: any) {
       if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
       if (error.message === 'INVALID_INVITATIONS') return res.status(400).json({ error: 'Bad Request', message: 'One or more invitations do not belong to this event' });

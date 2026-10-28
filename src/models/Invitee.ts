@@ -26,6 +26,8 @@ export interface IInvitee extends Document {
   rsvpStatus: RsvpStatus;
   dietaryPreference?: string;
   companyName?: string;
+  /** e.g. "Employee ID: 4521" (Add Invitee "Professional Identity"); can be printed on the card */
+  professionalIdentity?: string;
   company?: string;
   sessionAccess: ISessionAccess[];
   qrTokenHash?: string;
@@ -59,6 +61,7 @@ const InviteeSchema: Schema = new Schema(
     },
     dietaryPreference: { type: String },
     companyName: { type: String, trim: true },
+    professionalIdentity: { type: String, trim: true, maxlength: 100 },
     company: { type: String, trim: true },
     sessionAccess: { type: [SessionAccessSchema], default: [] },
     qrTokenHash: { type: String },

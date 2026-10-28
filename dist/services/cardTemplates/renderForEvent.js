@@ -15,6 +15,7 @@ const resolveImageBase64_1 = require("../../utils/resolveImageBase64");
 const template_service_1 = require("../template.service");
 const content_1 = require("./content");
 const designSpec_1 = require("./designSpec");
+const context_1 = require("./context");
 const specRenderer_1 = require("./specRenderer");
 const dataUrlToBuffer = (dataUrl) => {
     const match = dataUrl ? /^data:[^;]+;base64,(.+)$/.exec(dataUrl) : null;
@@ -35,7 +36,7 @@ async function renderTemplateForEvent(input) {
     const event = await (0, eventAccess_1.findManageableEvent)(input.eventId, input.userId, input.isAdmin ? 'ADMIN' : undefined);
     if (!event)
         throw new Error('EVENT_NOT_FOUND');
-    const organizer = event.organizerId ? await User_1.User.findById(event.organizerId).select('fullName').lean() : null;
+    const organizer = event.organizerId ? await User_1.User.findById(event.organizerId).select('profile.organizationName').lean() : null;
     const content = (0, invitationContent_1.buildInvitationContent)(event, [], null); // the same venue wording the invitation workflow prints
     const texts = (0, content_1.buildSpecTexts)({
         title: event.title,
@@ -45,7 +46,7 @@ async function renderTemplateForEvent(input) {
         venue: content.venue,
         locationSub: content.locationSub,
         isVirtual: event.format === 'VIRTUAL',
-        organizerName: organizer?.fullName,
+        organizerName: (0, context_1.cardHostName)(organizer),
         invitee: { name: parsed.spec.kind === 'INVITATION' ? 'Guest Name' : undefined }
     });
     let qr;

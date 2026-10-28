@@ -7,6 +7,7 @@ import { User, Role } from '../src/models/User';
 import { Event } from '../src/models/Event';
 import { Session } from '../src/models/Session';
 import { Invitee } from '../src/models/Invitee';
+import { Invitation, InvitationDeliveryStatus, DeliveryChannel } from '../src/models/Invitation';
 import { TicketTier } from '../src/models/TicketTier';
 import { Order, OrderStatus } from '../src/models/Order';
 import { Payment, PaymentStatus } from '../src/models/Payment';
@@ -193,6 +194,57 @@ describe('SEC-001: organizers cannot create events under another account or set 
     expect(stored?.title).toBe('Renamed');
     expect(String(stored?.organizerId)).toBe(String(owner._id));
     expect(stored?.operationalDataCleared).toBeFalsy();
+  });
+});
+
+describe('Event copy fits the invitation cards', () => {
+  let owner: any;
+  beforeAll(async () => { owner = await makeUser(Role.ORGANIZER, 'limits.owner@example.com'); });
+  const create = (body: object) => request(app).post('/api/v1/events').set('Authorization', bearer(owner)).send(body);
+
+  it('accepts a 50-character title and 180-character description, refuses longer on create and update', async () => {
+    const ok = await create({ title: 'T'.repeat(50), description: 'D'.repeat(180) });
+    expect(ok.status).toBe(201);
+    expect((await create({ title: 'T'.repeat(51) })).status).toBe(400);
+    expect((await create({ title: 'Fine', description: 'D'.repeat(181) })).status).toBe(400);
+    const id = ok.body.data.eventId;
+    expect((await request(app).patch(`/api/v1/events/${id}`).set('Authorization', bearer(owner)).send({ title: 'T'.repeat(51) })).status).toBe(400);
+    expect((await request(app).patch(`/api/v1/events/${id}`).set('Authorization', bearer(owner)).send({ description: 'D'.repeat(181) })).status).toBe(400);
+    expect((await Event.findById(id))?.title).toBe('T'.repeat(50));
+  });
+});
+
+describe('Events are locked once invitations have gone out (feedback 14)', () => {
+  let owner: any, admin: any;
+  beforeAll(async () => {
+    owner = await makeUser(Role.ORGANIZER, 'lock.owner@example.com');
+    admin = await makeUser(Role.ADMIN, 'lock.admin@example.com');
+  });
+  const newEvent = async () => {
+    const created = await request(app).post('/api/v1/events').set('Authorization', bearer(owner)).send({ title: 'Lockable' });
+    return created.body.data.eventId as string;
+  };
+  const attempt = async (eventId: string, status: InvitationDeliveryStatus) => {
+    const invitee = await Invitee.create({ eventId, name: 'Guest', email: `g${Date.now()}@example.com` });
+    await Invitation.create({ eventId, inviteeId: invitee._id, channel: DeliveryChannel.EMAIL, status, tokenHash: crypto.randomBytes(16).toString('hex') });
+  };
+
+  it('allows edits while nothing has been sent', async () => {
+    const id = await newEvent();
+    await attempt(id, InvitationDeliveryStatus.PENDING);
+    const res = await request(app).patch(`/api/v1/events/${id}`).set('Authorization', bearer(owner)).send({ title: 'Renamed' });
+    expect(res.status).toBe(200);
+  });
+
+  it.each([InvitationDeliveryStatus.SENT, InvitationDeliveryStatus.FAILED])('refuses the organizer and an admin after a %s delivery, leaving the event unchanged', async (status) => {
+    const id = await newEvent();
+    await attempt(id, status);
+    for (const who of [owner, admin]) {
+      const res = await request(app).patch(`/api/v1/events/${id}`).set('Authorization', bearer(who)).send({ title: 'Changed after sending' });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('EVENT_LOCKED');
+    }
+    expect((await Event.findById(id))?.title).toBe('Lockable');
   });
 });
 

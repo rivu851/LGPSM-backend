@@ -153,6 +153,24 @@ function buildFormalInvitationEmailHTML(params: {
 // WhatsApp providers, so a small amount of overlap cuts a big batch's time without flooding either provider.
 const sendConcurrency = () => Math.min(Math.max(parseInt(process.env.INVITATION_SEND_CONCURRENCY || '3', 10) || 3, 1), 8);
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const SKIPPED_NO_CONTACT = 'No email address or WhatsApp number';
+
+/**
+ * Channels to attempt for one guest. EMAIL or WHATSAPP is an explicit request, so a missing contact is a real
+ * failure. BOTH ("All") uses whichever of the guest's contacts are usable; a guest with neither is skipped before
+ * anything is changed (no new token, invitation status untouched).
+ */
+export function channelsForInvitee(channel: DeliveryChannel, invitee: { email?: string; mobile?: string }) {
+  if (channel !== DeliveryChannel.BOTH) {
+    return { email: channel === DeliveryChannel.EMAIL, whatsapp: channel === DeliveryChannel.WHATSAPP };
+  }
+  return {
+    email: !!invitee.email && EMAIL_PATTERN.test(invitee.email.trim()),
+    whatsapp: whatsappService.normalizePhoneNumber(invitee.mobile).length >= 10,
+  };
+}
+
 export const invitationService = {
   async sendInvitations(eventId: string, userOrOrganizerId: any, inviteeIds: string[], channel: DeliveryChannel) {
     const isUserObj = typeof userOrOrganizerId === 'object' && userOrOrganizerId !== null;
@@ -187,13 +205,16 @@ export const invitationService = {
 
     const results = [];
 
-    const shouldSendEmail = channel === DeliveryChannel.EMAIL || channel === DeliveryChannel.BOTH;
-    const shouldSendWhatsApp = channel === DeliveryChannel.WHATSAPP || channel === DeliveryChannel.BOTH;
-
     // Load all sessions for this event once
     const allSessions = await Session.find({ eventId }).sort({ 'schedule.start': 1 }).lean();
 
     const outcomes = await mapLimit(invitees, sendConcurrency(), async (invitee) => {
+      const use = channelsForInvitee(channel, invitee);
+      if (!use.email && !use.whatsapp) {
+        return { inviteeId: invitee._id, inviteeName: invitee.name, inviteeMobile: invitee.mobile, status: 'SKIPPED', failureReason: SKIPPED_NO_CONTACT } as any;
+      }
+      const shouldSendEmail = use.email;
+      const shouldSendWhatsApp = use.whatsapp;
       // Core Rule: Generate ONE secure token & ONE QR per event/invitee per send batch
       const rawToken = generateSecureToken();
       const tokenHash = hashToken(rawToken);
@@ -446,6 +467,13 @@ export const invitationService = {
         return { invitationId: invitation._id, status: 'FAILED', failureReason: 'INVITEE_DELETED' } as any;
       }
 
+      const activeChannel = (channelOverride || invitation.channel) as DeliveryChannel;
+      const use = channelsForInvitee(activeChannel, invitee);
+      if (!use.email && !use.whatsapp) {
+        // Nothing usable: the guest's current pass and delivery record stay as they are
+        return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: SKIPPED_NO_CONTACT } as any;
+      }
+
       const rawToken = generateSecureToken();
       const tokenHash = hashToken(rawToken);
       const invitationUrl = invitationUrlFor(rawToken);
@@ -453,8 +481,6 @@ export const invitationService = {
       const qrDataUrl = await generateQRCodeDataURL(invitationUrl);
       const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '');
       const qrBuffer = Buffer.from(base64Data, 'base64');
-
-      const activeChannel = (channelOverride || invitation.channel) as DeliveryChannel;
 
       const resendInvitation = new Invitation({
         eventId,
@@ -464,8 +490,8 @@ export const invitationService = {
         tokenHash
       });
 
-      const shouldSendEmail = activeChannel === DeliveryChannel.EMAIL || activeChannel === DeliveryChannel.BOTH;
-      const shouldSendWhatsApp = activeChannel === DeliveryChannel.WHATSAPP || activeChannel === DeliveryChannel.BOTH;
+      const shouldSendEmail = use.email;
+      const shouldSendWhatsApp = use.whatsapp;
 
       let emailSuccess = false;
       let whatsappSuccess = false;

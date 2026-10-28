@@ -151,12 +151,53 @@ describe('Invitee import', () => {
       .attach('file', sheet([['Email', 'Name'], ['cara@x.com', 'Cara Three'], ['ann@x.com', 'Ann Renamed']]), 'b.xlsx');
     expect(second.status).toBe(200);
     expect(second.body.data).toMatchObject({ imported: 1, updated: 1, removed: 1 });
+    // A matched guest keeps their details; the differing name is reported, not applied
+    expect(second.body.data.notices).toEqual([{ row: 3, message: "Matches Ann One; kept the existing name 'Ann One'" }]);
 
     const names = (await Invitee.find({ eventId: event._id }).sort({ name: 1 })).map((i) => i.name);
-    expect(names).toEqual(['Already Invited', 'Ann Renamed', 'Cara Three']);
+    expect(names).toEqual(['Already Invited', 'Ann One', 'Cara Three']);
     const invited = await Invitee.findOne({ eventId: event._id, email: 'invited@x.com' });
     expect(invited?.invitationStatus).toBe('SENT');
     expect(invited?.rsvpStatus).toBe('ACCEPTED');
+  });
+
+  it('uploading the same sheet again adds nobody and changes nobody', async () => {
+    const event = await makeEvent(organizer._id);
+    const rows = [['Name', 'Email', 'Mobile'], ['Eve Five', 'eve@x.com', '9876500001'], ['Fay Six', '', '+91 98765 00002']];
+    const first = await request(app).post(`/api/v1/events/${event._id}/invitees/import`).set(bearer(organizerToken)).attach('file', sheet(rows), 'a.xlsx');
+    expect(first.body.data.imported).toBe(2);
+    const before = (await Invitee.find({ eventId: event._id }).lean()).map((i) => [String(i._id), i.name, i.email, i.mobile]);
+
+    const again = await request(app).post(`/api/v1/events/${event._id}/invitees/import`).set(bearer(organizerToken)).attach('file', sheet(rows), 'a.xlsx');
+    expect(again.body.data).toMatchObject({ imported: 0, updated: 2, removed: 0, notices: [] });
+    const after = (await Invitee.find({ eventId: event._id }).lean()).map((i) => [String(i._id), i.name, i.email, i.mobile]);
+    expect(after).toEqual(before);
+  });
+
+  it('matches phone numbers regardless of formatting or a missing country code', async () => {
+    const event = await makeEvent(organizer._id);
+    await request(app).post(`/api/v1/events/${event._id}/invitees/import`).set(bearer(organizerToken))
+      .attach('file', sheet([['Name', 'Mobile'], ['Gus Seven', '9876500003']]), 'a.xlsx');
+    const res = await request(app).post(`/api/v1/events/${event._id}/invitees/import`).set(bearer(organizerToken))
+      .attach('file', sheet([['Name', 'Mobile'], ['Gus Seven', '+91 98765-00003']]), 'b.xlsx');
+    expect(res.body.data).toMatchObject({ imported: 0, updated: 1 });
+    expect(await Invitee.countDocuments({ eventId: event._id })).toBe(1);
+  });
+
+  it('rejects a row whose email and mobile belong to different guests, and never erases details', async () => {
+    const event = await makeEvent(organizer._id);
+    await request(app).post(`/api/v1/events/${event._id}/invitees/import`).set(bearer(organizerToken))
+      .attach('file', sheet([['Name', 'Email', 'Mobile', 'Company'], ['Hal Eight', 'hal@x.com', '9876500004', 'Acme'], ['Ida Nine', '', '9876500005', '']]), 'a.xlsx');
+    // Ida's row brings Hal's email; Hal's row has blank cells
+    const res = await request(app).post(`/api/v1/events/${event._id}/invitees/import`).set(bearer(organizerToken))
+      .attach('file', sheet([['Name', 'Email', 'Mobile', 'Company'], ['Hal Eight', '', '9876500004', ''], ['Ida Nine', 'hal@x.com', '9876500005', 'Globex']]), 'b.xlsx');
+    expect(res.status).toBe(200);
+    expect(res.body.data.errors).toEqual([{ row: 3, error: 'Email hal@x.com belongs to Hal Eight but mobile 9876500005 belongs to Ida Nine' }]);
+    const hal = await Invitee.findOne({ eventId: event._id, name: 'Hal Eight' });
+    const ida = await Invitee.findOne({ eventId: event._id, name: 'Ida Nine' });
+    expect(hal).toMatchObject({ email: 'hal@x.com', mobile: '9876500004', companyName: 'Acme' });
+    expect(ida?.email).toBeUndefined();
+    expect(ida?.companyName).toBeUndefined();
   });
 
   it('keeps the current list when every row of the new file is invalid', async () => {

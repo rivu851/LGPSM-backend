@@ -105,6 +105,9 @@ exports.eventController = {
             if (error.message === 'EVENT_NOT_FOUND') {
                 res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
             }
+            else if (error.message === 'EVENT_LOCKED') {
+                res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_LOCKED', message: 'This event can’t be edited after invitations have been sent.', details: [] });
+            }
             else if (error.message === 'CATEGORY_NOT_FOUND' || error.message === 'TEMPLATE_NOT_FOUND') {
                 res.status(400).json({ success: false, error: 'Bad Request', message: error.message === 'CATEGORY_NOT_FOUND' ? 'Selected category does not exist' : 'Selected template does not exist', details: [] });
             }

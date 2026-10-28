@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.cardHostName = cardHostName;
 exports.loadCardContext = loadCardContext;
 const Template_1 = require("../../models/Template");
 const Category_1 = require("../../models/Category");
@@ -10,6 +11,10 @@ const designSpec_1 = require("./designSpec");
  * Everything about an event's *type* that card rendering needs, looked up once per send rather than per guest:
  * the category and subcategory names, and the design (the chosen template's, else the one that suits the type).
  */
+/** The host printed on invitation cards: the organiser's organisation, never the person's own name (blank when unset). */
+function cardHostName(organizer) {
+    return organizer?.profile?.organizationName?.trim() || undefined;
+}
 async function loadCardContext(event) {
     const [template, category] = await Promise.all([
         event.templateId ? Template_1.Template.findById(event.templateId).select('cardDesign designSpec ownerId isSystemTemplate isPublished isActive').lean() : null,
@@ -34,12 +39,12 @@ async function loadCardContext(event) {
             console.warn('[cards] A custom template could not be used for an event; using the default design for its type');
         }
     }
-    const organizer = designSpec && event.organizerId ? await User_1.User.findById(event.organizerId).select('fullName').lean() : null;
+    const organizer = designSpec && event.organizerId ? await User_1.User.findById(event.organizerId).select('profile.organizationName').lean() : null;
     return {
         cardDesign: designSpec ? 'CUSTOM' : (0, designs_1.resolveCardDesign)({ templateDesign, categoryName, subcategoryName, title: event.title }),
         categoryName,
         subcategoryName,
         designSpec,
-        organizerName: organizer?.fullName
+        organizerName: cardHostName(organizer)
     };
 }

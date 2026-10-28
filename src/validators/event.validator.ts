@@ -1,13 +1,20 @@
 import { isAcceptedImageKey } from '../utils/mediaKey';
 import { z } from 'zod';
+import { EVENT_TITLE_MAX_LENGTH, EVENT_DESCRIPTION_MAX_LENGTH } from '../constants/eventLimits';
+import { CARD_INFO_FIELDS } from '../utils/cardInfo';
 import { EventFormat, EventStatus } from '../models/Event';
 
 const objectIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ObjectId format');
+// "Additional Info": a ticked line names the guest detail it prints; null leaves that line empty
+const cardInfoSchema = z.object({
+  primary: z.enum(CARD_INFO_FIELDS).nullable(),
+  secondary: z.enum(CARD_INFO_FIELDS).nullable()
+}).strict();
 
 export const createEventSchema = z.object({
   body: z.object({
-    title: z.string().min(1, 'Title is required').max(100, 'Title cannot exceed 100 characters'),
-    description: z.string().optional().default('Event Description'),
+    title: z.string().min(1, 'Title is required').max(EVENT_TITLE_MAX_LENGTH, `Title cannot exceed ${EVENT_TITLE_MAX_LENGTH} characters`),
+    description: z.string().max(EVENT_DESCRIPTION_MAX_LENGTH, `Description cannot exceed ${EVENT_DESCRIPTION_MAX_LENGTH} characters`).optional().default('Event Description'),
     categoryId: objectIdSchema.optional(),
     subcategoryId: objectIdSchema.optional(),
     format: z.nativeEnum(EventFormat).optional().default(EventFormat.PHYSICAL),
@@ -27,6 +34,7 @@ export const createEventSchema = z.object({
     attendeeSettings: z.object({
       thresholdLimit: z.number().positive().optional()
     }).optional(),
+    cardInfo: cardInfoSchema.optional(),
     dietaryPreference: z.object({
       enabled: z.boolean().optional(),
       title: z.string().optional(),
@@ -43,8 +51,8 @@ export const createEventSchema = z.object({
 
 export const updateEventSchema = z.object({
   body: z.object({
-    title: z.string().min(1).max(100).optional(),
-    description: z.string().min(1).optional(),
+    title: z.string().min(1).max(EVENT_TITLE_MAX_LENGTH, `Title cannot exceed ${EVENT_TITLE_MAX_LENGTH} characters`).optional(),
+    description: z.string().min(1).max(EVENT_DESCRIPTION_MAX_LENGTH, `Description cannot exceed ${EVENT_DESCRIPTION_MAX_LENGTH} characters`).optional(),
     categoryId: objectIdSchema.optional(),
     subcategoryId: objectIdSchema.optional(),
     format: z.nativeEnum(EventFormat).optional(),
@@ -73,6 +81,7 @@ export const updateEventSchema = z.object({
     attendeeSettings: z.object({
       thresholdLimit: z.number().positive().optional()
     }).optional(),
+    cardInfo: cardInfoSchema.optional(),
     dietaryPreference: z.object({
       enabled: z.boolean(),
       title: z.string().optional(),

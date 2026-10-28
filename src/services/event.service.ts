@@ -4,7 +4,7 @@ import { Category } from '../models/Category';
 import { templateService } from './template.service';
 import { Session } from '../models/Session';
 import { Invitee } from '../models/Invitee';
-import { Invitation } from '../models/Invitation';
+import { Invitation, InvitationDeliveryStatus } from '../models/Invitation';
 import { CheckIn } from '../models/CheckIn';
 import { SystemUserAssignment } from '../models/SystemUserAssignment';
 import { Role } from '../models/User';
@@ -18,7 +18,7 @@ import { formatCardDate, formatCardTime } from '../utils/invitationContent';
 // operationalDataCleared, pricing, ...) is server-controlled and is dropped before it reaches the database.
 const EVENT_WRITABLE_FIELDS = [
   'title', 'description', 'categoryId', 'subcategoryId', 'format', 'location', 'contactNumber',
-  'schedule', 'rsvp', 'attendeeSettings', 'dietaryPreference', 'templateId', 'media'
+  'schedule', 'rsvp', 'attendeeSettings', 'dietaryPreference', 'templateId', 'cardInfo', 'media'
 ] as const;
 const pickEventFields = (data: any, extra: readonly string[] = []) => {
   const out: Record<string, any> = {};
@@ -29,6 +29,11 @@ const pickEventFields = (data: any, extra: readonly string[] = []) => {
 };
 
 export class EventService {
+  /** True once any invitation for the event was sent or attempted (the event is locked from then on). */
+  async invitationsStarted(eventId: string | mongoose.Types.ObjectId): Promise<boolean> {
+    return !!(await Invitation.exists({ eventId, status: { $in: [InvitationDeliveryStatus.SENT, InvitationDeliveryStatus.FAILED] } }));
+  }
+
   /**
    * Creates a new event for an organizer.
    *
@@ -153,6 +158,9 @@ export class EventService {
     const updateData: any = pickEventFields(rawUpdateData, ['status']);
     const existingEvent = await findManageableEvent(eventId, organizerId, role);
     if (!existingEvent) throw new Error('EVENT_NOT_FOUND');
+    // Feedback 14: once invitations have gone out (or were attempted), neither the organizer nor an admin can edit
+    // the event, so guests' cards and passes always match what was sent. The web edit form applies the same rule.
+    if (await this.invitationsStarted(existingEvent._id as any)) throw new Error('EVENT_LOCKED');
 
     // Validate references if they are being updated
     if (updateData.categoryId && updateData.categoryId !== existingEvent.categoryId.toString()) {

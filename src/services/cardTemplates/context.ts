@@ -25,6 +25,11 @@ interface EventLike {
  * Everything about an event's *type* that card rendering needs, looked up once per send rather than per guest:
  * the category and subcategory names, and the design (the chosen template's, else the one that suits the type).
  */
+/** The host printed on invitation cards: the organiser's organisation, never the person's own name (blank when unset). */
+export function cardHostName(organizer: { profile?: { organizationName?: string } } | null | undefined): string | undefined {
+  return organizer?.profile?.organizationName?.trim() || undefined;
+}
+
 export async function loadCardContext(event: EventLike): Promise<CardContext> {
   const [template, category] = await Promise.all([
     event.templateId ? Template.findById(event.templateId as never).select('cardDesign designSpec ownerId isSystemTemplate isPublished isActive').lean() : null,
@@ -50,12 +55,12 @@ export async function loadCardContext(event: EventLike): Promise<CardContext> {
       console.warn('[cards] A custom template could not be used for an event; using the default design for its type');
     }
   }
-  const organizer = designSpec && event.organizerId ? await User.findById(event.organizerId as never).select('fullName').lean() : null;
+  const organizer = designSpec && event.organizerId ? await User.findById(event.organizerId as never).select('profile.organizationName').lean() : null;
   return {
     cardDesign: designSpec ? 'CUSTOM' : resolveCardDesign({ templateDesign, categoryName, subcategoryName, title: event.title }),
     categoryName,
     subcategoryName,
     designSpec,
-    organizerName: organizer?.fullName
+    organizerName: cardHostName(organizer)
   };
 }

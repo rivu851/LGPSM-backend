@@ -176,3 +176,13 @@ describe('Stitch concept conversion', () => {
     expect(spec.elements.some((e) => e.type === 'text' && e.role === 'inviteeName')).toBe(false); // a poster has no personal guest line
   });
 });
+
+describe('card host name', () => {
+  it('prints the organisation, never the organiser’s personal name', () => {
+    const { cardHostName } = require('../src/services/cardTemplates/context');
+    expect(cardHostName({ fullName: 'Jane Doe', profile: { organizationName: 'Roy Events' } })).toBe('Roy Events');
+    expect(cardHostName({ fullName: 'Jane Doe', profile: { organizationName: '  ' } })).toBeUndefined();
+    expect(cardHostName({ fullName: 'Jane Doe' })).toBeUndefined();
+    expect(cardHostName(null)).toBeUndefined();
+  });
+});

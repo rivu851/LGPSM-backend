@@ -222,5 +222,75 @@ describe('Invitation Service', () => {
     const invitation = await Invitation.findOne({ inviteeId });
     expect(invitation?.tokenHash).toEqual(invitee?.qrTokenHash);
   });
+
+  describe('"All" delivery (BOTH) uses only the usable channels per guest', () => {
+    const mockWhatsApp = () => jest.spyOn(whatsappService, 'sendInvitationWhatsApp').mockResolvedValue({ messageId: 'wamid.ok', mediaId: 'media.ok' });
+
+    it('emails a guest who has no mobile, without counting WhatsApp as a failure', async () => {
+      (sendEmail as jest.Mock).mockResolvedValue(true);
+      const wa = mockWhatsApp();
+      const emailOnly = await Invitee.create({ eventId, name: 'Email Only', email: 'only@example.com' });
+
+      const [result] = await invitationService.sendInvitations(eventId.toString(), organizerId.toString(), [String(emailOnly._id)], DeliveryChannel.BOTH);
+
+      expect(result.status).toBe(InvitationDeliveryStatus.SENT);
+      expect(result.emailStatus).toBe(InvitationDeliveryStatus.SENT);
+      expect(result.whatsappStatus).toBeUndefined();
+      expect(wa).not.toHaveBeenCalled();
+      wa.mockRestore();
+    });
+
+    it('sends WhatsApp only to a guest with a mobile but no email', async () => {
+      const wa = mockWhatsApp();
+      const mobileOnly = await Invitee.create({ eventId, name: 'Mobile Only', mobile: '+919812345678' });
+
+      const [result] = await invitationService.sendInvitations(eventId.toString(), organizerId.toString(), [String(mobileOnly._id)], DeliveryChannel.BOTH);
+
+      expect(result.status).toBe(InvitationDeliveryStatus.SENT);
+      expect(result.whatsappStatus).toBe(InvitationDeliveryStatus.SENT);
+      expect(result.emailStatus).toBeUndefined();
+      expect(sendEmail).not.toHaveBeenCalled();
+      wa.mockRestore();
+    });
+
+    it('skips a guest with no usable contact and changes nothing about them', async () => {
+      const wa = mockWhatsApp();
+      // A malformed mobile is the only contact (invitee validation needs email or mobile)
+      const unusable = await Invitee.create({ eventId, name: 'No Contact', mobile: '12345' });
+
+      const [result] = await invitationService.sendInvitations(eventId.toString(), organizerId.toString(), [String(unusable._id)], DeliveryChannel.BOTH);
+
+      expect(result.status).toBe('SKIPPED');
+      expect(sendEmail).not.toHaveBeenCalled();
+      expect(wa).not.toHaveBeenCalled();
+      expect(await Invitation.countDocuments({ inviteeId: unusable._id })).toBe(0);
+      const after = await Invitee.findById(unusable._id);
+      expect(after?.invitationStatus).toBe(InvitationStatus.PENDING);
+      expect(after?.qrTokenHash).toBeUndefined();
+      wa.mockRestore();
+    });
+
+    it('keeps a skipped guest\'s existing pass when resending to them', async () => {
+      (sendEmail as jest.Mock).mockResolvedValue(true);
+      const guest = await Invitee.create({ eventId, name: 'Was Emailed', email: 'was@example.com' });
+      await invitationService.sendInvitations(eventId.toString(), organizerId.toString(), [String(guest._id)], DeliveryChannel.EMAIL);
+      const sent = await Invitee.findById(guest._id);
+      const invitation = await Invitation.findOne({ inviteeId: guest._id });
+      // The email is later removed, so "All" has nothing usable for this guest
+      await Invitee.updateOne({ _id: guest._id }, { $unset: { email: 1 }, $set: { mobile: '999' } });
+
+      const [result] = await invitationService.resendInvitations(eventId.toString(), organizerId.toString(), [String(invitation!._id)], DeliveryChannel.BOTH);
+
+      expect(result.status).toBe('SKIPPED');
+      expect((await Invitee.findById(guest._id))?.qrTokenHash).toBe(sent?.qrTokenHash);
+      expect(await Invitation.countDocuments({ inviteeId: guest._id })).toBe(1);
+    });
+
+    it('still fails (not skips) when a single channel is requested and its contact is missing', async () => {
+      const mobileOnly = await Invitee.create({ eventId, name: 'Mobile Only', mobile: '+919812345678' });
+      const [result] = await invitationService.sendInvitations(eventId.toString(), organizerId.toString(), [String(mobileOnly._id)], DeliveryChannel.EMAIL);
+      expect(result.status).toBe(InvitationDeliveryStatus.FAILED);
+    });
+  });
 });
 

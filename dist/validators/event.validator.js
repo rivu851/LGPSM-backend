@@ -3,12 +3,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateEventSchema = exports.createEventSchema = void 0;
 const mediaKey_1 = require("../utils/mediaKey");
 const zod_1 = require("zod");
+const eventLimits_1 = require("../constants/eventLimits");
 const Event_1 = require("../models/Event");
 const objectIdSchema = zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ObjectId format');
 exports.createEventSchema = zod_1.z.object({
     body: zod_1.z.object({
-        title: zod_1.z.string().min(1, 'Title is required').max(100, 'Title cannot exceed 100 characters'),
-        description: zod_1.z.string().optional().default('Event Description'),
+        title: zod_1.z.string().min(1, 'Title is required').max(eventLimits_1.EVENT_TITLE_MAX_LENGTH, `Title cannot exceed ${eventLimits_1.EVENT_TITLE_MAX_LENGTH} characters`),
+        description: zod_1.z.string().max(eventLimits_1.EVENT_DESCRIPTION_MAX_LENGTH, `Description cannot exceed ${eventLimits_1.EVENT_DESCRIPTION_MAX_LENGTH} characters`).optional().default('Event Description'),
         categoryId: objectIdSchema.optional(),
         subcategoryId: objectIdSchema.optional(),
         format: zod_1.z.nativeEnum(Event_1.EventFormat).optional().default(Event_1.EventFormat.PHYSICAL),
@@ -43,8 +44,8 @@ exports.createEventSchema = zod_1.z.object({
 });
 exports.updateEventSchema = zod_1.z.object({
     body: zod_1.z.object({
-        title: zod_1.z.string().min(1).max(100).optional(),
-        description: zod_1.z.string().min(1).optional(),
+        title: zod_1.z.string().min(1).max(eventLimits_1.EVENT_TITLE_MAX_LENGTH, `Title cannot exceed ${eventLimits_1.EVENT_TITLE_MAX_LENGTH} characters`).optional(),
+        description: zod_1.z.string().min(1).max(eventLimits_1.EVENT_DESCRIPTION_MAX_LENGTH, `Description cannot exceed ${eventLimits_1.EVENT_DESCRIPTION_MAX_LENGTH} characters`).optional(),
         categoryId: objectIdSchema.optional(),
         subcategoryId: objectIdSchema.optional(),
         format: zod_1.z.nativeEnum(Event_1.EventFormat).optional(),

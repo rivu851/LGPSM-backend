@@ -3,6 +3,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.invitationController = void 0;
 const invitation_service_1 = require("../services/invitation.service");
 const Invitation_1 = require("../models/Invitation");
+// Per-guest outcome counts for a send or resend ("All" delivery skips guests with no usable contact)
+const deliverySummary = (results) => ({
+    sent: results.filter((r) => r.status === 'SENT').length,
+    failed: results.filter((r) => r.status === 'FAILED').length,
+    skipped: results.filter((r) => r.status === 'SKIPPED').length,
+});
 exports.invitationController = {
     async sendInvitations(req, res) {
         try {
@@ -27,7 +33,7 @@ exports.invitationController = {
                 }
             }
             const results = await invitation_service_1.invitationService.sendInvitations(eventId, user, inviteeIds, selectedChannel || Invitation_1.DeliveryChannel.EMAIL);
-            return res.status(200).json({ success: true, message: 'Invitations processed successfully', results });
+            return res.status(200).json({ success: true, message: 'Invitations processed successfully', results, summary: deliverySummary(results) });
         }
         catch (error) {
             if (error.message === 'EVENT_NOT_FOUND')
@@ -47,7 +53,7 @@ exports.invitationController = {
                 role: req.user?.role
             };
             const results = await invitation_service_1.invitationService.resendInvitations(eventId, user, invitationIds, channel);
-            return res.status(200).json({ success: true, message: 'Invitations resent successfully', results });
+            return res.status(200).json({ success: true, message: 'Invitations resent successfully', results, summary: deliverySummary(results) });
         }
         catch (error) {
             if (error.message === 'EVENT_NOT_FOUND')

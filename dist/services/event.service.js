@@ -34,6 +34,10 @@ const pickEventFields = (data, extra = []) => {
     return out;
 };
 class EventService {
+    /** True once any invitation for the event was sent or attempted (the event is locked from then on). */
+    async invitationsStarted(eventId) {
+        return !!(await Invitation_1.Invitation.exists({ eventId, status: { $in: [Invitation_1.InvitationDeliveryStatus.SENT, Invitation_1.InvitationDeliveryStatus.FAILED] } }));
+    }
     /**
      * Creates a new event for an organizer.
      *
@@ -149,6 +153,10 @@ class EventService {
         const existingEvent = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId, role);
         if (!existingEvent)
             throw new Error('EVENT_NOT_FOUND');
+        // Feedback 14: once invitations have gone out (or were attempted), neither the organizer nor an admin can edit
+        // the event, so guests' cards and passes always match what was sent. The web edit form applies the same rule.
+        if (await this.invitationsStarted(existingEvent._id))
+            throw new Error('EVENT_LOCKED');
         // Validate references if they are being updated
         if (updateData.categoryId && updateData.categoryId !== existingEvent.categoryId.toString()) {
             const categoryExists = await Category_1.Category.findById(updateData.categoryId);

@@ -9,6 +9,7 @@ import { resolveImageKeyBase64 } from '../../utils/resolveImageBase64';
 import { templateVisibleTo } from '../template.service';
 import { buildSpecTexts } from './content';
 import { safeParseDesignSpec } from './designSpec';
+import { cardHostName } from './context';
 import { renderDesignSpec } from './specRenderer';
 
 export interface RenderForEventInput {
@@ -50,7 +51,7 @@ export async function renderTemplateForEvent(input: RenderForEventInput): Promis
   const event = await findManageableEvent(input.eventId, input.userId, input.isAdmin ? 'ADMIN' : undefined);
   if (!event) throw new Error('EVENT_NOT_FOUND');
 
-  const organizer = event.organizerId ? await User.findById(event.organizerId).select('fullName').lean() : null;
+  const organizer = event.organizerId ? await User.findById(event.organizerId).select('profile.organizationName').lean() : null;
   const content = buildInvitationContent(event as any, [], null); // the same venue wording the invitation workflow prints
   const texts = buildSpecTexts({
     title: event.title,
@@ -60,7 +61,7 @@ export async function renderTemplateForEvent(input: RenderForEventInput): Promis
     venue: content.venue,
     locationSub: content.locationSub,
     isVirtual: (event as any).format === 'VIRTUAL',
-    organizerName: organizer?.fullName,
+    organizerName: cardHostName(organizer as any),
     invitee: { name: parsed.spec.kind === 'INVITATION' ? 'Guest Name' : undefined }
   });
 

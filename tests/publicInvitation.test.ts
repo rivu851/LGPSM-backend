@@ -67,12 +67,23 @@ describe('Public Invitation & RSVP Endpoints', () => {
       expect(res.body.data.invitee).toBeDefined();
       expect(res.body.data.invitee.name).toBe('John Guest');
       expect(res.body.data.invitee.rsvpStatus).toBe('PENDING');
+      // Only whether guests can answer (and until when) is exposed, not the organizer's check-in rules
+      expect(res.body.data.event.rsvp).toEqual({ enabled: true, closesAt: expect.any(String) });
 
       // Security checks: ensure raw tokens, hashes, and organizer IDs are not leaked
       expect(res.body.data.qrTokenHash).toBeUndefined();
       expect(res.body.data.tokenHash).toBeUndefined();
       expect(res.body.data.token).toBeUndefined();
       expect(res.body.data.event.organizerId).toBeUndefined();
+    });
+
+    it('tells the page RSVP is off when the event does not use it', async () => {
+      await Event.updateMany({}, { $set: { 'rsvp.enabled': false } });
+      const res = await request(app).get(`/api/v1/public/invitations/${rawToken}`);
+      expect(res.body.data.event.rsvp).toEqual({ enabled: false, closesAt: null });
+      const answer = await request(app).post(`/api/v1/public/invitations/${rawToken}/rsvp`).send({ rsvpStatus: 'ACCEPTED' });
+      expect(answer.status).toBeGreaterThanOrEqual(400);
+      await Event.updateMany({}, { $set: { 'rsvp.enabled': true } });
     });
 
     it('should return 404 for invalid or unknown token', async () => {

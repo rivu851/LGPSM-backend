@@ -10,7 +10,7 @@ export const publicInvitationService = {
     }
 
     const tokenHash = hashToken(rawToken);
-    const invitee = await Invitee.findOne({ qrTokenHash: tokenHash }).populate('eventId', 'title description categoryId format location schedule');
+    const invitee = await Invitee.findOne({ qrTokenHash: tokenHash }).populate('eventId', 'title description categoryId format location schedule rsvp');
 
     if (!invitee || !invitee.eventId) {
       throw new Error('INVITATION_NOT_FOUND');
@@ -24,7 +24,9 @@ export const publicInvitationService = {
         description: event.description,
         format: event.format,
         location: event.location,
-        schedule: event.schedule
+        schedule: event.schedule,
+        // Whether guests can answer at all; when off, the page shows no RSVP control (submitRsvp refuses it anyway)
+        rsvp: { enabled: !!event.rsvp?.enabled, closesAt: event.rsvp?.enabled ? event.rsvp.acceptanceLastDate || event.schedule?.end || null : null }
       },
       invitee: {
         name: invitee.name,

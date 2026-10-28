@@ -3,7 +3,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.invitationService = void 0;
+exports.invitationService = exports.SKIPPED_NO_CONTACT = void 0;
+exports.channelsForInvitee = channelsForInvitee;
 const invitationContent_1 = require("../utils/invitationContent");
 const alert_service_1 = require("./alert.service");
 const mongoose_1 = __importDefault(require("mongoose"));
@@ -144,6 +145,22 @@ function buildFormalInvitationEmailHTML(params) {
 // Guests in one batch are prepared a few at a time: each one is mostly waiting on image rendering and the mail /
 // WhatsApp providers, so a small amount of overlap cuts a big batch's time without flooding either provider.
 const sendConcurrency = () => Math.min(Math.max(parseInt(process.env.INVITATION_SEND_CONCURRENCY || '3', 10) || 3, 1), 8);
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+exports.SKIPPED_NO_CONTACT = 'No email address or WhatsApp number';
+/**
+ * Channels to attempt for one guest. EMAIL or WHATSAPP is an explicit request, so a missing contact is a real
+ * failure. BOTH ("All") uses whichever of the guest's contacts are usable; a guest with neither is skipped before
+ * anything is changed (no new token, invitation status untouched).
+ */
+function channelsForInvitee(channel, invitee) {
+    if (channel !== Invitation_1.DeliveryChannel.BOTH) {
+        return { email: channel === Invitation_1.DeliveryChannel.EMAIL, whatsapp: channel === Invitation_1.DeliveryChannel.WHATSAPP };
+    }
+    return {
+        email: !!invitee.email && EMAIL_PATTERN.test(invitee.email.trim()),
+        whatsapp: whatsapp_service_1.whatsappService.normalizePhoneNumber(invitee.mobile).length >= 10,
+    };
+}
 exports.invitationService = {
     async sendInvitations(eventId, userOrOrganizerId, inviteeIds, channel) {
         const isUserObj = typeof userOrOrganizerId === 'object' && userOrOrganizerId !== null;
@@ -175,11 +192,15 @@ exports.invitationService = {
         if (invitees.length === 0)
             throw new Error('INVALID_INVITEES');
         const results = [];
-        const shouldSendEmail = channel === Invitation_1.DeliveryChannel.EMAIL || channel === Invitation_1.DeliveryChannel.BOTH;
-        const shouldSendWhatsApp = channel === Invitation_1.DeliveryChannel.WHATSAPP || channel === Invitation_1.DeliveryChannel.BOTH;
         // Load all sessions for this event once
         const allSessions = await Session_1.Session.find({ eventId }).sort({ 'schedule.start': 1 }).lean();
         const outcomes = await (0, concurrency_1.mapLimit)(invitees, sendConcurrency(), async (invitee) => {
+            const use = channelsForInvitee(channel, invitee);
+            if (!use.email && !use.whatsapp) {
+                return { inviteeId: invitee._id, inviteeName: invitee.name, inviteeMobile: invitee.mobile, status: 'SKIPPED', failureReason: exports.SKIPPED_NO_CONTACT };
+            }
+            const shouldSendEmail = use.email;
+            const shouldSendWhatsApp = use.whatsapp;
             // Core Rule: Generate ONE secure token & ONE QR per event/invitee per send batch
             const rawToken = (0, invitation_util_1.generateSecureToken)();
             const tokenHash = (0, invitation_util_1.hashToken)(rawToken);
@@ -415,13 +436,18 @@ exports.invitationService = {
                 await invitation.save();
                 return { invitationId: invitation._id, status: 'FAILED', failureReason: 'INVITEE_DELETED' };
             }
+            const activeChannel = (channelOverride || invitation.channel);
+            const use = channelsForInvitee(activeChannel, invitee);
+            if (!use.email && !use.whatsapp) {
+                // Nothing usable: the guest's current pass and delivery record stay as they are
+                return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: exports.SKIPPED_NO_CONTACT };
+            }
             const rawToken = (0, invitation_util_1.generateSecureToken)();
             const tokenHash = (0, invitation_util_1.hashToken)(rawToken);
             const invitationUrl = (0, qrPayload_1.invitationUrlFor)(rawToken);
             const qrDataUrl = await (0, qr_util_1.generateQRCodeDataURL)(invitationUrl);
             const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '');
             const qrBuffer = Buffer.from(base64Data, 'base64');
-            const activeChannel = (channelOverride || invitation.channel);
             const resendInvitation = new Invitation_1.Invitation({
                 eventId,
                 inviteeId: invitee._id,
@@ -429,8 +455,8 @@ exports.invitationService = {
                 status: Invitation_1.InvitationDeliveryStatus.PENDING,
                 tokenHash
             });
-            const shouldSendEmail = activeChannel === Invitation_1.DeliveryChannel.EMAIL || activeChannel === Invitation_1.DeliveryChannel.BOTH;
-            const shouldSendWhatsApp = activeChannel === Invitation_1.DeliveryChannel.WHATSAPP || activeChannel === Invitation_1.DeliveryChannel.BOTH;
+            const shouldSendEmail = use.email;
+            const shouldSendWhatsApp = use.whatsapp;
             let emailSuccess = false;
             let whatsappSuccess = false;
             let emailErrReason = '';

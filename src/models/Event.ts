@@ -1,3 +1,4 @@
+import { CARD_INFO_FIELDS, CardInfo } from '../utils/cardInfo';
 import mongoose, { Document, Schema } from 'mongoose';
 
 export enum EventFormat {
@@ -47,6 +48,8 @@ export interface IEvent extends Document {
     options: any[];
   };
   templateId?: mongoose.Types.ObjectId;
+  /** Which guest details the card prints on its two guest lines ("Additional Info"); unset = name, then company */
+  cardInfo?: CardInfo;
   media: {
     logoKey?: string;
     bannerKey?: string;
@@ -95,6 +98,10 @@ const EventSchema: Schema = new Schema(
       options: { type: [Schema.Types.Mixed], default: [] }
     },
     templateId: { type: Schema.Types.ObjectId, ref: 'Template' },
+    cardInfo: {
+      primary: { type: String, enum: [...CARD_INFO_FIELDS, null] },
+      secondary: { type: String, enum: [...CARD_INFO_FIELDS, null] }
+    },
     media: {
       logoKey: { type: String },
       bannerKey: { type: String }
