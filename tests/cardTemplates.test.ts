@@ -56,8 +56,10 @@ describe('card wording', () => {
 
   it('formats ordinals and date ranges in the platform time zone', () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 31].map(ordinal)).toEqual(['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd', '23rd', '31st']);
-    expect(shortDateRange(new Date(when.startIso), new Date(when.endIso))).toBe('2nd Nov to 5th Nov');
-    expect(shortDateRange(new Date(when.startIso), null)).toBe('2nd Nov');
+    expect(shortDateRange(new Date(when.startIso), new Date(when.endIso))).toBe('2nd - 5th Nov 2026');
+    expect(shortDateRange(new Date('2026-10-30T10:00:00+05:30'), new Date('2026-11-02T10:00:00+05:30'))).toBe('30th Oct to 2nd Nov 2026');
+    expect(shortDateRange(new Date(when.startIso), null)).toBe('2nd Nov 2026');
+    expect(shortDateRange(new Date('2026-12-30T10:00:00+05:30'), new Date('2027-01-02T10:00:00+05:30'))).toBe('30th Dec 2026 to 2nd Jan 2027');
     expect(longDate(new Date(when.startIso), new Date(when.endIso))).toBe('2nd - 5th November, 2026');
     expect(longDate(new Date(when.startIso), new Date('2026-12-05T10:00:00+05:30'))).toBe('2nd Nov - 5th Dec, 2026');
     expect(longDate(new Date(when.startIso), null)).toBe('2nd November, 2026');
@@ -79,7 +81,7 @@ describe('card wording', () => {
 
   it('writes a birthday card for a birthday', () => {
     const t = buildTemplateTexts({ design: 'BIRTHDAY', title: 'Moloy Birthday Celebration!!!', subcategoryName: 'Birthday', venue: '24, Shanti Pally', locationSub: 'Kolkata', ...when });
-    expect(t).toMatchObject({ intro: 'Please Join us to celebrate', honoree: 'Moloy', heading: 'Birthday Party', month: 'November', weekday: 'Monday', day: '02', time: 'At 10:00 AM', address: '24, Shanti Pally, Kolkata' });
+    expect(t).toMatchObject({ intro: 'Please Join us to celebrate', honoree: 'Moloy', heading: 'Birthday Party', month: 'November 2026', weekday: 'Monday', day: '02', time: 'At 10:00 AM', address: '24, Shanti Pally, Kolkata' });
   });
 
   it('keeps "Birthday Party" unless the subcategory is more specific', () => {
@@ -106,7 +108,7 @@ describe('card wording', () => {
     const v1 = buildTemplateTexts({ design: 'CORPORATE_V1', title: 'Excellence Awards', invitee: { name: 'Mr. Harsh', employeeId: '51470A', companyName: 'Acme' }, venue: 'Hall 3', ...when });
     expect(v1).toMatchObject({ title: 'Excellence Awards', inviteeName: 'Mr. Harsh', inviteeMeta: 'Employee ID #51470A', datePill: 'Event Dates: 2nd - 5th November, 2026', address: 'Hall 3' });
     const v2 = buildTemplateTexts({ design: 'CORPORATE_V2', title: 'Leadership Summit', invitee: { name: 'Subhendu', companyName: 'XYZ Ltd' }, venue: 'Salt Lake Stadium, Sector V, Kolkata', ...when });
-    expect(v2).toMatchObject({ inviteeName: 'Subhendu', inviteeMeta: 'XYZ Ltd', datePill: '2nd Nov to 5th Nov', address: 'Sector V, Kolkata' });
+    expect(v2).toMatchObject({ inviteeName: 'Subhendu', inviteeMeta: 'XYZ Ltd', datePill: '2nd - 5th Nov 2026', address: 'Sector V, Kolkata' });
   });
 
   it('says "Online event" for a virtual event and leaves missing details empty instead of inventing them', () => {

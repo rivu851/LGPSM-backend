@@ -282,7 +282,7 @@ exports.authService = {
         await token_repository_1.tokenRepository.createRefreshToken(userId, refreshToken, expiresAt);
         return { user, accessToken, refreshToken };
     },
-    async googleAuth(idToken) {
+    async googleAuth(idToken, portalRole) {
         if (!env_1.env.GOOGLE_CLIENT_ID) {
             throw { statusCode: 501, message: 'Google Auth not configured on server' };
         }
@@ -295,6 +295,16 @@ exports.authService = {
             throw { statusCode: 401, message: 'Invalid or unverified Google token' };
         }
         let user = await user_repository_1.userRepository.findByEmail(payload.email);
+        // Same portal rule as password sign-in: the Organizer tab never opens an Admin account, and the Admin tab
+        // never creates or opens an organizer account
+        const wrongPortal = {
+            statusCode: 403,
+            message: `This account is not registered as ${String(portalRole).replace('_', ' ').toLowerCase()}. Please use the correct login option.`,
+        };
+        if (portalRole && user && user.role !== portalRole)
+            throw wrongPortal;
+        if (portalRole && !user && portalRole !== User_1.Role.ORGANIZER)
+            throw wrongPortal;
         if (!user) {
             // Google-authenticated organizers have a verified email by definition
             user = await user_repository_1.userRepository.create({

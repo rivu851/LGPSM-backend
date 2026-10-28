@@ -21,6 +21,8 @@ export const loginSchema = z.object({
 
 export const googleAuthSchema = z.object({
   token: z.string().min(1, 'Google ID token is required'),
+  // The sign-in portal being used, so a Google account cannot cross into the other portal (same check as password sign-in)
+  role: z.enum(['ADMIN', 'ORGANIZER']).optional(),
 });
 
 export const refreshTokenSchema = z.object({

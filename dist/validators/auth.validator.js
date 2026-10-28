@@ -21,6 +21,8 @@ exports.loginSchema = zod_1.z.object({
 });
 exports.googleAuthSchema = zod_1.z.object({
     token: zod_1.z.string().min(1, 'Google ID token is required'),
+    // The sign-in portal being used, so a Google account cannot cross into the other portal (same check as password sign-in)
+    role: zod_1.z.enum(['ADMIN', 'ORGANIZER']).optional(),
 });
 exports.refreshTokenSchema = zod_1.z.object({
     refreshToken: zod_1.z.string().min(1, 'Refresh token is required'),

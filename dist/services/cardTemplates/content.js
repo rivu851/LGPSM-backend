@@ -37,17 +37,19 @@ const toDate = (v) => {
     return Number.isNaN(d.getTime()) ? null : d;
 };
 const sameDay = (a, b) => fmt(a, { dateStyle: 'short' }) === fmt(b, { dateStyle: 'short' });
-/** "2nd Nov" for one day, "2nd Nov to 5th Nov" across days (the year is added when the range crosses years). */
+/** "2nd Nov 2026" for one day, "2nd - 5th Nov 2026" across days of a month, "28th Oct to 2nd Nov 2026" across months. The year is always shown (both years when the range crosses one). */
 function shortDateRange(start, end) {
     if (!start)
         return '';
     const s = parts(start);
-    const first = `${ordinal(s.dayNumber)} ${s.monthShort}`;
     if (!end || sameDay(start, end))
-        return first;
+        return `${ordinal(s.dayNumber)} ${s.monthShort} ${s.year}`;
     const e = parts(end);
+    // within one month the month and year are said once ("28th - 31st Oct 2026"), which also keeps the line short enough for the pill
+    if (s.monthShort === e.monthShort && s.year === e.year)
+        return `${ordinal(s.dayNumber)} - ${ordinal(e.dayNumber)} ${s.monthShort} ${s.year}`;
     const crossYear = s.year !== e.year;
-    return `${first}${crossYear ? ` ${s.year}` : ''} to ${ordinal(e.dayNumber)} ${e.monthShort}${crossYear ? ` ${e.year}` : ''}`;
+    return `${ordinal(s.dayNumber)} ${s.monthShort}${crossYear ? ` ${s.year}` : ''} to ${ordinal(e.dayNumber)} ${e.monthShort} ${e.year}`;
 }
 /** "2nd November, 2026", or "2nd - 5th November, 2026" across days of one month. */
 function longDate(start, end) {
@@ -178,7 +180,8 @@ function buildTemplateTexts(input) {
                 // "Birthday Party" unless the organizer's subcategory says something more specific ("First Birthday", "Birthday Bash")
                 heading: /birthday|bday/i.test(input.subcategoryName || '') && (input.subcategoryName || '').trim().split(/\s+/).length > 1 ? input.subcategoryName.trim() : 'Birthday Party',
                 scanLabel,
-                month: p?.monthLong || '',
+                // the year rides with the month ("November 2026"): the design has no separate slot for it, and a card without a year can be mistaken for another year's
+                month: p ? `${p.monthLong} ${p.year}` : '',
                 weekday: p?.weekday || '',
                 day: p?.day || '',
                 time: p ? `At ${p.time}` : '',
