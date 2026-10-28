@@ -16,6 +16,7 @@ const template_service_1 = require("../template.service");
 const content_1 = require("./content");
 const designSpec_1 = require("./designSpec");
 const context_1 = require("./context");
+const cardInfo_1 = require("../../utils/cardInfo");
 const specRenderer_1 = require("./specRenderer");
 const dataUrlToBuffer = (dataUrl) => {
     const match = dataUrl ? /^data:[^;]+;base64,(.+)$/.exec(dataUrl) : null;
@@ -47,7 +48,7 @@ async function renderTemplateForEvent(input) {
         locationSub: content.locationSub,
         isVirtual: event.format === 'VIRTUAL',
         organizerName: (0, context_1.cardHostName)(organizer),
-        invitee: { name: parsed.spec.kind === 'INVITATION' ? 'Guest Name' : undefined }
+        invitee: parsed.spec.kind === 'INVITATION' ? (0, cardInfo_1.cardGuestLines)(null, event.cardInfo) : { name: undefined }
     });
     let qr;
     let qrKind = 'NONE';

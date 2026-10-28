@@ -4,6 +4,7 @@ exports.previewTemplateCardSchema = exports.saveVariantSchema = exports.changeGe
 const zod_1 = require("zod");
 const mediaKey_1 = require("../utils/mediaKey");
 const Template_1 = require("../models/Template");
+const cardInfo_1 = require("../utils/cardInfo");
 const designSpec_1 = require("../services/cardTemplates/designSpec");
 exports.createTemplateSchema = zod_1.z.object({
     name: zod_1.z.string().min(2).max(100),
@@ -83,6 +84,7 @@ exports.previewTemplateCardSchema = zod_1.z
     subcategoryName: zod_1.z.string().max(100).optional(),
     logoKey: zod_1.z.string().regex(/^media:[0-9a-fA-F]{24}$/, 'Only an uploaded image can be previewed').optional(),
     guestName: zod_1.z.string().max(100).optional(),
-    companyName: zod_1.z.string().max(100).optional()
+    companyName: zod_1.z.string().max(100).optional(),
+    cardInfo: zod_1.z.object({ primary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(), secondary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable() }).strict().optional()
 })
     .strict();

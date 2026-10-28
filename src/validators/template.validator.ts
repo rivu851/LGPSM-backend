@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { isAcceptedImageKey } from '../utils/mediaKey';
 import { CARD_DESIGNS } from '../models/Template';
+import { CARD_INFO_FIELDS } from '../utils/cardInfo';
 import { CANVAS_PRESET_IDS, designSpecSchema } from '../services/cardTemplates/designSpec';
 
 export const createTemplateSchema = z.object({
@@ -89,6 +90,7 @@ export const previewTemplateCardSchema = z
     subcategoryName: z.string().max(100).optional(),
     logoKey: z.string().regex(/^media:[0-9a-fA-F]{24}$/, 'Only an uploaded image can be previewed').optional(),
     guestName: z.string().max(100).optional(),
-    companyName: z.string().max(100).optional()
+    companyName: z.string().max(100).optional(),
+    cardInfo: z.object({ primary: z.enum(CARD_INFO_FIELDS).nullable(), secondary: z.enum(CARD_INFO_FIELDS).nullable() }).strict().optional()
   })
   .strict();

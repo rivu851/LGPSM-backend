@@ -15,6 +15,7 @@ exports.createInviteeSchema = zod_1.z.object({
         mobile: mobileValidation,
         companyName: zod_1.z.string().optional(),
         company: zod_1.z.string().optional(),
+        professionalIdentity: zod_1.z.string().trim().max(100).optional(),
         dietaryPreference: zod_1.z.string().optional(),
         sessionAccess: zod_1.z.array(zod_1.z.object({
             sessionId: zod_1.z.string(),
@@ -32,6 +33,7 @@ exports.updateInviteeSchema = zod_1.z.object({
         mobile: mobileValidation,
         companyName: zod_1.z.string().optional(),
         company: zod_1.z.string().optional(),
+        professionalIdentity: zod_1.z.string().trim().max(100).optional(),
         dietaryPreference: zod_1.z.string().optional(),
         rsvpStatus: zod_1.z.enum(['PENDING', 'ACCEPTED', 'DECLINED']).optional(),
         sessionAccess: zod_1.z.array(zod_1.z.object({

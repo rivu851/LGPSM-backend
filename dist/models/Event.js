@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Event = exports.EventStatus = exports.EventFormat = void 0;
+const cardInfo_1 = require("../utils/cardInfo");
 const mongoose_1 = __importStar(require("mongoose"));
 var EventFormat;
 (function (EventFormat) {
@@ -82,6 +83,10 @@ const EventSchema = new mongoose_1.Schema({
         options: { type: [mongoose_1.Schema.Types.Mixed], default: [] }
     },
     templateId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Template' },
+    cardInfo: {
+        primary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] },
+        secondary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] }
+    },
     media: {
         logoKey: { type: String },
         bannerKey: { type: String }

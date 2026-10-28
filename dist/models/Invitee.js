@@ -70,6 +70,7 @@ const InviteeSchema = new mongoose_1.Schema({
     },
     dietaryPreference: { type: String },
     companyName: { type: String, trim: true },
+    professionalIdentity: { type: String, trim: true, maxlength: 100 },
     company: { type: String, trim: true },
     sessionAccess: { type: [SessionAccessSchema], default: [] },
     qrTokenHash: { type: String },

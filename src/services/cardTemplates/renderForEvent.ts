@@ -10,6 +10,7 @@ import { templateVisibleTo } from '../template.service';
 import { buildSpecTexts } from './content';
 import { safeParseDesignSpec } from './designSpec';
 import { cardHostName } from './context';
+import { cardGuestLines } from '../../utils/cardInfo';
 import { renderDesignSpec } from './specRenderer';
 
 export interface RenderForEventInput {
@@ -62,7 +63,7 @@ export async function renderTemplateForEvent(input: RenderForEventInput): Promis
     locationSub: content.locationSub,
     isVirtual: (event as any).format === 'VIRTUAL',
     organizerName: cardHostName(organizer as any),
-    invitee: { name: parsed.spec.kind === 'INVITATION' ? 'Guest Name' : undefined }
+    invitee: parsed.spec.kind === 'INVITATION' ? cardGuestLines(null, (event as any).cardInfo) : { name: undefined }
   });
 
   let qr: Buffer | undefined;

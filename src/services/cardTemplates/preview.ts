@@ -5,6 +5,7 @@ import { resolveImageKeyBase64 } from '../../utils/resolveImageBase64';
 import { invitationCardService } from '../invitationCard.service';
 import { resolveCardDesign } from './designs';
 import { safeParseDesignSpec } from './designSpec';
+import { cardGuestLines, CardInfo } from '../../utils/cardInfo';
 import { templateVisibleTo } from '../template.service';
 
 export interface TemplatePreviewInput {
@@ -19,6 +20,7 @@ export interface TemplatePreviewInput {
   logoKey?: string;
   guestName?: string;
   companyName?: string;
+  cardInfo?: CardInfo;
 }
 
 /**
@@ -42,7 +44,8 @@ export async function renderTemplatePreview(templateId: string | null, input: Te
   });
   const invitationUrl = previewSampleUrl();
   return invitationCardService.generateInvitationCardPNG({
-    invitee: { name: input.guestName?.trim() || 'Guest Name', companyName: input.companyName?.trim() || '' },
+    // The Add/Edit Event form's "Additional Info" choice shows its sample lines until there are real guests
+    invitee: input.cardInfo ? cardGuestLines(null, input.cardInfo) : { name: input.guestName?.trim() || 'Guest Name', companyName: input.companyName?.trim() || '' },
     event: {
       title: input.title?.trim() || 'Your event title',
       venue: input.venue,

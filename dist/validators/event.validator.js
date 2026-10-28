@@ -4,8 +4,14 @@ exports.updateEventSchema = exports.createEventSchema = void 0;
 const mediaKey_1 = require("../utils/mediaKey");
 const zod_1 = require("zod");
 const eventLimits_1 = require("../constants/eventLimits");
+const cardInfo_1 = require("../utils/cardInfo");
 const Event_1 = require("../models/Event");
 const objectIdSchema = zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ObjectId format');
+// "Additional Info": a ticked line names the guest detail it prints; null leaves that line empty
+const cardInfoSchema = zod_1.z.object({
+    primary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(),
+    secondary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable()
+}).strict();
 exports.createEventSchema = zod_1.z.object({
     body: zod_1.z.object({
         title: zod_1.z.string().min(1, 'Title is required').max(eventLimits_1.EVENT_TITLE_MAX_LENGTH, `Title cannot exceed ${eventLimits_1.EVENT_TITLE_MAX_LENGTH} characters`),
@@ -29,6 +35,7 @@ exports.createEventSchema = zod_1.z.object({
         attendeeSettings: zod_1.z.object({
             thresholdLimit: zod_1.z.number().positive().optional()
         }).optional(),
+        cardInfo: cardInfoSchema.optional(),
         dietaryPreference: zod_1.z.object({
             enabled: zod_1.z.boolean().optional(),
             title: zod_1.z.string().optional(),
@@ -74,6 +81,7 @@ exports.updateEventSchema = zod_1.z.object({
         attendeeSettings: zod_1.z.object({
             thresholdLimit: zod_1.z.number().positive().optional()
         }).optional(),
+        cardInfo: cardInfoSchema.optional(),
         dietaryPreference: zod_1.z.object({
             enabled: zod_1.z.boolean(),
             title: zod_1.z.string().optional(),

@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { invitationService } from '../src/services/invitation.service';
+import { invitationService, SKIPPED_ALREADY_INVITED } from '../src/services/invitation.service';
 import { whatsappService } from '../src/services/whatsapp.service';
 import { Event } from '../src/models/Event';
 import { Invitee, InvitationStatus, RsvpStatus } from '../src/models/Invitee';
@@ -221,6 +221,48 @@ describe('Invitation Service', () => {
     // Verify raw token extracted from QR/URL works with checkInService.extractRawToken
     const invitation = await Invitation.findOne({ inviteeId });
     expect(invitation?.tokenHash).toEqual(invitee?.qrTokenHash);
+  });
+
+  describe('send is only for guests who have not been invited yet', () => {
+    it('skips guests already sent, keeps their token, and sends only the newly added guest', async () => {
+      (sendEmail as jest.Mock).mockResolvedValue(true);
+      await invitationService.sendInvitations(eventId.toString(), organizerId.toString(), [inviteeId.toString()], DeliveryChannel.EMAIL);
+      const firstToken = (await Invitee.findById(inviteeId))?.qrTokenHash;
+      const sentBefore = (sendEmail as jest.Mock).mock.calls.length;
+
+      // later: another guest is added, and the whole list is submitted again
+      const added = await Invitee.create({ eventId, name: 'Added Later', email: 'later@example.com' });
+      const results = await invitationService.sendInvitations(
+        eventId.toString(), organizerId.toString(), [inviteeId.toString(), String(added._id)], DeliveryChannel.EMAIL
+      );
+
+      const old = results.find((r: any) => String(r.inviteeId) === String(inviteeId));
+      const fresh = results.find((r: any) => String(r.inviteeId) === String(added._id));
+      expect(old?.status).toBe('SKIPPED');
+      expect(old?.failureReason).toBe(SKIPPED_ALREADY_INVITED);
+      expect(fresh?.status).toBe(InvitationDeliveryStatus.SENT);
+      // exactly one new email went out, and the first guest's QR still works
+      expect((sendEmail as jest.Mock).mock.calls.length - sentBefore).toBe(1);
+      expect((await Invitee.findById(inviteeId))?.qrTokenHash).toEqual(firstToken);
+      expect(await Invitation.countDocuments({ eventId })).toBe(2);
+    });
+
+    it('still retries a guest whose earlier delivery failed', async () => {
+      (sendEmail as jest.Mock).mockRejectedValueOnce(new Error('smtp down')).mockResolvedValue(true);
+      const [first] = await invitationService.sendInvitations(eventId.toString(), organizerId.toString(), [inviteeId.toString()], DeliveryChannel.EMAIL);
+      expect(first.status).toBe(InvitationDeliveryStatus.FAILED);
+      const [again] = await invitationService.sendInvitations(eventId.toString(), organizerId.toString(), [inviteeId.toString()], DeliveryChannel.EMAIL);
+      expect(again.status).toBe(InvitationDeliveryStatus.SENT);
+    });
+
+    it('does not deliver twice when the same guest is sent at the same moment', async () => {
+      (sendEmail as jest.Mock).mockImplementation(() => new Promise((r) => setTimeout(() => r(true), 50)));
+      const send = () => invitationService.sendInvitations(eventId.toString(), organizerId.toString(), [inviteeId.toString()], DeliveryChannel.EMAIL);
+      const [a, b] = await Promise.all([send(), send()]);
+      const statuses = [a[0].status, b[0].status].sort();
+      expect(statuses).toEqual(['SENT', 'SKIPPED']);
+      expect((sendEmail as jest.Mock).mock.calls.length).toBe(1);
+    });
   });
 
   describe('"All" delivery (BOTH) uses only the usable channels per guest', () => {

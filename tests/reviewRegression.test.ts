@@ -285,3 +285,22 @@ describe('Invitation dates', () => {
   });
 });
 
+
+describe('Card "Additional Info" and professional identity', () => {
+  it('stores which guest details the card prints, and refuses unknown details', async () => {
+    const event = await makeEvent(organizer._id);
+    const ok = await request(app).patch(`/api/v1/events/${event._id}`).set(bearer(organizerToken)).send({ cardInfo: { primary: 'INVITEE_NAME', secondary: 'PROFESSIONAL_IDENTITY' } });
+    expect(ok.status).toBe(200);
+    expect((await Event.findById(event._id))?.toObject().cardInfo).toEqual({ primary: 'INVITEE_NAME', secondary: 'PROFESSIONAL_IDENTITY' });
+    const bad = await request(app).patch(`/api/v1/events/${event._id}`).set(bearer(organizerToken)).send({ cardInfo: { primary: 'PASSPORT_NUMBER', secondary: null } });
+    expect(bad.status).toBe(400);
+  });
+
+  it('keeps a guest’s professional identity (it used to be dropped)', async () => {
+    const event = await makeEvent(organizer._id);
+    const res = await request(app).post(`/api/v1/events/${event._id}/invitees`).set(bearer(organizerToken))
+      .send({ name: 'Ana Card', email: 'ana.card@x.com', professionalIdentity: 'Employee ID: 4521' });
+    expect(res.status).toBe(201);
+    expect((await Invitee.findOne({ email: 'ana.card@x.com' }))?.professionalIdentity).toBe('Employee ID: 4521');
+  });
+});

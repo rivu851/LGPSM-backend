@@ -8,6 +8,7 @@ const resolveImageBase64_1 = require("../../utils/resolveImageBase64");
 const invitationCard_service_1 = require("../invitationCard.service");
 const designs_1 = require("./designs");
 const designSpec_1 = require("./designSpec");
+const cardInfo_1 = require("../../utils/cardInfo");
 const template_service_1 = require("../template.service");
 /**
  * The card a template produces for the event being entered, with a placeholder guest and a clearly marked sample QR.
@@ -31,7 +32,8 @@ async function renderTemplatePreview(templateId, input, isAdmin, userId) {
     });
     const invitationUrl = (0, qrPayload_1.previewSampleUrl)();
     return invitationCard_service_1.invitationCardService.generateInvitationCardPNG({
-        invitee: { name: input.guestName?.trim() || 'Guest Name', companyName: input.companyName?.trim() || '' },
+        // The Add/Edit Event form's "Additional Info" choice shows its sample lines until there are real guests
+        invitee: input.cardInfo ? (0, cardInfo_1.cardGuestLines)(null, input.cardInfo) : { name: input.guestName?.trim() || 'Guest Name', companyName: input.companyName?.trim() || '' },
         event: {
             title: input.title?.trim() || 'Your event title',
             venue: input.venue,

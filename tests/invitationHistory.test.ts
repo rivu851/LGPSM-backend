@@ -85,9 +85,12 @@ describe('Clear invitation delivery history', () => {
 
   it('shows a guest again after a new send', async () => {
     await request(app).delete(`${url()}/history`).set('Authorization', auth(owner));
-    await invitationService.sendInvitations(eventId, String(owner._id), [inviteeIds[1]], DeliveryChannel.EMAIL);
-    const record = await Invitation.findOne({ inviteeId: inviteeIds[1] });
-    expect(record?.clearedAt).toBeUndefined();
+    // Send only reaches guests not yet invited; delivering again to an invited guest is Resend
+    const existing = await Invitation.findOne({ inviteeId: inviteeIds[1] });
+    await invitationService.resendInvitations(eventId, String(owner._id), [String(existing!._id)], DeliveryChannel.EMAIL);
+    // the resend adds a fresh history record, which is visible even though the older one stays cleared
+    const newest = (await Invitation.find({ inviteeId: inviteeIds[1] }).sort({ createdAt: -1 }).limit(1))[0];
+    expect(newest?.clearedAt).toBeUndefined();
   });
 
   it('is idempotent: clearing an already cleared history changes nothing', async () => {

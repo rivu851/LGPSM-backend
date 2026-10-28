@@ -23,7 +23,7 @@ const invitationContent_1 = require("../utils/invitationContent");
 // operationalDataCleared, pricing, ...) is server-controlled and is dropped before it reaches the database.
 const EVENT_WRITABLE_FIELDS = [
     'title', 'description', 'categoryId', 'subcategoryId', 'format', 'location', 'contactNumber',
-    'schedule', 'rsvp', 'attendeeSettings', 'dietaryPreference', 'templateId', 'media'
+    'schedule', 'rsvp', 'attendeeSettings', 'dietaryPreference', 'templateId', 'cardInfo', 'media'
 ];
 const pickEventFields = (data, extra = []) => {
     const out = {};

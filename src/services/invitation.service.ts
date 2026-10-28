@@ -15,6 +15,7 @@ import { whatsappService } from './whatsapp.service';
 import { invitationCardService } from './invitationCard.service';
 import { mapLimit } from '../utils/concurrency';
 import { loadCardContext } from './cardTemplates/context';
+import { cardGuestLines } from '../utils/cardInfo';
 import { resolveImageKeyBase64 } from '../utils/resolveImageBase64';
 
 function buildFormalInvitationEmailHTML(params: {
@@ -155,6 +156,11 @@ const sendConcurrency = () => Math.min(Math.max(parseInt(process.env.INVITATION_
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const SKIPPED_NO_CONTACT = 'No email address or WhatsApp number';
+export const SKIPPED_ALREADY_INVITED = 'Already invited';
+
+// Guests whose invitation is being prepared right now (this process). A double click or two tabs sending the same
+// guest at the same moment would otherwise both pass the "not invited yet" check and deliver twice.
+const sendingNow = new Set<string>();
 
 /**
  * Channels to attempt for one guest. EMAIL or WHATSAPP is an explicit request, so a missing contact is a real
@@ -208,7 +214,15 @@ export const invitationService = {
     // Load all sessions for this event once
     const allSessions = await Session.find({ eventId }).sort({ 'schedule.start': 1 }).lean();
 
-    const outcomes = await mapLimit(invitees, sendConcurrency(), async (invitee) => {
+    // Send is for guests who have not been invited yet (e.g. ones added after the first batch). Anyone already
+    // sent is skipped untouched: no new token (which would invalidate the QR they already hold) and no second
+    // message. Re-delivery is the explicit Resend action.
+    const alreadySent = new Set(
+      (await Invitation.find({ eventId, inviteeId: { $in: invitees.map((i) => i._id) }, status: InvitationDeliveryStatus.SENT }).select('inviteeId').lean())
+        .map((i: any) => String(i.inviteeId))
+    );
+
+    const deliverToInvitee = async (invitee: any): Promise<any> => {
       const use = channelsForInvitee(channel, invitee);
       if (!use.email && !use.whatsapp) {
         return { inviteeId: invitee._id, inviteeName: invitee.name, inviteeMobile: invitee.mobile, status: 'SKIPPED', failureReason: SKIPPED_NO_CONTACT } as any;
@@ -255,7 +269,7 @@ export const invitationService = {
       let cardBuffer: Buffer;
       try {
         cardBuffer = await invitationCardService.generateInvitationCardPNG({
-          invitee: { id: (invitee._id as any).toString(), name: invitee.name, companyName: invitee.companyName || invitee.company },
+          invitee: { id: (invitee._id as any).toString(), ...cardGuestLines(invitee, (event as any).cardInfo) },
           event: {
             id: (event._id as any).toString(),
             title: event.title,
@@ -408,6 +422,19 @@ export const invitationService = {
         failureReason: invitation.failureReason,
         whatsappWebUrl,
       };
+    };
+
+    const outcomes = await mapLimit(invitees, sendConcurrency(), async (invitee) => {
+      const claimKey = `${eventId}:${invitee._id}`;
+      if (alreadySent.has(String(invitee._id)) || invitee.invitationStatus === InvitationStatus.SENT || sendingNow.has(claimKey)) {
+        return { inviteeId: invitee._id, inviteeName: invitee.name, inviteeMobile: invitee.mobile, status: 'SKIPPED', failureReason: SKIPPED_ALREADY_INVITED } as any;
+      }
+      sendingNow.add(claimKey);
+      try {
+        return await deliverToInvitee(invitee);
+      } finally {
+        sendingNow.delete(claimKey);
+      }
     });
     results.push(...outcomes);
 
@@ -508,7 +535,7 @@ export const invitationService = {
       let cardBuffer: Buffer;
       try {
         cardBuffer = await invitationCardService.generateInvitationCardPNG({
-          invitee: { id: (invitee._id as any).toString(), name: invitee.name, companyName: invitee.companyName || invitee.company || '' },
+          invitee: { id: (invitee._id as any).toString(), ...cardGuestLines(invitee, (event as any).cardInfo) },
           event: {
             id: (event._id as any).toString(),
             title: event.title,
@@ -740,17 +767,12 @@ export const invitationService = {
     // every invitee's card for this event.
     const eventPhotoBase64 = await resolveImageKeyBase64((event as any).media?.logoKey);
 
-    // Without a specific invitee the preview shows a neutral placeholder guest
-    let inviteeName = 'Guest Name';
-    let inviteeCompanyName = '';
+    // Without a specific invitee the preview shows the design's sample guest lines
     let invitee: any = null;
     if (inviteeId && mongoose.Types.ObjectId.isValid(inviteeId)) {
       invitee = await Invitee.findOne({ _id: inviteeId, eventId }).select('+qrTokenCipher');
-      if (invitee) {
-        inviteeName = invitee.name;
-        inviteeCompanyName = invitee.companyName || '';
-      }
     }
+    const guestLines = cardGuestLines(invitee, (event as any).cardInfo);
 
     const allSessions = await Session.find({ eventId }).sort({ 'schedule.start': 1 }).lean();
     const { eventDate, dayOfWeek, eventTime, venue, locationSub, sessions: assignedSessions } =
@@ -763,7 +785,7 @@ export const invitationService = {
     const qrDataUrl = await generateQRCodeDataURL(invitationUrl);
 
     const png = await invitationCardService.generateInvitationCardPNG({
-      invitee: { name: inviteeName, companyName: inviteeCompanyName },
+      invitee: guestLines,
       event: {
         title: event.title,
         date: eventDate,
