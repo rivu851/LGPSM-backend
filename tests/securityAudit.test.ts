@@ -114,6 +114,13 @@ describe('Cross-tenant authorization matrix (organizer B must not touch organize
     expect(JSON.stringify(res.body)).not.toContain(String(eventA._id));
   });
 
+  it('lists organizer A events with their own invitee and session totals', async () => {
+    const res = await request(app).get('/api/v1/events').set('Authorization', bearer(orgA));
+    expect(res.status).toBe(200);
+    const listed = res.body.data.find((e: any) => String(e._id) === String(eventA._id));
+    expect(listed).toMatchObject({ inviteesCount: await Invitee.countDocuments({ eventId: eventA._id }), sessionNames: ['A session'] });
+  });
+
   it('staff with no assignment cannot read the event, its sessions or its invitees', async () => {
     for (const path of [E(), `${E()}/sessions`, `${E()}/invitees`]) {
       const res = await request(app).get(path).set('Authorization', bearer(staff));

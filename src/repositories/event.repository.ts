@@ -114,10 +114,13 @@ export async function getInvitationCounts(eventIds: any[]): Promise<Map<string, 
 async function withInvitationCounts(events: IEvent[]): Promise<any[]> {
   if (events.length === 0) return [];
   const eventIds = events.map((e) => e._id);
-  const [byEvent, sessions] = await Promise.all([
+  const [byEvent, sessions, inviteeTotals] = await Promise.all([
     getInvitationCounts(eventIds),
-    Session.find({ eventId: { $in: eventIds } }, 'eventId name').sort({ 'schedule.start': 1 }).lean()
+    Session.find({ eventId: { $in: eventIds } }, 'eventId name').sort({ 'schedule.start': 1 }).lean(),
+    // "# of invites" on the organizer event cards
+    Invitee.aggregate([{ $match: { eventId: { $in: eventIds } } }, { $group: { _id: '$eventId', count: { $sum: 1 } } }])
   ]);
+  const inviteesByEvent = new Map<string, number>(inviteeTotals.map((t: any) => [String(t._id), t.count]));
   const sessionsByEvent = new Map<string, string[]>();
   sessions.forEach((s: any) => {
     const key = String(s.eventId);
@@ -135,6 +138,7 @@ async function withInvitationCounts(events: IEvent[]): Promise<any[]> {
     if (category) delete category.subcategories;
     json.invitationsSent = byEvent.get(String(e._id)) || 0;
     json.sessionNames = sessionsByEvent.get(String(e._id)) || [];
+    json.inviteesCount = inviteesByEvent.get(String(e._id)) || 0;
     return json;
   });
 }
