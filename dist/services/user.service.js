@@ -46,6 +46,29 @@ const SystemUserAssignment_1 = require("../models/SystemUserAssignment");
 const whatsapp_service_1 = require("./whatsapp.service");
 const securityLog_1 = require("../utils/securityLog");
 const token_repository_1 = require("../repositories/token.repository");
+const email_provider_1 = require("../utils/email.provider");
+const crypto_1 = __importDefault(require("crypto"));
+const PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+/** 12 random characters from an alphabet without look-alike characters (0/O, 1/l/I). */
+function generateTemporaryPassword() {
+    const bytes = crypto_1.default.randomBytes(12);
+    return Array.from(bytes, (b) => PASSWORD_ALPHABET[b % PASSWORD_ALPHABET.length]).join('');
+}
+async function sendCredentialsEmail(email, fullName, role, password) {
+    const label = role === User_1.Role.ORGANIZER ? 'organizer' : role === User_1.Role.ADMIN ? 'admin' : 'staff';
+    const html = `
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px 24px;border:1px solid #e5e7eb;border-radius:8px">
+      <h2 style="color:#111827;margin-top:0">Your LGPSM ${label} account is ready</h2>
+      <p style="color:#374151">Hello ${fullName},</p>
+      <p style="color:#374151">Use these details to sign in:</p>
+      <table style="margin:16px 0;color:#374151">
+        <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Email</td><td><strong>${email}</strong></td></tr>
+        <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Password</td><td><strong style="font-family:monospace;font-size:16px">${password}</strong></td></tr>
+      </table>
+      <p style="color:#6b7280;font-size:13px">For your security, change this password after your first sign in (Profile &gt; Change Password).</p>
+    </div>`;
+    await (0, email_provider_1.sendEmail)(email, `Your LGPSM ${label} account`, html);
+}
 // Staff an organizer works with: accounts they created plus staff assigned to their events
 async function staffVisibleToOrganizer(organizerId) {
     const eventIds = await Event_1.Event.find({ organizerId }).distinct('_id');
@@ -122,7 +145,9 @@ exports.userService = {
         }
         const { hashPassword } = await Promise.resolve().then(() => __importStar(require('../utils/password')));
         const { AuthProvider } = await Promise.resolve().then(() => __importStar(require('../models/User')));
-        const hashedPassword = await hashPassword(data.password);
+        // No password given: generate one and email it with the login email (the person adding the account never sees it)
+        const generatedPassword = data.password ? null : generateTemporaryPassword();
+        const hashedPassword = await hashPassword(data.password ?? generatedPassword);
         const user = await user_repository_1.userRepository.create({
             fullName: data.fullName,
             email: data.email,
@@ -133,6 +158,16 @@ exports.userService = {
             role: data.role,
             createdBy: new mongoose_1.default.Types.ObjectId(actor.userId)
         });
+        if (generatedPassword) {
+            try {
+                await sendCredentialsEmail(data.email, data.fullName, data.role, generatedPassword);
+            }
+            catch (err) {
+                // The account is useless if nobody can learn its password: undo it so the person can try again
+                await user_repository_1.userRepository.deleteByEmail(data.email).catch(() => { });
+                throw { statusCode: 502, message: 'The account could not be created because the login email could not be sent. Please try again.' };
+            }
+        }
         return user;
     },
     async getUsers(actor, role, includeInactive = false, options = {}) {

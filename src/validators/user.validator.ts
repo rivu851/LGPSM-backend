@@ -11,11 +11,13 @@ export const updateProfileSchema = z.object({
 export const createUserSchema = z.object({
   fullName: z.string().min(2, 'Full name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  // Omit to have a password generated and emailed to the new account
+  password: z.string().min(6, 'Password must be at least 6 characters').optional(),
   phone: z.string().optional(),
   role: z.enum([Role.ADMIN, Role.ORGANIZER, Role.SYSTEM_USER]),
   profile: z.object({
-    organizationName: z.string().max(150).optional()
+    organizationName: z.string().max(150).optional(),
+    logoKey: z.string().max(200).optional()
   }).strict().optional()
 }).strict();
 
