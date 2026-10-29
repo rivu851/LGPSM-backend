@@ -51,3 +51,9 @@ export const verifyEmailSchema = z.object({
 export const resendVerificationSchema = z.object({
   email: z.string().email('Invalid email format'),
 });
+
+/** Validates the code submitted in the mobile "Forgot password" flow. */
+export const verifyResetOtpSchema = z.object({
+  email: z.string().email('Invalid email format'),
+  code: z.string().regex(/^\d{4}$/, 'Enter the 4-digit code'),
+});

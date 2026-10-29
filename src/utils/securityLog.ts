@@ -18,7 +18,8 @@ export type SecurityEvent =
   | 'SSRF_BLOCKED'
   | 'TEMPLATE_GENERATION_DENIED'
   | 'PASSWORD_CHANGED'
-  | 'PASSWORD_RESET_COMPLETED';
+  | 'PASSWORD_RESET_COMPLETED'
+  | 'PASSWORD_RESET_OTP_FAILED';
 
 const SENSITIVE_KEY = /pass(word)?|token|secret|otp|code|authorization|cookie|signature|key|credential/i;
 const MAX_VALUE_LENGTH = 120;

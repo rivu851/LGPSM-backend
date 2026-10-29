@@ -14,6 +14,7 @@ import {
   resetPasswordSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  verifyResetOtpSchema,
 } from '../validators/auth.validator';
 import { Request, Response, NextFunction } from 'express';
 
@@ -38,6 +39,19 @@ router.post('/google', validate(googleAuthSchema), authController.googleAuth);
 router.post('/refresh', validate(refreshTokenSchema), authController.refresh);
 router.post('/logout', authController.logout);
 router.post('/forgot-password', validate(forgotPasswordSchema), authController.forgotPassword);
+// Mobile reset flow: emailed 4-digit code → short-lived reset token (stricter limiters on top of authRateLimiter)
+router.post(
+  '/forgot-password/otp',
+  resendVerificationRateLimiter,
+  validate(forgotPasswordSchema),
+  authController.requestPasswordResetOtp
+);
+router.post(
+  '/forgot-password/verify-otp',
+  verifyEmailRateLimiter,
+  validate(verifyResetOtpSchema),
+  authController.verifyPasswordResetOtp
+);
 router.post('/reset-password', validate(resetPasswordSchema), authController.resetPassword);
 
 // Email verification — additional, stricter rate limiters on top of authRateLimiter

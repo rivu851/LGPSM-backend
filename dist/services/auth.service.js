@@ -16,6 +16,7 @@ const token_1 = require("../utils/token");
 const email_provider_1 = require("../utils/email.provider");
 const User_1 = require("../models/User");
 const EmailVerification_1 = require("../models/EmailVerification");
+const PasswordResetOtp_1 = require("../models/PasswordResetOtp");
 const alert_service_1 = require("./alert.service");
 const env_1 = require("../config/env");
 const whatsapp_service_1 = require("./whatsapp.service");
@@ -26,6 +27,10 @@ function generateOtpPlaintext() {
     // crypto.randomInt is uniform and cryptographically secure
     const n = crypto_1.default.randomInt(0, 1_000_000);
     return n.toString().padStart(6, '0');
+}
+/** A short numeric code for the mobile reset flow (guarded by an attempt cap, expiry and rate limits). */
+function generateResetOtp() {
+    return crypto_1.default.randomInt(0, 10 ** PasswordResetOtp_1.RESET_OTP_LENGTH).toString().padStart(PasswordResetOtp_1.RESET_OTP_LENGTH, '0');
 }
 const OTP_HASH_ROUNDS = 10;
 async function hashOtp(otp) {
@@ -365,6 +370,63 @@ exports.authService = {
         catch (err) {
             console.error('Password reset email could not be sent:', err.message);
         }
+    },
+    /**
+     * Mobile "Forgot password", step 1. Emails a short code when the address belongs to an active account.
+     * It always returns normally, so the response never reveals whether the email is registered; repeat
+     * requests inside the cooldown are ignored the same way.
+     */
+    async requestPasswordResetOtp(email) {
+        const normalised = email.toLowerCase().trim();
+        const user = await user_repository_1.userRepository.findByEmail(normalised);
+        if (!user || !user.isActive)
+            return;
+        const existing = await PasswordResetOtp_1.PasswordResetOtp.findOne({ email: normalised });
+        if (existing && Date.now() - existing.lastSentAt.getTime() < PasswordResetOtp_1.RESET_OTP_RESEND_COOLDOWN_SECONDS * 1000)
+            return;
+        const otp = generateResetOtp();
+        const now = new Date();
+        await PasswordResetOtp_1.PasswordResetOtp.findOneAndUpdate({ email: normalised }, {
+            email: normalised,
+            codeHash: await hashOtp(otp),
+            expiresAt: new Date(now.getTime() + PasswordResetOtp_1.RESET_OTP_EXPIRY_MINUTES * 60 * 1000),
+            attempts: 0,
+            lastSentAt: now,
+        }, { upsert: true, new: true, setDefaultsOnInsert: true });
+        try {
+            await (0, email_provider_1.sendEmail)(user.email, 'Your LGPSM password reset code', `<div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px 24px;border:1px solid #e5e7eb;border-radius:8px">
+          <h2 style="color:#111827;margin-top:0">Reset your password</h2>
+          <p style="color:#374151">Hello ${user.fullName}, use this code to reset your LGPSM password. It expires in <strong>${PasswordResetOtp_1.RESET_OTP_EXPIRY_MINUTES} minutes</strong>.</p>
+          <div style="text-align:center;margin:28px 0"><span style="display:inline-block;font-size:36px;font-weight:700;letter-spacing:10px;color:#FF651D;background:#fff7f0;padding:16px 24px;border-radius:8px;border:2px solid #FF651D">${otp}</span></div>
+          <p style="color:#6b7280;font-size:13px">If you did not request this, you can ignore this email. Never share this code with anyone.</p>
+        </div>`);
+        }
+        catch (err) {
+            console.error('Password reset code email could not be sent:', err.message);
+        }
+    },
+    /**
+     * Mobile "Forgot password", step 2. Checks the emailed code and, when right, returns the same short-lived
+     * single-use reset token the emailed link carries, to be used with resetPassword. Every failure gives the
+     * same message so a caller cannot tell a wrong code from an expired or unknown one.
+     */
+    async verifyPasswordResetOtp(email, code) {
+        const invalid = { statusCode: 400, message: 'Invalid or expired code.' };
+        const normalised = email.toLowerCase().trim();
+        const record = await PasswordResetOtp_1.PasswordResetOtp.findOne({ email: normalised });
+        if (!record || record.expiresAt.getTime() <= Date.now() || record.attempts >= PasswordResetOtp_1.MAX_RESET_OTP_ATTEMPTS)
+            throw invalid;
+        if (!(await verifyOtp(code, record.codeHash))) {
+            await PasswordResetOtp_1.PasswordResetOtp.updateOne({ _id: record._id }, { $inc: { attempts: 1 } });
+            (0, securityLog_1.securityEvent)('PASSWORD_RESET_OTP_FAILED', undefined, { subject: normalised });
+            throw invalid;
+        }
+        // single use: a verified code is gone immediately
+        await PasswordResetOtp_1.PasswordResetOtp.deleteOne({ _id: record._id });
+        const user = await user_repository_1.userRepository.findByEmail(normalised);
+        if (!user || !user.isActive)
+            throw invalid;
+        return { resetToken: (0, token_1.generatePasswordResetToken)(user._id.toString(), user.role, user.passwordHash) };
     },
     async resetPassword(token, newPassword) {
         const payload = (0, token_1.verifyPasswordResetToken)(token);

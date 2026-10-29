@@ -61,6 +61,24 @@ exports.authController = {
             next(error);
         }
     },
+    async requestPasswordResetOtp(req, res, next) {
+        try {
+            await auth_service_1.authService.requestPasswordResetOtp(req.body.email);
+            res.status(200).json({ success: true, message: 'If the details are correct, a code has been sent.' });
+        }
+        catch (error) {
+            next(error);
+        }
+    },
+    async verifyPasswordResetOtp(req, res, next) {
+        try {
+            const result = await auth_service_1.authService.verifyPasswordResetOtp(req.body.email, req.body.code);
+            res.status(200).json({ success: true, data: result });
+        }
+        catch (error) {
+            next(error);
+        }
+    },
     async resetPassword(req, res, next) {
         try {
             await auth_service_1.authService.resetPassword(req.body.token, req.body.newPassword);

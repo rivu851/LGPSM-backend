@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resendVerificationSchema = exports.verifyEmailSchema = exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.refreshTokenSchema = exports.googleAuthSchema = exports.loginSchema = exports.registerSchema = void 0;
+exports.verifyResetOtpSchema = exports.resendVerificationSchema = exports.verifyEmailSchema = exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.refreshTokenSchema = exports.googleAuthSchema = exports.loginSchema = exports.registerSchema = void 0;
 const zod_1 = require("zod");
 exports.registerSchema = zod_1.z.object({
     fullName: zod_1.z.string().min(2, 'Full name must be at least 2 characters'),
@@ -45,4 +45,9 @@ exports.verifyEmailSchema = zod_1.z.object({
 /** Validates a resend request. */
 exports.resendVerificationSchema = zod_1.z.object({
     email: zod_1.z.string().email('Invalid email format'),
+});
+/** Validates the code submitted in the mobile "Forgot password" flow. */
+exports.verifyResetOtpSchema = zod_1.z.object({
+    email: zod_1.z.string().email('Invalid email format'),
+    code: zod_1.z.string().regex(/^\d{4}$/, 'Enter the 4-digit code'),
 });
