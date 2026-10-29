@@ -10,8 +10,10 @@ import { CARD_LAYOUTS, CardLayout, TextSlotLayout } from './layouts.generated';
 const SLOT_OVERRIDES: Record<string, Record<string, Partial<TextSlotLayout>>> = {
   // Event titles are user supplied and can be much longer than the sample headings. Give them enough lines and a
   // smaller floor so the actual event name stays inside the card instead of spilling past its rounded frame.
-  CORPORATE_V1: { title: { maxLines: 3, minSize: 14 } },
-  CORPORATE_V2: { datePill: { cx: 214, maxWidth: 262 }, title: { maxLines: 3, minSize: 14 } },
+  // The title area in the artwork is visually too close to the card frame for real event names. Reduce its usable
+  // width (including the generated box-width floor) so long titles wrap inside a padded text column.
+  CORPORATE_V1: { title: { boxWidth: 290, maxWidth: 290, maxLines: 2, minSize: 14 } },
+  CORPORATE_V2: { datePill: { cx: 214, maxWidth: 262 }, title: { boxWidth: 290, maxWidth: 290, maxLines: 2, minSize: 14 } },
   // These slots were drawn for one line, with the next element right below; a second line is centred on the designed line, so
   // it spilled over the neighbours ("Please join us…", "Birthday Party", "of our beloved child", the wedding sub-line and the
   // address pin). They stay on one line, shrinking to the slot's minimum size and ending in "…" only as a last resort.

@@ -1,7 +1,12 @@
 import { alertService } from './alert.service';
 import { Invitee, RsvpStatus } from '../models/Invitee';
 import { Event } from '../models/Event';
+import { Session } from '../models/Session';
+import { User } from '../models/User';
 import { hashToken } from '../utils/invitation.util';
+import { inviteeAllowedInSession } from '../utils/sessionAccess';
+import { cardHostName } from './cardTemplates/context';
+import { env } from '../config/env';
 
 interface DietarySelection {
   title: string;
@@ -48,13 +53,29 @@ export const publicInvitationService = {
     }
 
     const tokenHash = hashToken(rawToken);
-    const invitee = await Invitee.findOne({ qrTokenHash: tokenHash }).populate('eventId', 'title description categoryId format location schedule status rsvp dietaryPreference');
+    const invitee = await Invitee.findOne({ qrTokenHash: tokenHash });
 
-    if (!invitee || !invitee.eventId) {
+    if (!invitee) {
       throw new Error('INVITATION_NOT_FOUND');
     }
 
-    const event = invitee.eventId as any;
+    const event = await Event.findById(invitee.eventId).select('title description format location contactNumber schedule status rsvp dietaryPreference organizerId');
+    if (!event) throw new Error('INVITATION_NOT_FOUND');
+
+    const [sessions, organizer] = await Promise.all([
+      Session.find({ eventId: event._id })
+        .select('name schedule inviteeSource sourceSessionId')
+        .sort({ 'schedule.start': 1 })
+        .lean(),
+      User.findById(event.organizerId).select('profile.organizationName').lean()
+    ]);
+    const attendeeSessions = sessions
+      .filter((session) => inviteeAllowedInSession(invitee, session as any))
+      .map((session) => ({
+        name: session.name,
+        start: session.schedule?.start,
+        end: session.schedule?.end
+      }));
 
     return {
       event: {
@@ -62,7 +83,11 @@ export const publicInvitationService = {
         description: event.description,
         format: event.format,
         location: event.location,
+        contactNumber: event.contactNumber,
+        organizerName: cardHostName(organizer as any),
         schedule: event.schedule,
+        timeZone: env.APP_TIMEZONE,
+        sessions: attendeeSessions,
         status: event.status,
         // Whether guests can answer at all; when off, the page shows no RSVP control (submitRsvp refuses it anyway)
         rsvp: { enabled: !!event.rsvp?.enabled, closesAt: event.rsvp?.enabled ? event.rsvp.acceptanceLastDate || event.schedule?.end || null : null },
