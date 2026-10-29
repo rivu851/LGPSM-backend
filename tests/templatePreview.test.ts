@@ -41,6 +41,22 @@ describe('live card preview for the Add Event form', () => {
     expect([meta.width, meta.height]).toEqual([786, 1364]);
   });
 
+  it('can send a small WebP copy for on-screen use, and ignores nonsense options', async () => {
+    const grab = (qs: string) => request(app).post(`/api/v1/templates/${published._id}/preview${qs}`).set('Authorization', bearer(organizer)).send(form)
+      .buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
+    const full = await grab('');
+    const small = await grab('?width=300&format=webp');
+    expect(small.headers['content-type']).toBe('image/webp');
+    expect(small.headers['x-invitation-qr']).toBe('SAMPLE');
+    const meta = await sharp(small.body).metadata();
+    expect([meta.format, meta.width]).toEqual(['webp', 300]);
+    expect((small.body as Buffer).length).toBeLessThan((full.body as Buffer).length / 10);
+    // widths are clamped, an unknown format is ignored, and a request with neither option is the untouched PNG
+    expect((await sharp((await grab('?width=99999')).body).metadata()).width).toBe(786);
+    expect((await grab('?format=gif')).headers['content-type']).toBe('image/png');
+    expect((await grab('?width=abc')).headers['content-type']).toBe('image/png');
+  });
+
   it('changes when the form changes', async () => {
     const grab = async (body: object) => (await preview(String(published._id), organizer, body).buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); })).body as Buffer;
     const a = await grab(form);

@@ -3,6 +3,7 @@ import { templateService } from '../services/template.service';
 import { installDefaultTemplates, planDefaultTemplates } from '../services/cardTemplates/defaultTemplates';
 import { renderTemplatePreview } from '../services/cardTemplates/preview';
 import { renderTemplateForEvent } from '../services/cardTemplates/renderForEvent';
+import { shapePreview } from '../utils/previewImage';
 
 const viewerOf = (req: Request) => ({ userId: (req as any).user?.userId as string | undefined, isAdmin: (req as any).user?.role === 'ADMIN' });
 const isOrganizer = (req: Request) => (req as any).user?.role !== 'ADMIN';
@@ -61,11 +62,12 @@ export const templateController = {
     try {
       const viewer = viewerOf(req);
       const png = await renderTemplatePreview((req.params.id as string | undefined) ?? null, req.body, viewer.isAdmin, viewer.userId);
-      res.setHeader('Content-Type', 'image/png');
+      const shaped = await shapePreview(png, req.query);
+      res.setHeader('Content-Type', shaped.contentType);
       res.setHeader('Cache-Control', 'no-store');
       // the QR on a preview is a placeholder; check-in recognises and rejects it
       res.setHeader('X-Invitation-Qr', 'SAMPLE');
-      return res.status(200).send(png);
+      return res.status(200).send(shaped.body);
     } catch (error: any) {
       if (error.message === 'TEMPLATE_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Template not found' });
       if (error.message === 'TEMPLATE_NOT_USABLE') return res.status(409).json({ error: 'Conflict', message: 'This template cannot be drawn. Please regenerate it.' });

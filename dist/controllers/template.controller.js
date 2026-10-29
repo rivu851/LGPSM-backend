@@ -5,6 +5,7 @@ const template_service_1 = require("../services/template.service");
 const defaultTemplates_1 = require("../services/cardTemplates/defaultTemplates");
 const preview_1 = require("../services/cardTemplates/preview");
 const renderForEvent_1 = require("../services/cardTemplates/renderForEvent");
+const previewImage_1 = require("../utils/previewImage");
 const viewerOf = (req) => ({ userId: req.user?.userId, isAdmin: req.user?.role === 'ADMIN' });
 const isOrganizer = (req) => req.user?.role !== 'ADMIN';
 exports.templateController = {
@@ -61,11 +62,12 @@ exports.templateController = {
         try {
             const viewer = viewerOf(req);
             const png = await (0, preview_1.renderTemplatePreview)(req.params.id ?? null, req.body, viewer.isAdmin, viewer.userId);
-            res.setHeader('Content-Type', 'image/png');
+            const shaped = await (0, previewImage_1.shapePreview)(png, req.query);
+            res.setHeader('Content-Type', shaped.contentType);
             res.setHeader('Cache-Control', 'no-store');
             // the QR on a preview is a placeholder; check-in recognises and rejects it
             res.setHeader('X-Invitation-Qr', 'SAMPLE');
-            return res.status(200).send(png);
+            return res.status(200).send(shaped.body);
         }
         catch (error) {
             if (error.message === 'TEMPLATE_NOT_FOUND')

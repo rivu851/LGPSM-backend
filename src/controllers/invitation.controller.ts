@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { invitationService } from '../services/invitation.service';
 import { DeliveryChannel } from '../models/Invitation';
+import { shapePreview } from '../utils/previewImage';
 
 // Per-guest outcome counts for a send or resend ("All" delivery skips guests with no usable contact)
 const deliverySummary = (results: { status: string }[]) => ({
@@ -106,11 +107,12 @@ export const invitationController = {
       };
 
       const { png: pngBuffer, qr } = await invitationService.previewInvitationCard(eventId, user, inviteeId);
-      res.setHeader('Content-Type', 'image/png');
+      const shaped = await shapePreview(pngBuffer, req.query);
+      res.setHeader('Content-Type', shaped.contentType);
       // ISSUED: the QR is the guest's current check-in pass; SAMPLE: placeholder, not valid for check-in
       res.setHeader('X-Invitation-Qr', qr);
-      res.setHeader('Content-Disposition', 'inline; filename="invitation-card-preview.png"');
-      return res.status(200).send(pngBuffer);
+      res.setHeader('Content-Disposition', `inline; filename="invitation-card-preview.${shaped.contentType === 'image/webp' ? 'webp' : 'png'}"`);
+      return res.status(200).send(shaped.body);
     } catch (error: any) {
       if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Event not found' });
       console.error('Request failed:', error?.message);

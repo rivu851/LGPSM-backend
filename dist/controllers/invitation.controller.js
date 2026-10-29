@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.invitationController = void 0;
 const invitation_service_1 = require("../services/invitation.service");
 const Invitation_1 = require("../models/Invitation");
+const previewImage_1 = require("../utils/previewImage");
 // Per-guest outcome counts for a send or resend ("All" delivery skips guests with no usable contact)
 const deliverySummary = (results) => ({
     sent: results.filter((r) => r.status === 'SENT').length,
@@ -109,11 +110,12 @@ exports.invitationController = {
                 role: req.user?.role
             };
             const { png: pngBuffer, qr } = await invitation_service_1.invitationService.previewInvitationCard(eventId, user, inviteeId);
-            res.setHeader('Content-Type', 'image/png');
+            const shaped = await (0, previewImage_1.shapePreview)(pngBuffer, req.query);
+            res.setHeader('Content-Type', shaped.contentType);
             // ISSUED: the QR is the guest's current check-in pass; SAMPLE: placeholder, not valid for check-in
             res.setHeader('X-Invitation-Qr', qr);
-            res.setHeader('Content-Disposition', 'inline; filename="invitation-card-preview.png"');
-            return res.status(200).send(pngBuffer);
+            res.setHeader('Content-Disposition', `inline; filename="invitation-card-preview.${shaped.contentType === 'image/webp' ? 'webp' : 'png'}"`);
+            return res.status(200).send(shaped.body);
         }
         catch (error) {
             if (error.message === 'EVENT_NOT_FOUND')
