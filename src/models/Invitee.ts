@@ -25,6 +25,7 @@ export interface IInvitee extends Document {
   invitationStatus: InvitationStatus;
   rsvpStatus: RsvpStatus;
   dietaryPreference?: string;
+  dietarySelections?: { title: string; value: string }[];
   companyName?: string;
   /** e.g. "Employee ID: 4521" (Add Invitee "Professional Identity"); can be printed on the card */
   professionalIdentity?: string;
@@ -60,6 +61,10 @@ const InviteeSchema: Schema = new Schema(
       required: true 
     },
     dietaryPreference: { type: String },
+    dietarySelections: {
+      type: [{ title: { type: String, required: true }, value: { type: String, required: true } }],
+      default: undefined
+    },
     companyName: { type: String, trim: true },
     professionalIdentity: { type: String, trim: true, maxlength: 100 },
     company: { type: String, trim: true },
