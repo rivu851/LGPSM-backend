@@ -18,7 +18,6 @@ const validate = (schema) => (req, res, next) => {
 router.use(rateLimiter_1.authRateLimiter);
 router.post('/register', validate(auth_validator_1.registerSchema), auth_controller_1.authController.register);
 router.post('/login', validate(auth_validator_1.loginSchema), auth_controller_1.authController.login);
-router.post('/google', validate(auth_validator_1.googleAuthSchema), auth_controller_1.authController.googleAuth);
 router.post('/refresh', validate(auth_validator_1.refreshTokenSchema), auth_controller_1.authController.refresh);
 router.post('/logout', auth_controller_1.authController.logout);
 router.post('/forgot-password', validate(auth_validator_1.forgotPasswordSchema), auth_controller_1.authController.forgotPassword);

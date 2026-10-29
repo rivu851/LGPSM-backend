@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyResetOtpSchema = exports.resendVerificationSchema = exports.verifyEmailSchema = exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.refreshTokenSchema = exports.googleAuthSchema = exports.loginSchema = exports.registerSchema = void 0;
+exports.verifyResetOtpSchema = exports.resendVerificationSchema = exports.verifyEmailSchema = exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.refreshTokenSchema = exports.loginSchema = exports.registerSchema = void 0;
 const zod_1 = require("zod");
 exports.registerSchema = zod_1.z.object({
     fullName: zod_1.z.string().min(2, 'Full name must be at least 2 characters'),
@@ -18,11 +18,6 @@ exports.loginSchema = zod_1.z.object({
     phone: zod_1.z.string().min(4, 'Invalid mobile number').optional(),
     password: zod_1.z.string().min(1, 'Password is required'),
     role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
-});
-exports.googleAuthSchema = zod_1.z.object({
-    token: zod_1.z.string().min(1, 'Google ID token is required'),
-    // The sign-in portal being used, so a Google account cannot cross into the other portal (same check as password sign-in)
-    role: zod_1.z.enum(['ADMIN', 'ORGANIZER']).optional(),
 });
 exports.refreshTokenSchema = zod_1.z.object({
     refreshToken: zod_1.z.string().min(1, 'Refresh token is required'),

@@ -8,7 +8,6 @@ import {
 import {
   registerSchema,
   loginSchema,
-  googleAuthSchema,
   refreshTokenSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
@@ -35,7 +34,6 @@ router.use(authRateLimiter);
 
 router.post('/register', validate(registerSchema), authController.register);
 router.post('/login', validate(loginSchema), authController.login);
-router.post('/google', validate(googleAuthSchema), authController.googleAuth);
 router.post('/refresh', validate(refreshTokenSchema), authController.refresh);
 router.post('/logout', authController.logout);
 router.post('/forgot-password', validate(forgotPasswordSchema), authController.forgotPassword);

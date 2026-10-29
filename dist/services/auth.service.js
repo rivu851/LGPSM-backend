@@ -6,7 +6,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.authService = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 const bcrypt_1 = __importDefault(require("bcrypt"));
-const google_auth_library_1 = require("google-auth-library");
 const user_repository_1 = require("../repositories/user.repository");
 const securityLog_1 = require("../utils/securityLog");
 const token_repository_1 = require("../repositories/token.repository");
@@ -20,7 +19,6 @@ const PasswordResetOtp_1 = require("../models/PasswordResetOtp");
 const alert_service_1 = require("./alert.service");
 const env_1 = require("../config/env");
 const whatsapp_service_1 = require("./whatsapp.service");
-const googleClient = new google_auth_library_1.OAuth2Client(env_1.env.GOOGLE_CLIENT_ID);
 // ─── OTP helpers (no plaintext ever leaves this module) ───────────────────────
 /** Generates a cryptographically random 6-digit string (zero-padded). */
 function generateOtpPlaintext() {
@@ -279,53 +277,6 @@ exports.authService = {
         // Account-activation check (administrative disable, separate from email verification)
         if (!user.isActive) {
             throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
-        }
-        const userId = user._id.toString();
-        const accessToken = (0, token_1.generateAccessToken)(userId, user.role);
-        const refreshToken = (0, token_1.generateRefreshToken)(userId, user.role);
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        await token_repository_1.tokenRepository.createRefreshToken(userId, refreshToken, expiresAt);
-        return { user, accessToken, refreshToken };
-    },
-    async googleAuth(idToken, portalRole) {
-        if (!env_1.env.GOOGLE_CLIENT_ID) {
-            throw { statusCode: 501, message: 'Google Auth not configured on server' };
-        }
-        const ticket = await googleClient.verifyIdToken({
-            idToken,
-            audience: env_1.env.GOOGLE_CLIENT_ID,
-        });
-        const payload = ticket.getPayload();
-        if (!payload || !payload.email || !payload.email_verified) {
-            throw { statusCode: 401, message: 'Invalid or unverified Google token' };
-        }
-        let user = await user_repository_1.userRepository.findByEmail(payload.email);
-        // Same portal rule as password sign-in: the Organizer tab never opens an Admin account, and the Admin tab
-        // never creates or opens an organizer account
-        const wrongPortal = {
-            statusCode: 403,
-            message: `This account is not registered as ${String(portalRole).replace('_', ' ').toLowerCase()}. Please use the correct login option.`,
-        };
-        if (portalRole && user && user.role !== portalRole)
-            throw wrongPortal;
-        if (portalRole && !user && portalRole !== User_1.Role.ORGANIZER)
-            throw wrongPortal;
-        if (!user) {
-            // Google-authenticated organizers have a verified email by definition
-            user = await user_repository_1.userRepository.create({
-                fullName: payload.name || 'Google User',
-                email: payload.email,
-                authProvider: User_1.AuthProvider.GOOGLE,
-                role: User_1.Role.ORGANIZER,
-                isEmailVerified: true,
-                isActive: true,
-            });
-        }
-        else if (user.authProvider !== User_1.AuthProvider.GOOGLE) {
-            throw { statusCode: 400, message: 'Email already associated with a local account' };
-        }
-        if (!user.isActive) {
-            throw { statusCode: 403, message: 'User account is inactive' };
         }
         const userId = user._id.toString();
         const accessToken = (0, token_1.generateAccessToken)(userId, user.role);

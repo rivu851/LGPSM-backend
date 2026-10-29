@@ -23,15 +23,6 @@ export const authController = {
     }
   },
 
-  async googleAuth(req: Request, res: Response, next: NextFunction) {
-    try {
-      const result = await authService.googleAuth(req.body.token, req.body.role);
-      res.status(200).json({ success: true, data: result });
-    } catch (error) {
-      next(error);
-    }
-  },
-
   async refresh(req: Request, res: Response, next: NextFunction) {
     try {
       const result = await authService.refresh(req.body.refreshToken);
