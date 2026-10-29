@@ -25,7 +25,11 @@ exports.updateUserSchema = zod_1.z.object({
     email: zod_1.z.string().email('Invalid email address').optional(),
     phone: zod_1.z.string().optional(),
     password: zod_1.z.string().min(6, 'Password must be at least 6 characters').optional(),
-    isActive: zod_1.z.boolean().optional()
+    isActive: zod_1.z.boolean().optional(),
+    profile: zod_1.z.object({
+        organizationName: zod_1.z.string().max(150).optional(),
+        logoKey: zod_1.z.string().max(200).optional()
+    }).strict().optional()
 }).strict();
 exports.changePasswordSchema = zod_1.z.object({
     currentPassword: zod_1.z.string().min(1, 'Current password is required'),

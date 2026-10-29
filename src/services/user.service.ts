@@ -231,6 +231,11 @@ export const userService = {
     }
     if (data.phone !== undefined) updatePayload.phone = normalizePhoneNumber(data.phone);
     if (data.isActive !== undefined && actor.role === Role.ADMIN) updatePayload.isActive = data.isActive;
+    // Only the organizer details an admin manages; the rest of the profile (avatar, etc.) is left as is
+    if (data.profile && actor.role === Role.ADMIN) {
+      if (data.profile.organizationName !== undefined) updatePayload['profile.organizationName'] = data.profile.organizationName;
+      if (data.profile.logoKey !== undefined) updatePayload['profile.logoKey'] = data.profile.logoKey;
+    }
     if (data.password) {
       const { hashPassword } = await import('../utils/password');
       updatePayload.passwordHash = await hashPassword(data.password);

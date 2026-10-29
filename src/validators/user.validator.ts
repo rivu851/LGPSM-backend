@@ -26,7 +26,11 @@ export const updateUserSchema = z.object({
   email: z.string().email('Invalid email address').optional(),
   phone: z.string().optional(),
   password: z.string().min(6, 'Password must be at least 6 characters').optional(),
-  isActive: z.boolean().optional()
+  isActive: z.boolean().optional(),
+  profile: z.object({
+    organizationName: z.string().max(150).optional(),
+    logoKey: z.string().max(200).optional()
+  }).strict().optional()
 }).strict();
 
 export const changePasswordSchema = z.object({
