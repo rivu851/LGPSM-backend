@@ -12,6 +12,31 @@ const cardInfoSchema = zod_1.z.object({
     primary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(),
     secondary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable()
 }).strict();
+const validateDietaryOptions = (preference, ctx) => {
+    if (preference.enabled !== true)
+        return;
+    const options = preference.options || [];
+    const hasValidOptions = options.length > 0 && options.every((entry) => {
+        if (typeof entry === 'string')
+            return entry.trim().length > 0;
+        if (!entry || typeof entry !== 'object' || !Array.isArray(entry.options))
+            return false;
+        return entry.options.some((option) => typeof option === 'string' && option.trim().length > 0);
+    });
+    if (!hasValidOptions) {
+        ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ['options'], message: 'Add at least one dietary option for each question.' });
+    }
+};
+const dietaryPreferenceCreateSchema = zod_1.z.object({
+    enabled: zod_1.z.boolean().optional(),
+    title: zod_1.z.string().optional(),
+    options: zod_1.z.array(zod_1.z.any()).optional()
+}).superRefine(validateDietaryOptions);
+const dietaryPreferenceUpdateSchema = zod_1.z.object({
+    enabled: zod_1.z.boolean(),
+    title: zod_1.z.string().optional(),
+    options: zod_1.z.array(zod_1.z.any()).optional()
+}).superRefine(validateDietaryOptions);
 exports.createEventSchema = zod_1.z.object({
     body: zod_1.z.object({
         title: zod_1.z.string().min(1, 'Title is required').max(eventLimits_1.EVENT_TITLE_MAX_LENGTH, `Title cannot exceed ${eventLimits_1.EVENT_TITLE_MAX_LENGTH} characters`),
@@ -36,11 +61,7 @@ exports.createEventSchema = zod_1.z.object({
             thresholdLimit: zod_1.z.number().positive().optional()
         }).optional(),
         cardInfo: cardInfoSchema.optional(),
-        dietaryPreference: zod_1.z.object({
-            enabled: zod_1.z.boolean().optional(),
-            title: zod_1.z.string().optional(),
-            options: zod_1.z.array(zod_1.z.any()).optional()
-        }).optional(),
+        dietaryPreference: dietaryPreferenceCreateSchema.optional(),
         templateId: objectIdSchema.optional(),
         media: zod_1.z.object({
             // '' clears the logo
@@ -82,11 +103,7 @@ exports.updateEventSchema = zod_1.z.object({
             thresholdLimit: zod_1.z.number().positive().optional()
         }).optional(),
         cardInfo: cardInfoSchema.optional(),
-        dietaryPreference: zod_1.z.object({
-            enabled: zod_1.z.boolean(),
-            title: zod_1.z.string().optional(),
-            options: zod_1.z.array(zod_1.z.any()).optional()
-        }).optional(),
+        dietaryPreference: dietaryPreferenceUpdateSchema.optional(),
         templateId: objectIdSchema.optional(),
         media: zod_1.z.object({
             // '' clears the logo

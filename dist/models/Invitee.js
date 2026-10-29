@@ -69,6 +69,10 @@ const InviteeSchema = new mongoose_1.Schema({
         required: true
     },
     dietaryPreference: { type: String },
+    dietarySelections: {
+        type: [{ title: { type: String, required: true }, value: { type: String, required: true } }],
+        default: undefined
+    },
     companyName: { type: String, trim: true },
     professionalIdentity: { type: String, trim: true, maxlength: 100 },
     company: { type: String, trim: true },

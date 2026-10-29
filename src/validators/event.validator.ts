@@ -11,6 +11,31 @@ const cardInfoSchema = z.object({
   secondary: z.enum(CARD_INFO_FIELDS).nullable()
 }).strict();
 
+const validateDietaryOptions = (preference: { enabled?: boolean; options?: any[] }, ctx: z.RefinementCtx) => {
+  if (preference.enabled !== true) return;
+  const options = preference.options || [];
+  const hasValidOptions = options.length > 0 && options.every((entry) => {
+    if (typeof entry === 'string') return entry.trim().length > 0;
+    if (!entry || typeof entry !== 'object' || !Array.isArray(entry.options)) return false;
+    return entry.options.some((option: unknown) => typeof option === 'string' && option.trim().length > 0);
+  });
+  if (!hasValidOptions) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['options'], message: 'Add at least one dietary option for each question.' });
+  }
+};
+
+const dietaryPreferenceCreateSchema = z.object({
+  enabled: z.boolean().optional(),
+  title: z.string().optional(),
+  options: z.array(z.any()).optional()
+}).superRefine(validateDietaryOptions);
+
+const dietaryPreferenceUpdateSchema = z.object({
+  enabled: z.boolean(),
+  title: z.string().optional(),
+  options: z.array(z.any()).optional()
+}).superRefine(validateDietaryOptions);
+
 export const createEventSchema = z.object({
   body: z.object({
     title: z.string().min(1, 'Title is required').max(EVENT_TITLE_MAX_LENGTH, `Title cannot exceed ${EVENT_TITLE_MAX_LENGTH} characters`),
@@ -35,11 +60,7 @@ export const createEventSchema = z.object({
       thresholdLimit: z.number().positive().optional()
     }).optional(),
     cardInfo: cardInfoSchema.optional(),
-    dietaryPreference: z.object({
-      enabled: z.boolean().optional(),
-      title: z.string().optional(),
-      options: z.array(z.any()).optional()
-    }).optional(),
+    dietaryPreference: dietaryPreferenceCreateSchema.optional(),
     templateId: objectIdSchema.optional(),
     media: z.object({
       // '' clears the logo
@@ -82,11 +103,7 @@ export const updateEventSchema = z.object({
       thresholdLimit: z.number().positive().optional()
     }).optional(),
     cardInfo: cardInfoSchema.optional(),
-    dietaryPreference: z.object({
-      enabled: z.boolean(),
-      title: z.string().optional(),
-      options: z.array(z.any()).optional()
-    }).optional(),
+    dietaryPreference: dietaryPreferenceUpdateSchema.optional(),
     templateId: objectIdSchema.optional(),
     media: z.object({
       // '' clears the logo

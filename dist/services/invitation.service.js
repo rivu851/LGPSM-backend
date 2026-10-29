@@ -167,6 +167,48 @@ function channelsForInvitee(channel, invitee) {
     };
 }
 exports.invitationService = {
+    async publicInvitationCard(rawToken) {
+        if (!rawToken || typeof rawToken !== 'string')
+            throw new Error('INVALID_TOKEN');
+        const invitee = await Invitee_1.Invitee.findOne({ qrTokenHash: (0, invitation_util_1.hashToken)(rawToken) }).select('+qrTokenCipher');
+        if (!invitee)
+            throw new Error('INVITATION_NOT_FOUND');
+        const event = await Event_1.Event.findById(invitee.eventId);
+        if (!event)
+            throw new Error('INVITATION_NOT_FOUND');
+        const cardContext = await (0, context_1.loadCardContext)(event);
+        const eventPhotoBase64 = await (0, resolveImageBase64_1.resolveImageKeyBase64)(event.media?.logoKey);
+        const guestLines = (0, cardInfo_1.cardGuestLines)(invitee, event.cardInfo);
+        const allSessions = await Session_1.Session.find({ eventId: event._id }).sort({ 'schedule.start': 1 }).lean();
+        const { eventDate, dayOfWeek, eventTime, venue, locationSub, sessions: assignedSessions } = (0, invitationContent_1.buildInvitationContent)(event, allSessions, invitee);
+        const invitationUrl = (0, qrPayload_1.invitationUrlFor)(rawToken);
+        const qrDataUrl = await (0, qr_util_1.generateQRCodeDataURL)(invitationUrl);
+        return invitationCard_service_1.invitationCardService.generateInvitationCardPNG({
+            invitee: { id: String(invitee._id), ...guestLines },
+            event: {
+                title: event.title,
+                date: eventDate,
+                dayOfWeek,
+                startTime: eventTime,
+                timeSub: 'ONWARDS',
+                venue,
+                locationSub,
+                photoBase64: eventPhotoBase64,
+                startIso: event.schedule?.start,
+                endIso: event.schedule?.end,
+                categoryName: cardContext.categoryName,
+                subcategoryName: cardContext.subcategoryName,
+                isVirtual: event.format === 'VIRTUAL',
+                description: event.description,
+                organizerName: cardContext.organizerName
+            },
+            sessions: assignedSessions,
+            qrDataUrl,
+            invitationUrl,
+            cardDesign: cardContext.cardDesign,
+            designSpec: cardContext.designSpec
+        });
+    },
     async sendInvitations(eventId, userOrOrganizerId, inviteeIds, channel) {
         const isUserObj = typeof userOrOrganizerId === 'object' && userOrOrganizerId !== null;
         const organizerId = isUserObj ? userOrOrganizerId.userId : userOrOrganizerId;

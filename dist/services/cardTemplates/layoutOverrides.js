@@ -10,7 +10,12 @@ const layouts_generated_1 = require("./layouts.generated");
  * centred in the free space to the right of the icon and kept at least ~16px (card scale) away from it.
  */
 const SLOT_OVERRIDES = {
-    CORPORATE_V2: { datePill: { cx: 214, maxWidth: 262 } },
+    // Event titles are user supplied and can be much longer than the sample headings. Give them enough lines and a
+    // smaller floor so the actual event name stays inside the card instead of spilling past its rounded frame.
+    // The title area in the artwork is visually too close to the card frame for real event names. Reduce its usable
+    // width (including the generated box-width floor) so long titles wrap inside a padded text column.
+    CORPORATE_V1: { title: { boxWidth: 290, maxWidth: 290, maxLines: 2, minSize: 14 } },
+    CORPORATE_V2: { datePill: { cx: 214, maxWidth: 262 }, title: { boxWidth: 290, maxWidth: 290, maxLines: 2, minSize: 14 } },
     // These slots were drawn for one line, with the next element right below; a second line is centred on the designed line, so
     // it spilled over the neighbours ("Please join us…", "Birthday Party", "of our beloved child", the wedding sub-line and the
     // address pin). They stay on one line, shrinking to the slot's minimum size and ending in "…" only as a last resort.

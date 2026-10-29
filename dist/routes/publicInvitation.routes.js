@@ -17,6 +17,7 @@ const validate = (schema) => (req, res, next) => {
     }
 };
 // GET /api/v1/public/invitations/:token
+router.get('/:token/card', publicInvitation_controller_1.publicInvitationController.getPublicInvitationCard);
 router.get('/:token', publicInvitation_controller_1.publicInvitationController.getPublicInvitation);
 // POST /api/v1/public/invitations/:token/rsvp
 router.post('/:token/rsvp', validate(publicInvitation_validator_1.submitRsvpSchema), publicInvitation_controller_1.publicInvitationController.submitRsvp);
