@@ -340,3 +340,24 @@ describe('date line next to the calendar icon', () => {
     }
   });
 });
+
+describe('long names never cover neighbouring text', () => {
+  // The heading/sub-lines under a one-line name slot are fixed; a wrapped name used to spill over them
+  const region = async (design: string, title: string, subcategoryName: string, box: { left: number; top: number; width: number; height: number }) => {
+    const png = await renderTemplateCard({ design: design as any, texts: buildTemplateTexts({ design, title, subcategoryName, startIso: '2026-10-29T11:00:00+05:30' } as any) });
+    const meta = await sharp(png).metadata();
+    const s = (meta.width || 786) / 393;
+    return sharp(png).extract({ left: Math.round(box.left * s), top: Math.round(box.top * s), width: Math.round(box.width * s), height: Math.round(box.height * s) }).raw().toBuffer();
+  };
+  const diff = (a: Buffer, b: Buffer) => { let d = 0; for (let i = 0; i < a.length; i++) d += Math.abs(a[i] - b[i]); return d / a.length; };
+
+  it.each([
+    ['BIRTHDAY', 'Birthday', 'Moloy Birthday', 'Product Launch Event 2026 Grand Celebration', { left: 90, top: 283, width: 213, height: 30 }],  // "Birthday Party"
+    ['BIRTHDAY', 'Birthday', 'Moloy Birthday', 'Product Launch Event 2026 Grand Celebration', { left: 95, top: 208, width: 203, height: 14 }],  // "Please Join us to celebrate"
+    ['RICE_CEREMONY', 'Rice Ceremony', 'Ayanika Rice Ceremony', 'Ayanika Chatterjee Mukherjee Banerjee Rice Ceremony', { left: 120, top: 252, width: 153, height: 12 }],  // "of our beloved child"
+  ])('%s keeps its fixed text clear', async (design, sub, short, long, box) => {
+    const a = await region(design, short, sub, box);
+    const b = await region(design, long, sub, box);
+    expect(diff(a, b)).toBeLessThan(2);
+  });
+});

@@ -341,7 +341,7 @@ exports.invitationService = {
                 }
                 catch (err) {
                     whatsappSuccess = false;
-                    whatsappErrReason = err.message;
+                    whatsappErrReason = (0, whatsapp_service_1.describeWhatsAppError)(err.message);
                     invitation.whatsappStatus = Invitation_1.InvitationDeliveryStatus.FAILED;
                     invitation.whatsappFailureReason = whatsappErrReason;
                 }
@@ -584,7 +584,7 @@ exports.invitationService = {
                 }
                 catch (err) {
                     whatsappSuccess = false;
-                    whatsappErrReason = err.message;
+                    whatsappErrReason = (0, whatsapp_service_1.describeWhatsAppError)(err.message);
                     resendInvitation.whatsappStatus = Invitation_1.InvitationDeliveryStatus.FAILED;
                     resendInvitation.whatsappFailureReason = whatsappErrReason;
                 }

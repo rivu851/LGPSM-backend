@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.whatsappService = void 0;
 exports.normalizePhoneNumber = normalizePhoneNumber;
+exports.describeWhatsAppError = describeWhatsAppError;
 const env_1 = require("../config/env");
 function normalizePhoneNumber(phone) {
     if (!phone || typeof phone !== 'string')
@@ -12,6 +13,22 @@ function normalizePhoneNumber(phone) {
         cleaned = `91${cleaned}`;
     }
     return cleaned;
+}
+/**
+ * The organizer sees why a WhatsApp delivery failed; the internal codes ("WHATSAPP_MEDIA_UPLOAD_FAILED: ...") read as a bug, so
+ * known ones get a plain sentence and keep the provider's own detail.
+ */
+function describeWhatsAppError(message) {
+    const raw = String(message || '').trim();
+    const [code, ...rest] = raw.split(':');
+    const detail = rest.join(':').trim();
+    const withDetail = (text) => (detail ? `${text} (${detail})` : text);
+    switch (code) {
+        case 'WHATSAPP_CONFIG_MISSING': return 'WhatsApp is not set up on the server';
+        case 'WHATSAPP_MEDIA_UPLOAD_FAILED': return withDetail('WhatsApp did not accept the invitation image');
+        case 'WHATSAPP_TEMPLATE_SEND_FAILED': return withDetail('WhatsApp did not deliver the message');
+        default: return raw || 'WhatsApp delivery failed';
+    }
 }
 exports.whatsappService = {
     normalizePhoneNumber,

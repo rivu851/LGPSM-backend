@@ -11,6 +11,12 @@ const layouts_generated_1 = require("./layouts.generated");
  */
 const SLOT_OVERRIDES = {
     CORPORATE_V2: { datePill: { cx: 214, maxWidth: 262 } },
+    // These slots were drawn for one line, with the next element right below; a second line is centred on the designed line, so
+    // it spilled over the neighbours ("Please join us…", "Birthday Party", "of our beloved child", the wedding sub-line and the
+    // address pin). They stay on one line, shrinking to the slot's minimum size and ending in "…" only as a last resort.
+    BIRTHDAY: { honoree: { maxLines: 1 } },
+    WEDDING: { names: { maxLines: 1 }, subline: { maxLines: 1 }, address: { maxLines: 1 } },
+    RICE_CEREMONY: { honoree: { maxLines: 1 } },
 };
 exports.LAYOUTS = Object.fromEntries(Object.entries(layouts_generated_1.CARD_LAYOUTS).map(([design, layout]) => {
     const patch = SLOT_OVERRIDES[design];

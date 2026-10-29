@@ -9,6 +9,12 @@ import { CARD_LAYOUTS, CardLayout, TextSlotLayout } from './layouts.generated';
  */
 const SLOT_OVERRIDES: Record<string, Record<string, Partial<TextSlotLayout>>> = {
   CORPORATE_V2: { datePill: { cx: 214, maxWidth: 262 } },
+  // These slots were drawn for one line, with the next element right below; a second line is centred on the designed line, so
+  // it spilled over the neighbours ("Please join us…", "Birthday Party", "of our beloved child", the wedding sub-line and the
+  // address pin). They stay on one line, shrinking to the slot's minimum size and ending in "…" only as a last resort.
+  BIRTHDAY: { honoree: { maxLines: 1 } },
+  WEDDING: { names: { maxLines: 1 }, subline: { maxLines: 1 }, address: { maxLines: 1 } },
+  RICE_CEREMONY: { honoree: { maxLines: 1 } },
 };
 
 export const LAYOUTS: Record<string, CardLayout> = Object.fromEntries(

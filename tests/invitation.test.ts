@@ -128,7 +128,7 @@ describe('Invitation Service', () => {
 
     const invitation = await Invitation.findOne({ inviteeId });
     expect(invitation?.status).toBe(InvitationDeliveryStatus.FAILED);
-    expect(invitation?.failureReason).toContain('WhatsApp: WHATSAPP_MEDIA_UPLOAD_FAILED: Invalid Token');
+    expect(invitation?.failureReason).toContain('WhatsApp: WhatsApp did not accept the invitation image (Invalid Token)');
 
     mockSendWA.mockRestore();
   });
@@ -336,3 +336,14 @@ describe('Invitation Service', () => {
   });
 });
 
+
+describe('WhatsApp failure reasons shown to organizers', () => {
+  it('turns internal codes into plain sentences and keeps the provider detail', () => {
+    const { describeWhatsAppError } = require('../src/services/whatsapp.service');
+    expect(describeWhatsAppError('WHATSAPP_CONFIG_MISSING: Access token not configured')).toBe('WhatsApp is not set up on the server');
+    expect(describeWhatsAppError('WHATSAPP_MEDIA_UPLOAD_FAILED: Invalid OAuth access token')).toBe('WhatsApp did not accept the invitation image (Invalid OAuth access token)');
+    expect(describeWhatsAppError('WHATSAPP_TEMPLATE_SEND_FAILED: Recipient not in allowed list')).toBe('WhatsApp did not deliver the message (Recipient not in allowed list)');
+    expect(describeWhatsAppError('socket hang up')).toBe('socket hang up');
+    expect(describeWhatsAppError(undefined)).toBe('WhatsApp delivery failed');
+  });
+});

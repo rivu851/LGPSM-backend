@@ -11,7 +11,7 @@ import { generateQRCodeDataURL } from '../utils/qr.util';
 import { invitationUrlFor, previewSampleUrl } from '../utils/qrPayload';
 import { decryptToken, encryptToken } from '../utils/tokenCipher';
 import { sendEmail } from '../utils/email.provider';
-import { whatsappService } from './whatsapp.service';
+import { whatsappService, describeWhatsAppError } from './whatsapp.service';
 import { invitationCardService } from './invitationCard.service';
 import { mapLimit } from '../utils/concurrency';
 import { loadCardContext } from './cardTemplates/context';
@@ -369,7 +369,7 @@ export const invitationService = {
           invitation.whatsappFailureReason = undefined;
         } catch (err: any) {
           whatsappSuccess = false;
-          whatsappErrReason = err.message;
+          whatsappErrReason = describeWhatsAppError(err.message);
           invitation.whatsappStatus = InvitationDeliveryStatus.FAILED;
           invitation.whatsappFailureReason = whatsappErrReason;
         }
@@ -632,7 +632,7 @@ export const invitationService = {
           resendInvitation.whatsappFailureReason = undefined;
         } catch (err: any) {
           whatsappSuccess = false;
-          whatsappErrReason = err.message;
+          whatsappErrReason = describeWhatsAppError(err.message);
           resendInvitation.whatsappStatus = InvitationDeliveryStatus.FAILED;
           resendInvitation.whatsappFailureReason = whatsappErrReason;
         }
