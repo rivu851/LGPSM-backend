@@ -13,7 +13,7 @@ export const createSessionSchema = z.object({
       path: ['end']
     }),
     admission: admissionSchema.optional(),
-    accessControl: z.nativeEnum(AccessControl).default(AccessControl.NO_RESTRICTION),
+    accessControl: z.nativeEnum(AccessControl).default(AccessControl.ONLY_ONCE),
     validateAgainstOtherSessions: z.boolean().default(false),
     inviteeSource: z.nativeEnum(InviteeSource).default(InviteeSource.NEW_LIST),
     sourceSessionId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid session ID').nullable().optional()

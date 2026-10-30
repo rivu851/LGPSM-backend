@@ -27,8 +27,8 @@ const SEND_CONCURRENCY = 5;
  * Which guests were actually invited, and on which channels, from the delivery records that already exist.
  * A guest may have several Invitation rows (every resend adds one): any SENT delivery counts.
  */
-async function planRecipients(eventId) {
-    const rows = await Invitation_1.Invitation.find({ eventId }).select('inviteeId channel status emailStatus whatsappStatus').lean();
+async function planRecipients(eventId, inviteeId) {
+    const rows = await Invitation_1.Invitation.find({ eventId, ...(inviteeId ? { inviteeId: inviteeId } : {}) }).select('inviteeId channel status emailStatus whatsappStatus').lean();
     const byInvitee = new Map();
     for (const r of rows) {
         const key = String(r.inviteeId);

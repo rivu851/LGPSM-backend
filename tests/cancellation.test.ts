@@ -449,6 +449,8 @@ describe('P0.3 — event cancellation lifecycle', () => {
     it('records who cancelled, why and for which tenant; the organizer can read it; no secrets', async () => {
       await cancel(tOrg, { reason: 'Venue unavailable' });
       await settle(event._id);
+      // the audit entry is completed after the response is sent: wait for it to leave PENDING
+      for (let i = 0; i < 80 && (await AuditLog.countDocuments({ action: 'EVENT_CANCEL', status: { $ne: 'PENDING' } })) === 0; i++) await new Promise((r) => setTimeout(r, 25));
       const row: any = await AuditLog.findOne({ action: 'EVENT_CANCEL' });
       expect(row.status).toBe('SUCCESS');
       expect(String(row.actorId)).toBe(String(org._id));

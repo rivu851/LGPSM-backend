@@ -6,7 +6,15 @@ const User_1 = require("../models/User");
 exports.updateProfileSchema = zod_1.z.object({
     fullName: zod_1.z.string().min(2, 'Full name must be at least 2 characters').optional(),
     phone: zod_1.z.string().optional(),
-    profile: zod_1.z.record(zod_1.z.string(), zod_1.z.any()).optional()
+    profile: zod_1.z.record(zod_1.z.string(), zod_1.z.any()).optional(),
+    // The organizer's organization, kept apart from their personal details (name, phone). Organizers and admins only.
+    organization: zod_1.z.object({
+        name: zod_1.z.string().trim().min(1, 'Organization name is required').max(150),
+        phone: zod_1.z.string().trim().max(30).regex(/^[+\d][\d\s()-]*$/, 'Enter a valid phone number').optional().or(zod_1.z.literal('')),
+        email: zod_1.z.string().trim().email('Enter a valid organization email').max(150).optional().or(zod_1.z.literal('')),
+        address: zod_1.z.string().trim().max(300).optional(),
+        website: zod_1.z.string().trim().max(200).regex(/^https?:\/\/[^\s]+$/i, 'Website must start with http:// or https://').optional().or(zod_1.z.literal(''))
+    }).strict().optional()
 }).strict();
 exports.createUserSchema = zod_1.z.object({
     fullName: zod_1.z.string().min(2, 'Full name must be at least 2 characters'),

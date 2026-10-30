@@ -51,6 +51,8 @@ const CheckInSchema = new mongoose_1.Schema({
     },
     checkedInBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     checkInAt: { type: Date, default: Date.now, required: true },
+    scanCount: { type: Number, default: 1 },
+    lastScanAt: { type: Date, default: null },
     checkOutAt: { type: Date, default: null },
     checkedOutBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', default: null }
 }, {

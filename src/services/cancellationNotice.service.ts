@@ -35,8 +35,8 @@ export interface RecipientPlan {
  * Which guests were actually invited, and on which channels, from the delivery records that already exist.
  * A guest may have several Invitation rows (every resend adds one): any SENT delivery counts.
  */
-export async function planRecipients(eventId: mongoose.Types.ObjectId | string): Promise<RecipientPlan[]> {
-  const rows: any[] = await Invitation.find({ eventId }).select('inviteeId channel status emailStatus whatsappStatus').lean();
+export async function planRecipients(eventId: mongoose.Types.ObjectId | string, inviteeId?: unknown): Promise<RecipientPlan[]> {
+  const rows: any[] = await Invitation.find({ eventId, ...(inviteeId ? { inviteeId: inviteeId as any } : {}) }).select('inviteeId channel status emailStatus whatsappStatus').lean();
   const byInvitee = new Map<string, RecipientPlan>();
   for (const r of rows) {
     const key = String(r.inviteeId);

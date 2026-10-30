@@ -152,6 +152,17 @@ describe('Public Invitation & RSVP Endpoints', () => {
       expect((await Invitee.findById(inviteeId))?.rsvpStatus).toBe(RsvpStatus.PENDING);
     });
 
+    it('rejects a food preference sent along with a decline, and records no RSVP', async () => {
+      const res = await request(app)
+        .post(`/api/v1/public/invitations/${rawToken}/rsvp`)
+        .send({ rsvpStatus: 'DECLINED', dietaryPreference: 'Vegan' });
+      expect(res.statusCode).toBe(400);
+      expect(res.body.code).toBe('DIETARY_NOT_ALLOWED_WHEN_DECLINED');
+      const unchanged = await Invitee.findById(inviteeId);
+      expect(unchanged?.rsvpStatus).toBe(RsvpStatus.PENDING);
+      expect(unchanged?.dietaryPreference).toBeFalsy();
+    });
+
     it('should successfully submit DECLINED RSVP', async () => {
       const res = await request(app)
         .post(`/api/v1/public/invitations/${rawToken}/rsvp`)

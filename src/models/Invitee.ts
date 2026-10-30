@@ -33,8 +33,24 @@ export interface IInvitee extends Document {
   sessionAccess: ISessionAccess[];
   qrTokenHash?: string;
   qrTokenCipher?: string;
-  // Set when this guest's access pass is withdrawn; check-in refuses it. Nothing sets it yet (issuance/revocation is a later phase).
+  // Set while this guest's CURRENT access pass is revoked; check-in refuses it. A replacement clears it (the revocation itself
+  // stays in the CredentialEvent history, with its reason).
   credentialRevokedAt?: Date | null;
+  credentialRevocation?: { category: string; note?: string; by?: mongoose.Types.ObjectId; at?: Date } | null;
+  // 1 for the first pass; +1 for every re-issue (resend or replacement). Absent on older guests: treated as 1 once a pass exists.
+  credentialVersion?: number;
+  /** The uploaded list this guest came from (absent on guests added by hand or before lists were tracked) */
+  inviteeSetId?: mongoose.Types.ObjectId | null;
+  /** Set when a newer upload replaced this never-invited guest. Archived guests are hidden everywhere, never deleted. */
+  archivedAt?: Date | null;
+  archivedReason?: string;
+  supersededBySetId?: mongoose.Types.ObjectId | null;
+  archivedBy?: mongoose.Types.ObjectId | null;
+  archivedByRole?: string | null;
+  /** Last restoration (the earlier set-aside periods stay in `setAsideHistory`) */
+  restoredAt?: Date | null;
+  restoredBy?: mongoose.Types.ObjectId | null;
+  setAsideHistory?: Array<{ archivedAt?: Date; reason?: string; supersededBySetId?: mongoose.Types.ObjectId | null; archivedBy?: mongoose.Types.ObjectId | null; archivedByRole?: string | null; restoredAt: Date; restoredBy: mongoose.Types.ObjectId }>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -74,7 +90,21 @@ const InviteeSchema: Schema = new Schema(
     qrTokenHash: { type: String },
     // Encrypted copy of the current token (see utils/tokenCipher); never returned by default
     qrTokenCipher: { type: String, select: false },
-    credentialRevokedAt: { type: Date, default: null }
+    credentialRevokedAt: { type: Date, default: null },
+    credentialRevocation: { type: new Schema({ category: String, note: String, by: Schema.Types.ObjectId, at: Date }, { _id: false }), default: null },
+    credentialVersion: { type: Number },
+    inviteeSetId: { type: Schema.Types.ObjectId, ref: 'InviteeSet', default: null },
+    archivedAt: { type: Date, default: null },
+    archivedReason: { type: String },
+    supersededBySetId: { type: Schema.Types.ObjectId, ref: 'InviteeSet', default: null },
+    archivedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    archivedByRole: { type: String, default: null },
+    restoredAt: { type: Date, default: null },
+    restoredBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    setAsideHistory: {
+      type: [new Schema({ archivedAt: Date, reason: String, supersededBySetId: Schema.Types.ObjectId, archivedBy: Schema.Types.ObjectId, archivedByRole: String, restoredAt: { type: Date, required: true }, restoredBy: { type: Schema.Types.ObjectId, required: true } }, { _id: false })],
+      default: undefined
+    }
   },
   {
     timestamps: true
@@ -86,5 +116,21 @@ InviteeSchema.index({ eventId: 1 });
 InviteeSchema.index({ eventId: 1, email: 1 });
 InviteeSchema.index({ eventId: 1, mobile: 1 });
 InviteeSchema.index({ eventId: 1, rsvpStatus: 1 });
+
+// Archived (superseded, never-invited) guests are invisible to every read. A query that must see them asks with
+// `.setOptions({ includeArchived: true })`; event deletion still removes them with the rest of the event.
+const READ_OPS = ['find', 'findOne', 'findOneAndUpdate', 'findOneAndDelete', 'countDocuments', 'distinct'] as const;
+for (const op of READ_OPS) {
+  InviteeSchema.pre(op as any, function (this: mongoose.Query<any, any>) {
+    if ((this.getOptions() as any).includeArchived) return;
+    const filter = this.getFilter() as Record<string, unknown>;
+    if (filter.archivedAt === undefined) this.where({ archivedAt: null });
+  });
+}
+InviteeSchema.pre('aggregate', function () {
+  if ((this.options as any)?.includeArchived) return;
+  this.pipeline().unshift({ $match: { archivedAt: null } });
+});
+InviteeSchema.index({ eventId: 1, inviteeSetId: 1 });
 
 export const Invitee = mongoose.model<IInvitee>('Invitee', InviteeSchema);

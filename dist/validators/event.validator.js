@@ -43,6 +43,13 @@ exports.admissionSchema = zod_1.z.object({
     closesAt: zod_1.z.string().datetime().nullable().optional()
 }).strict();
 exports.updateAdmissionSchema = zod_1.z.object({ body: exports.admissionSchema });
+// Event Location (the venue named on the invitation card) and the optional Address (extra directions) are separate fields
+const locationFieldsSchema = zod_1.z.object({
+    address: zod_1.z.string().trim().min(1, 'Event location is required').max(300, 'Event location cannot exceed 300 characters').optional(),
+    addressDetails: zod_1.z.string().trim().max(500, 'Address cannot exceed 500 characters').optional(),
+    coordinates: zod_1.z.any().optional()
+}).passthrough();
+const hasVenue = (loc) => (typeof loc === 'string' ? loc.trim() !== '' : !!loc && typeof loc === 'object' && typeof loc.address === 'string' && loc.address.trim() !== '');
 exports.createEventSchema = zod_1.z.object({
     body: zod_1.z.object({
         title: zod_1.z.string().min(1, 'Title is required').max(eventLimits_1.EVENT_TITLE_MAX_LENGTH, `Title cannot exceed ${eventLimits_1.EVENT_TITLE_MAX_LENGTH} characters`),
@@ -50,7 +57,7 @@ exports.createEventSchema = zod_1.z.object({
         categoryId: objectIdSchema.optional(),
         subcategoryId: objectIdSchema.optional(),
         format: zod_1.z.nativeEnum(Event_1.EventFormat).optional().default(Event_1.EventFormat.PHYSICAL),
-        location: zod_1.z.any().optional(),
+        location: zod_1.z.union([zod_1.z.string().max(300), locationFieldsSchema]).optional(),
         contactNumber: zod_1.z.string().optional(),
         schedule: zod_1.z.object({
             start: zod_1.z.string().optional(),
@@ -75,6 +82,10 @@ exports.createEventSchema = zod_1.z.object({
             logoKey: zod_1.z.string().refine((k) => k === '' || (0, mediaKey_1.isAcceptedImageKey)(k), 'Invalid logo image reference').optional(),
             bannerKey: zod_1.z.string().refine((k) => k === '' || (0, mediaKey_1.isAcceptedImageKey)(k), 'Invalid banner image reference').optional()
         }).optional()
+    }).superRefine((body, ctx) => {
+        if (body.format === Event_1.EventFormat.PHYSICAL && !hasVenue(body.location)) {
+            ctx.addIssue({ code: 'custom', path: ['location', 'address'], message: 'Event location is required' });
+        }
     })
 });
 exports.updateEventSchema = zod_1.z.object({
@@ -85,7 +96,8 @@ exports.updateEventSchema = zod_1.z.object({
         subcategoryId: objectIdSchema.optional(),
         format: zod_1.z.nativeEnum(Event_1.EventFormat).optional(),
         location: zod_1.z.object({
-            address: zod_1.z.string().optional(),
+            address: zod_1.z.string().trim().min(1, 'Event location is required').max(300, 'Event location cannot exceed 300 characters').optional(),
+            addressDetails: zod_1.z.string().trim().max(500, 'Address cannot exceed 500 characters').optional(),
             coordinates: zod_1.z.tuple([
                 zod_1.z.number().min(-180).max(180),
                 zod_1.z.number().min(-90).max(90)

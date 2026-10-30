@@ -72,7 +72,7 @@ exports.checkInController = {
                 role: req.user.role
             };
             const result = await checkIn_service_1.checkInService.scanCheckIn(actor, req.body);
-            res.status(201).json({ success: true, message: 'Check-in successful', data: result });
+            res.status(201).json({ success: true, message: result?.reEntry ? 'Repeat entry allowed' : 'Check-in successful', data: result });
         }
         catch (error) {
             if (!sendRefusal(res, error))
@@ -86,7 +86,7 @@ exports.checkInController = {
                 role: req.user.role
             };
             const result = await checkIn_service_1.checkInService.manualCheckIn(actor, req.body);
-            res.status(201).json({ success: true, message: 'Check-in successful', data: result });
+            res.status(201).json({ success: true, message: result?.reEntry ? 'Repeat entry allowed' : 'Check-in successful', data: result });
         }
         catch (error) {
             if (!sendRefusal(res, error))

@@ -111,14 +111,78 @@ function wrapWords(words, size, maxWidth, m) {
     }
     return lines;
 }
-async function fitText(layout, slot, raw, reserve = 0) {
+const INK = 1.2; // visible height of a line of text, as a multiple of its font size
+const PITCH = 1.3; // distance between extra wrapped lines, as a multiple of the font size (never more than the designed line height)
+// The designers' text boxes are generous (and overlap each other), so free space is measured from the text itself:
+// each slot's text is centred in its designed box and is `fontSize * INK` tall per designed line. A text block that
+// wraps to more lines than designed may only grow into the clear space between its own text and what is above and
+// below it: half of each gap is its own, so two growing neighbours never meet, and all of the gap up to a photo, logo
+// or QR code (less a margin) is usable. Slots with nothing above or below may grow by half their own height.
+function inkOf(slot) {
+    const c = slot.top + (slot.designLines * slot.lineHeight) / 2;
+    const h = (slot.designLines - 1) * slot.lineHeight + slot.fontSize * INK;
+    return { c, top: c - h / 2, bottom: c + h / 2, h };
+}
+function roomFor(layout, name, slot) {
+    const own = inkOf(slot);
+    let top = Math.max(0, own.top - own.h / 2);
+    let bottom = Math.min(layout.height, own.bottom + own.h / 2);
+    const span = (n) => {
+        const w = n.maxWidth > 0 ? n.maxWidth : n.boxWidth;
+        return [n.cx - w / 2, n.cx + w / 2];
+    };
+    const [l, r] = span(slot);
+    // the QR code is printed inside a decorative frame that is larger than the code itself
+    const MARGIN = 6;
+    const QR_MARGIN = 18;
+    const art = [];
+    if (layout.photo)
+        art.push({ x0: layout.photo.x, x1: layout.photo.x + layout.photo.w, y0: layout.photo.y, y1: layout.photo.y + layout.photo.h });
+    if (layout.logo)
+        art.push({ x0: layout.logo.x, x1: layout.logo.x + layout.logo.w, y0: layout.logo.y, y1: layout.logo.y + layout.logo.h });
+    const qrBox = layout.qr ? { x0: layout.qr.x, x1: layout.qr.x + layout.qr.size, y0: layout.qr.y, y1: layout.qr.y + layout.qr.size } : null;
+    if (qrBox)
+        art.push(qrBox);
+    for (const o of art) {
+        if (o.x1 <= l || o.x0 >= r)
+            continue;
+        const m = o === qrBox ? QR_MARGIN : MARGIN;
+        if (o.y1 <= own.c)
+            top = Math.max(top, o.y1 + m);
+        else if (o.y0 >= own.c)
+            bottom = Math.min(bottom, o.y0 - m);
+    }
+    for (const [otherName, o] of Object.entries(layout.texts)) {
+        if (otherName === name)
+            continue;
+        const [ol, or] = span(o);
+        if (or <= l || ol >= r)
+            continue;
+        const ink = inkOf(o);
+        if (ink.c < own.c)
+            top = Math.max(top, ink.bottom + Math.max(0, own.top - ink.bottom) / 2);
+        else if (ink.c > own.c)
+            bottom = Math.min(bottom, ink.top - Math.max(0, ink.top - own.bottom) / 2);
+    }
+    return { top: Math.min(top, own.top), bottom: Math.max(bottom, own.bottom) };
+}
+// Free text (names, titles, addresses, extra info) may take up to two lines more than the designers drew, but only inside
+// its room; short fixed pieces (day, month, date pill, labels) never wrap.
+const WRAPPABLE = new Set(['title', 'names', 'honoree', 'heading', 'subline', 'address', 'inviteeName', 'inviteeMeta', 'intro']);
+const EXTRA_LINES = 2;
+async function fitText(layout, slotIn, raw, reserve = 0, room, wrappable = false) {
+    const slot = wrappable ? { ...slotIn, maxLines: slotIn.maxLines + EXTRA_LINES } : slotIn;
     const text = cleanText(raw);
     const words = text.split(' ').filter(Boolean);
     const maxWidth = maxWidthFor(layout, slot, reserve);
     const step = Math.max(0.5, slot.fontSize * 0.04);
     const m = await makeMeasurer(slot, words);
     const widthsOf = (lines, size) => lines.map((l) => m.line(l, size));
-    const ok = (lines, size) => lines.length <= slot.maxLines && widthsOf(lines, size).every((w) => w <= maxWidth + 0.5);
+    const pitchAt = (n, size) => (n > slot.designLines ? Math.min(slot.lineHeight * (size / slot.fontSize), size * PITCH) : slot.lineHeight * (size / slot.fontSize));
+    // visible height of n lines at this size
+    const heightOf = (n, size) => (n - 1) * pitchAt(n, size) + size * INK;
+    const roomH = room ? room.bottom - room.top : Infinity;
+    const ok = (lines, size) => lines.length <= slot.maxLines && heightOf(lines.length, size) <= roomH + 0.5 && widthsOf(lines, size).every((w) => w <= maxWidth + 0.5);
     let size = slot.fontSize;
     let lines = wrapWords(words, size, maxWidth, m);
     // A slot the designers drew as one line stays one line: shrink a little (to 78%) before ever wrapping, so a
@@ -146,9 +210,10 @@ async function fitText(layout, slot, raw, reserve = 0) {
         rendered = lines.map((l) => l.join(' '));
         widths = await Promise.all(rendered.map((l) => m.exact(l, size)));
     }
-    if (rendered.length > slot.maxLines || widths.some((w) => w > maxWidth + 0.5)) {
+    const linesAllowed = Math.max(1, Math.min(slot.maxLines, Math.floor((roomH - size * INK + 0.5) / pitchAt(2, size)) + 1));
+    if (rendered.length > linesAllowed || widths.some((w) => w > maxWidth + 0.5)) {
         // Still too long at the smallest size: keep the first lines and end the last one with an ellipsis
-        rendered = rendered.slice(0, slot.maxLines);
+        rendered = rendered.slice(0, linesAllowed);
         let last = rendered[rendered.length - 1] || '';
         while (last.length > 1 && (await m.exact(`${last}…`, size)) > maxWidth)
             last = last.slice(0, -1).trimEnd();
@@ -156,8 +221,14 @@ async function fitText(layout, slot, raw, reserve = 0) {
         widths = await Promise.all(rendered.map((l) => m.exact(l, size)));
     }
     const ratio = size / slot.fontSize;
-    const lineHeight = slot.lineHeight * ratio;
-    const shift = (slot.designLines * slot.lineHeight - rendered.length * lineHeight) / 2;
+    const lineHeight = pitchAt(rendered.length, size);
+    let shift = (slot.designLines * slot.lineHeight - rendered.length * lineHeight) / 2;
+    if (room) {
+        // keep the block inside its room: a block that grows is centred on the designed space unless a neighbour is closer
+        const ink = heightOf(rendered.length, size);
+        const centre = Math.min(Math.max(slot.top + (slot.designLines * slot.lineHeight) / 2, room.top + ink / 2), room.bottom - ink / 2);
+        shift = centre - (rendered.length * lineHeight) / 2 - slot.top;
+    }
     const ascent = (slot.baseline - slot.top) * ratio;
     return { lines: rendered, widths, size, lineHeight, shift, firstBaseline: slot.top + shift + ascent };
 }
@@ -259,14 +330,14 @@ async function renderTemplateCard(input) {
         const value = input.texts[name];
         if (!value || !cleanText(value))
             continue;
-        const fitted = await fitText(layout, slot, value, name === 'address' ? pinReserve : 0);
+        const fitted = await fitText(layout, slot, value, name === 'address' ? pinReserve : 0, roomFor(layout, name, slot), WRAPPABLE.has(name) && !layoutOverrides_1.FIXED_LINES[layout.design]?.includes(name));
         fitted.lines.forEach((line, i) => {
             svg.push(`<text x="${round(slot.cx * scale)}" y="${round((fitted.firstBaseline + i * fitted.lineHeight) * scale)}" text-anchor="middle" font-family="${(0, fonts_1.fontStack)(slot.fontFamily)}" font-weight="${slot.fontWeight}" font-size="${round(fitted.size * scale)}" fill="${slot.color}"${slot.letterSpacing ? ` letter-spacing="${round(slot.letterSpacing * scale)}"` : ''}>${escapeXml(line)}</text>`);
         });
         // the location pin travels with the address text: just left of its widest line, level with the first line
         if (name === 'address' && layout.pin) {
-            const widest = Math.max(...fitted.widths);
-            const pinX = slot.cx - widest / 2 - 7 - layout.pin.w;
+            // beside the first line, which is where the pin sits vertically
+            const pinX = slot.cx - fitted.widths[0] / 2 - 7 - layout.pin.w;
             const pinY = slot.top + fitted.shift + layout.pin.offsetY;
             svg.push(`<path transform="translate(${round(pinX * scale)} ${round(pinY * scale)}) scale(${scale})" d="${layout.pin.d}" fill="${layout.pin.color}"/>`);
         }

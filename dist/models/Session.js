@@ -59,7 +59,7 @@ const SessionSchema = new mongoose_1.Schema({
     accessControl: {
         type: String,
         enum: Object.values(AccessControl),
-        default: AccessControl.NO_RESTRICTION,
+        default: AccessControl.ONLY_ONCE,
         required: true
     },
     validateAgainstOtherSessions: { type: Boolean, default: false, required: true },

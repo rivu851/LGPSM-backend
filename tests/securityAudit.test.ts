@@ -52,7 +52,7 @@ describe('Cross-tenant authorization matrix (organizer B must not touch organize
     orgB = await makeUser(Role.ORGANIZER, 'matrix.b@example.com');
     staff = await makeUser(Role.SYSTEM_USER, 'matrix.staff@example.com', { createdBy: orgB._id });
 
-    const created = await request(app).post('/api/v1/events').set('Authorization', bearer(orgA)).send({ title: 'A private event' });
+    const created = await request(app).post('/api/v1/events').set('Authorization', bearer(orgA)).send({ title: 'A private event', location: { address: 'Test Venue' } });
     expect(created.status).toBe(201);
     eventA = await Event.findById(created.body.data.eventId);
 
@@ -70,7 +70,7 @@ describe('Cross-tenant authorization matrix (organizer B must not touch organize
 
   it.each([
     ['read the event', () => request(app).get(E())],
-    ['update the event', () => request(app).patch(E()).send({ title: 'hijacked' })],
+    ['update the event', () => request(app).patch(E()).send({ title: 'hijacked', location: { address: 'Test Venue' } })],
     ['delete the event', () => request(app).delete(E())],
     ['list its sessions', () => request(app).get(`${E()}/sessions`)],
     ['create a session', () => request(app).post(`${E()}/sessions`).send({ name: 'x', schedule: { start: new Date(Date.now() + 1e6).toISOString(), end: new Date(Date.now() + 2e6).toISOString() } })],
@@ -163,7 +163,7 @@ describe('SEC-001: organizers cannot create events under another account or set 
     const res = await request(app)
       .post('/api/v1/events')
       .set('Authorization', bearer(attacker))
-      .send({ title: 'Planted event', organizerId: String(victim._id), organizerIds: [String(victim._id)], operationalDataCleared: true, status: 'COMPLETED' });
+      .send({ title: 'Planted event', organizerId: String(victim._id), organizerIds: [String(victim._id)], operationalDataCleared: true, status: 'COMPLETED', location: { address: 'Test Venue' } });
 
     expect(res.status).toBe(201);
     const stored = await Event.findById(res.body.data.eventId);
@@ -176,7 +176,7 @@ describe('SEC-001: organizers cannot create events under another account or set 
   it('still lets an admin create an event on behalf of a chosen organizer', async () => {
     const admin = await makeUser(Role.ADMIN, 'sec001.admin@example.com');
     const organizer = await makeUser(Role.ORGANIZER, 'sec001.target@example.com');
-    const res = await request(app).post('/api/v1/events').set('Authorization', bearer(admin)).send({ title: 'Admin-created', organizerId: String(organizer._id) });
+    const res = await request(app).post('/api/v1/events').set('Authorization', bearer(admin)).send({ title: 'Admin-created', organizerId: String(organizer._id), location: { address: 'Test Venue' } });
     expect(res.status).toBe(201);
     expect(String((await Event.findById(res.body.data.eventId))?.organizerId)).toBe(String(organizer._id));
   });
@@ -184,7 +184,7 @@ describe('SEC-001: organizers cannot create events under another account or set 
   it('does not let an organizer update server-controlled event fields', async () => {
     const owner = await makeUser(Role.ORGANIZER, 'sec001.owner@example.com');
     const other = await makeUser(Role.ORGANIZER, 'sec001.other@example.com');
-    const created = await request(app).post('/api/v1/events').set('Authorization', bearer(owner)).send({ title: 'Mine' });
+    const created = await request(app).post('/api/v1/events').set('Authorization', bearer(owner)).send({ title: 'Mine', location: { address: 'Test Venue' } });
     const id = created.body.data.eventId;
     await request(app)
       .patch(`/api/v1/events/${id}`)
@@ -200,7 +200,7 @@ describe('SEC-001: organizers cannot create events under another account or set 
 describe('Event copy fits the invitation cards', () => {
   let owner: any;
   beforeAll(async () => { owner = await makeUser(Role.ORGANIZER, 'limits.owner@example.com'); });
-  const create = (body: object) => request(app).post('/api/v1/events').set('Authorization', bearer(owner)).send(body);
+  const create = (body: object) => request(app).post('/api/v1/events').set('Authorization', bearer(owner)).send({ location: { address: 'Test Venue' }, ...body });
 
   it('accepts a 50-character title and 180-character description, refuses longer on create and update', async () => {
     const ok = await create({ title: 'T'.repeat(50), description: 'D'.repeat(180) });
@@ -221,7 +221,7 @@ describe('Events are locked once invitations have gone out (feedback 14)', () =>
     admin = await makeUser(Role.ADMIN, 'lock.admin@example.com');
   });
   const newEvent = async () => {
-    const created = await request(app).post('/api/v1/events').set('Authorization', bearer(owner)).send({ title: 'Lockable' });
+    const created = await request(app).post('/api/v1/events').set('Authorization', bearer(owner)).send({ title: 'Lockable', location: { address: 'Test Venue' } });
     return created.body.data.eventId as string;
   };
   const attempt = async (eventId: string, status: InvitationDeliveryStatus) => {
@@ -232,7 +232,7 @@ describe('Events are locked once invitations have gone out (feedback 14)', () =>
   it('allows edits while nothing has been sent', async () => {
     const id = await newEvent();
     await attempt(id, InvitationDeliveryStatus.PENDING);
-    const res = await request(app).patch(`/api/v1/events/${id}`).set('Authorization', bearer(owner)).send({ title: 'Renamed' });
+    const res = await request(app).patch(`/api/v1/events/${id}`).set('Authorization', bearer(owner)).send({ title: 'Renamed', location: { address: 'Test Venue' } });
     expect(res.status).toBe(200);
   });
 
@@ -240,7 +240,7 @@ describe('Events are locked once invitations have gone out (feedback 14)', () =>
     const id = await newEvent();
     await attempt(id, status);
     for (const who of [owner, admin]) {
-      const res = await request(app).patch(`/api/v1/events/${id}`).set('Authorization', bearer(who)).send({ title: 'Changed after sending' });
+      const res = await request(app).patch(`/api/v1/events/${id}`).set('Authorization', bearer(who)).send({ title: 'Changed after sending', location: { address: 'Test Venue' } });
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('EVENT_LOCKED');
     }

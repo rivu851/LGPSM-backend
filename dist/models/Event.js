@@ -57,6 +57,7 @@ const EventSchema = new mongoose_1.Schema({
     format: { type: String, enum: Object.values(EventFormat), required: true },
     location: {
         address: { type: String },
+        addressDetails: { type: String, maxlength: 300 },
         coordinates: {
             type: { type: String, enum: ['Point'], required: false },
             coordinates: { type: [Number], required: false } // [longitude, latitude]

@@ -65,7 +65,7 @@ describe('P0.2 — admission windows and secure QR admission', () => {
     event = await mkEvent(org._id, { admission: { opensAt: OPENS } });
     otherEvent = await mkEvent(other._id);
     const mkSession = (name: string, extra: Record<string, unknown> = {}) => Session.create({
-      eventId: event._id, name, schedule: { start: START, end: END }, accessControl: AccessControl.NO_RESTRICTION,
+      eventId: event._id, name, schedule: { start: START, end: END }, accessControl: AccessControl.ONLY_ONCE,
       validateAgainstOtherSessions: false, inviteeSource: InviteeSource.NEW_LIST, ...extra
     });
     s1 = await mkSession('Keynote');
@@ -81,6 +81,56 @@ describe('P0.2 — admission windows and secure QR admission', () => {
     await SystemUserAssignment.create({ userId: staff._id, eventId: event._id, sessionIds: [], assignedBy: org._id });
   });
   afterEach(() => jest.restoreAllMocks());
+
+  // ───────────── repeat entry (session access control) ─────────────
+  describe('session access control: Only Once vs No Restrictions', () => {
+    it('Only Once: the second scan of the same session is rejected', async () => {
+      setNow(at(START, 60e3));
+      expect((await scan(guestToken, { sessionId: String(s1._id) })).status).toBe(201);
+      const again = await scan(guestToken, { sessionId: String(s1._id) });
+      expect(again.status).toBeGreaterThanOrEqual(400);
+      expect(await CheckIn.countDocuments({ inviteeId: guest._id, sessionId: s1._id })).toBe(1);
+    });
+
+    it('No Restrictions: repeat scans of the same session are allowed and counted on one record', async () => {
+      await Session.updateOne({ _id: s1._id }, { accessControl: AccessControl.NO_RESTRICTION });
+      setNow(at(START, 60e3));
+      for (let i = 0; i < 3; i++) expect((await scan(guestToken, { sessionId: String(s1._id) })).status).toBeLessThan(300);
+      const rows: any[] = await CheckIn.find({ inviteeId: guest._id, sessionId: s1._id }).lean();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].scanCount).toBe(3);
+    });
+
+    it('No Restrictions on one session does not loosen Only Once on another', async () => {
+      await Session.updateOne({ _id: s1._id }, { accessControl: AccessControl.NO_RESTRICTION });
+      setNow(at(START, 60e3));
+      expect((await scan(guestToken, { sessionId: String(s2._id) })).status).toBe(201);
+      expect((await scan(guestToken, { sessionId: String(s2._id) })).status).toBeGreaterThanOrEqual(400);
+    });
+
+    it('No Restrictions: concurrent scans never create a second record', async () => {
+      await Session.updateOne({ _id: s1._id }, { accessControl: AccessControl.NO_RESTRICTION });
+      setNow(at(START, 60e3));
+      const res = await Promise.all(Array.from({ length: 5 }, () => scan(guestToken, { sessionId: String(s1._id) })));
+      expect(res.every((r) => r.status < 300)).toBe(true);
+      expect(await CheckIn.countDocuments({ inviteeId: guest._id, sessionId: s1._id })).toBe(1);
+    });
+  });
+
+  describe('removing a session from a staff member\'s assignment', () => {
+    it('blocks scanning that session at once and leaves the other sessions working', async () => {
+      const assignment: any = await SystemUserAssignment.findOne({ userId: staff._id, eventId: event._id });
+      const assign = (sessionIds: string[]) => request(app).patch(`/api/v1/assignments/${assignment._id}`).set(auth(tOrg)).send({ sessionIds });
+      expect((await assign([String(s1._id), String(s2._id)])).status).toBeLessThan(300);
+      setNow(at(START, 60e3));
+      expect((await scan(guestToken, { sessionId: String(s2._id) }, tStaff)).status).toBe(201);
+      expect((await assign([String(s1._id)])).status).toBeLessThan(300);
+      const blocked = await scan(guestToken2, { sessionId: String(s2._id) }, tStaff);
+      expect(blocked.status).toBe(403);
+      expect(await CheckIn.countDocuments({ inviteeId: guest2._id })).toBe(0);
+      expect((await scan(guestToken2, { sessionId: String(s1._id) }, tStaff)).status).toBe(201);
+    });
+  });
 
   // ───────────── the window ─────────────
   describe('admission window (server clock, half-open)', () => {
@@ -451,14 +501,14 @@ describe('P0.2 — admission windows and secure QR admission', () => {
 
     it('can be set when the event is created, and is validated there', async () => {
       const ok = await request(app).post('/api/v1/events').set(auth(tOrg)).send({
-        title: 'Created with a window', schedule: { start: '2027-01-10T04:30:00.000Z', end: '2027-01-10T11:30:00.000Z' },
+        title: 'Created with a window', location: { address: 'Hall' }, schedule: { start: '2027-01-10T04:30:00.000Z', end: '2027-01-10T11:30:00.000Z' },
         admission: { opensAt: '2027-01-10T03:30:00.000Z' }
       });
       expect(ok.status).toBe(201);
       const stored: any = await Event.findOne({ title: 'Created with a window' });
       expect(new Date(stored.admission.opensAt).toISOString()).toBe('2027-01-10T03:30:00.000Z');
       const bad = await request(app).post('/api/v1/events').set(auth(tOrg)).send({
-        title: 'Backwards', schedule: { start: '2027-01-10T04:30:00.000Z', end: '2027-01-10T11:30:00.000Z' },
+        title: 'Backwards', location: { address: 'Hall' }, schedule: { start: '2027-01-10T04:30:00.000Z', end: '2027-01-10T11:30:00.000Z' },
         admission: { opensAt: '2027-01-10T12:00:00.000Z' }
       });
       expect(bad.status).toBe(400);

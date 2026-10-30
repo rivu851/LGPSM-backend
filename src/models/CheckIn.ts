@@ -12,6 +12,9 @@ export interface ICheckIn extends Document {
   checkInMethod: CheckInMethod;
   checkedInBy: mongoose.Types.ObjectId;
   checkInAt: Date;
+  /** how many times this pass was scanned for the session (1 = the entry itself; more only where the session has no repeat-entry restriction) */
+  scanCount?: number;
+  lastScanAt?: Date | null;
   checkOutAt?: Date | null;
   checkedOutBy?: mongoose.Types.ObjectId | null;
   createdAt: Date;
@@ -30,6 +33,8 @@ const CheckInSchema: Schema = new Schema(
     },
     checkedInBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     checkInAt: { type: Date, default: Date.now, required: true },
+    scanCount: { type: Number, default: 1 },
+    lastScanAt: { type: Date, default: null },
     checkOutAt: { type: Date, default: null },
     checkedOutBy: { type: Schema.Types.ObjectId, ref: 'User', default: null }
   },

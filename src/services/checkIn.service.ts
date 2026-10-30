@@ -8,6 +8,7 @@ import { SystemUserAssignment } from '../models/SystemUserAssignment';
 import { checkInRepository } from '../repositories/checkIn.repository';
 import { hashToken } from '../utils/invitation.util';
 import { Invitation } from '../models/Invitation';
+import { CredentialEvent } from '../models/CredentialEvent';
 import { parseInvitationQrPayload } from '../utils/qrPayload';
 import { inviteeAllowedInSession } from '../utils/sessionAccess';
 import { clock } from '../utils/clock';
@@ -116,7 +117,7 @@ export const checkInService = {
     const invitee = await Invitee.findOne({ qrTokenHash: tokenHash });
     if (!invitee) {
       // A token from an earlier send/resend is replaced by the newest one
-      const superseded = await Invitation.exists({ tokenHash });
+      const superseded = (await Invitation.exists({ tokenHash })) || (await CredentialEvent.exists({ tokenHash }));
       throw new Error(superseded ? 'QR_TOKEN_SUPERSEDED' : 'INVALID_QR_TOKEN');
     }
 
@@ -182,9 +183,13 @@ export const checkInService = {
 
     await this.validateInviteeEligibility(invitee, event);
 
-    let session = null;
+    let session: any = null;
     if (sessionId) {
       session = await this.validateSessionAndRules(invitee, eventId, sessionId, now);
+      // "No restriction": a second scan of the same pass is allowed
+      if (session._existingCheckIn && session.accessControl === AccessControl.NO_RESTRICTION) {
+        return this.recordRepeatEntry(event, session._existingCheckIn, invitee, session, now);
+      }
     } else {
       const existing = await checkInRepository.findEventWideCheckIn((invitee._id as any).toString(), eventId);
       if (existing) {
@@ -193,14 +198,24 @@ export const checkInService = {
     }
 
     // A duplicate key (11000) from a concurrent scan surfaces as "already checked in" in the controller
-    const checkIn = await this.commitAdmission(event, {
-      eventId: new mongoose.Types.ObjectId(eventId),
-      inviteeId: invitee._id as any,
-      sessionId: sessionId ? new mongoose.Types.ObjectId(sessionId) : null,
-      checkInMethod: method,
-      checkedInBy: new mongoose.Types.ObjectId(actor.userId),
-      checkInAt: now
-    }, now, method === CheckInMethod.QR);
+    let checkIn: ICheckIn;
+    try {
+      checkIn = await this.commitAdmission(event, {
+        eventId: new mongoose.Types.ObjectId(eventId),
+        inviteeId: invitee._id as any,
+        sessionId: sessionId ? new mongoose.Types.ObjectId(sessionId) : null,
+        checkInMethod: method,
+        checkedInBy: new mongoose.Types.ObjectId(actor.userId),
+        checkInAt: now
+      }, now, method === CheckInMethod.QR);
+    } catch (e: any) {
+      // two scans of a NO_RESTRICTION pass at the same instant: the loser is a repeat entry on the winner's record
+      if (e?.code === 11000 && session?.accessControl === AccessControl.NO_RESTRICTION) {
+        const winner = await checkInRepository.findByInviteeAndSession((invitee._id as any).toString(), String(sessionId));
+        if (winner) return this.recordRepeatEntry(event, winner, invitee, session, now);
+      }
+      throw e;
+    }
 
     return this.formatCheckInResponse(checkIn, invitee, session);
   },
@@ -427,9 +442,8 @@ export const checkInService = {
       throw new Error('ONLY_ONCE_VIOLATION');
     }
 
-    if (session.accessControl === AccessControl.NO_RESTRICTION && existingSessionCheckIn) {
-      throw new Error('DUPLICATE_CHECKIN');
-    }
+    // NO_RESTRICTION: the same pass may be scanned again (every other rule above and below still applies). The repeat is
+    // handled by the caller as a repeat entry on the existing attendance record, never as a second record.
 
     // "Consider access session validation on other session access" is configured on the primary
     // (first) session: when enabled, guests must have checked in to it before entering other sessions.
@@ -441,7 +455,15 @@ export const checkInService = {
       }
     }
 
-    return session;
+    return Object.assign(session, { _existingCheckIn: existingSessionCheckIn });
+  },
+
+  /** NO_RESTRICTION repeat scan: count it on the existing record. Nothing new is admitted, so the event's admission counter is untouched. */
+  async recordRepeatEntry(event: any, existing: ICheckIn, invitee: IInvitee, session: any, now: Date) {
+    // narrow the window for a race with a cancel/close: a repeat entry is refused once the event has ended
+    if (!(await Event.exists({ _id: event._id, status: EventStatus.PUBLISHED }))) this.assertEventAdmitting(await Event.findById(event._id), now, true);
+    const updated = await CheckIn.findOneAndUpdate({ _id: existing._id }, { $inc: { scanCount: 1 }, $set: { lastScanAt: now } }, { new: true });
+    return { ...this.formatCheckInResponse((updated || existing) as ICheckIn, invitee, session), reEntry: true, scanCount: (updated as any)?.scanCount ?? 2 };
   },
 
   formatCheckInResponse(checkIn: ICheckIn, invitee: IInvitee, session: any) {

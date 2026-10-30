@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LAYOUTS = void 0;
+exports.LAYOUTS = exports.FIXED_LINES = void 0;
 const layouts_generated_1 = require("./layouts.generated");
 /**
  * Adjustments to the generated layouts (layouts.generated.ts is rebuilt from the Figma file, so changes live here).
@@ -23,6 +23,11 @@ const SLOT_OVERRIDES = {
     WEDDING: { names: { maxLines: 1 }, subline: { maxLines: 1 }, address: { maxLines: 1 } },
     RICE_CEREMONY: { honoree: { maxLines: 1 } },
 };
+/**
+ * Slots that must keep their designed number of lines because the artwork has something fixed right next to them that the
+ * layout data does not describe: the Wedding address pin is printed in the background just above the address.
+ */
+exports.FIXED_LINES = { WEDDING: ['address'] };
 exports.LAYOUTS = Object.fromEntries(Object.entries(layouts_generated_1.CARD_LAYOUTS).map(([design, layout]) => {
     const patch = SLOT_OVERRIDES[design];
     if (!patch)

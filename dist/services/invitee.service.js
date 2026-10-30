@@ -37,6 +37,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.inviteeService = exports.MAX_IMPORT_ROWS = void 0;
+const Invitation_1 = require("../models/Invitation");
+const credentialPolicy_1 = require("../utils/credentialPolicy");
 const invitee_repository_1 = require("../repositories/invitee.repository");
 const Invitee_1 = require("../models/Invitee");
 const Session_1 = require("../models/Session");
@@ -46,11 +48,22 @@ const eventAccess_1 = require("../utils/eventAccess");
 const Session_2 = require("../models/Session");
 const Invitee_2 = require("../models/Invitee");
 const whatsapp_service_1 = require("./whatsapp.service");
-const CheckIn_1 = require("../models/CheckIn");
+const InviteeSet_1 = require("../models/InviteeSet");
+const inviteeSet_service_1 = require("./inviteeSet.service");
+const auditLog_service_1 = require("./auditLog.service");
 // Upper bound for one spreadsheet import (header row excluded)
 exports.MAX_IMPORT_ROWS = 5000;
 /** One identity per phone number regardless of formatting or a missing +91 (same normalisation WhatsApp uses). */
 const mobileIdentity = (mobile) => whatsapp_service_1.whatsappService.normalizePhoneNumber(mobile);
+/** Adds each guest's CURRENT access-pass status (separate from delivery and RSVP) and, when revoked, the reason category. */
+function withCredential(invitees, event) {
+    const now = new Date();
+    return invitees.map((i) => {
+        const plain = typeof i.toObject === 'function' ? i.toObject() : { ...i };
+        const c = (0, credentialPolicy_1.credentialStatus)(plain, event, now);
+        return { ...plain, credentialStatus: c.status, credentialStatusReason: c.reason, credentialRevocation: plain.credentialRevocation ? { category: plain.credentialRevocation.category, at: plain.credentialRevocation.at } : null };
+    });
+}
 exports.inviteeService = {
     async createInvitee(eventId, organizerId, data, role) {
         const event = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId, role);
@@ -94,6 +107,11 @@ exports.inviteeService = {
                 ],
             });
         }
+        if (options.invitation === 'SENT' || options.invitation === 'NOT_SENT') {
+            // dispatch records, not "exists in the database": a guest counts as invited only if an invitation was actually delivered
+            const sentIds = await Invitation_1.Invitation.find({ eventId, status: Invitation_1.InvitationDeliveryStatus.SENT }).distinct('inviteeId');
+            andConditions.push({ _id: options.invitation === 'SENT' ? { $in: sentIds } : { $nin: sentIds } });
+        }
         if (options.search) {
             const escaped = options.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const pattern = { $regex: escaped, $options: 'i' };
@@ -116,7 +134,7 @@ exports.inviteeService = {
                 skip,
                 limit,
             });
-            return { invitees, total };
+            return { invitees: withCredential(invitees, event), total };
         }
         const invitees = await invitee_repository_1.inviteeRepository.findByEventId(eventId, {
             filter,
@@ -125,7 +143,7 @@ exports.inviteeService = {
             limit
         });
         const total = await invitee_repository_1.inviteeRepository.countByEventId(eventId, filter);
-        return { invitees, total };
+        return { invitees: withCredential(invitees, event), total };
     },
     async getInviteeById(inviteeId, organizerId) {
         const invitee = await invitee_repository_1.inviteeRepository.findById(inviteeId);
@@ -138,8 +156,20 @@ exports.inviteeService = {
         }
         return invitee;
     },
+    /** True when this guest came from an uploaded list that an invitation was sent from, answered or attended (Locked). */
+    async inLockedUploadedSet(invitee) {
+        if (!invitee.inviteeSetId)
+            return false; // guests added by hand are not part of an uploaded list
+        const members = await Invitee_1.Invitee.find({ eventId: invitee.eventId, inviteeSetId: invitee.inviteeSetId }).select('invitationStatus rsvpStatus qrTokenHash inviteeSetId');
+        return (0, inviteeSet_service_1.lockedSetKeys)(members, await (0, inviteeSet_service_1.loadActivity)(invitee.eventId, members)).size > 0;
+    },
     async updateInvitee(inviteeId, organizerId, data) {
         const invitee = await this.getInviteeById(inviteeId, organizerId); // Ensures ownership
+        // A Locked list keeps who was on it: its guests' details are not rewritten (dietary choice and session access have their own routes)
+        const DETAIL_FIELDS = ['name', 'email', 'mobile', 'companyName', 'company', 'professionalIdentity'];
+        const changes = DETAIL_FIELDS.some((f) => data[f] !== undefined && String(data[f] ?? '') !== String(invitee[f] ?? ''));
+        if (changes && (await this.inLockedUploadedSet(invitee)))
+            throw new Error('SET_LOCKED');
         // Check duplicates if email/mobile changed
         if ((data.email && data.email !== invitee.email) ||
             (data.mobile && data.mobile !== invitee.mobile)) {
@@ -215,8 +245,13 @@ exports.inviteeService = {
     },
     async deleteInvitee(inviteeId, organizerId) {
         const invitee = await this.getInviteeById(inviteeId, organizerId);
-        // Non-destructive check (if they have check-ins etc later, we might prevent this).
-        // For now, hard delete.
+        // A guest nothing has happened to can be removed from an open or hand-made list. Anyone who was invited, answered,
+        // attended, or sits in a Locked list stays: removing them would erase history.
+        if (await this.inLockedUploadedSet(invitee))
+            throw new Error('SET_LOCKED');
+        const a = (await (0, inviteeSet_service_1.loadActivity)(invitee.eventId, [invitee])).get(String(invitee._id));
+        if (!(0, inviteeSet_service_1.neverAttempted)(a))
+            throw new Error('HAS_HISTORY');
         const deleted = await invitee_repository_1.inviteeRepository.delete(inviteeId);
         if (!deleted) {
             throw new Error('DELETE_FAILED');
@@ -236,6 +271,11 @@ exports.inviteeService = {
      *   and session access are safely updated/expanded without wiping their invitation or check-in state.
      */
     async processExcelImport(eventId, organizerId, fileBuffer, options = {}) {
+        // one import (or restore) per event at a time: the duplicate checks read the list and then write to it
+        return (0, inviteeSet_service_1.withEventLock)(eventId, () => exports.inviteeService.runExcelImport(eventId, organizerId, fileBuffer, options));
+    },
+    async runExcelImport(eventId, organizerId, fileBuffer, options = {}) {
+        const mode = options.mode === InviteeSet_1.ImportMode.APPEND ? InviteeSet_1.ImportMode.APPEND : InviteeSet_1.ImportMode.REPLACE;
         const event = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId, options.role);
         if (!event) {
             throw new Error('EVENT_NOT_FOUND');
@@ -286,6 +326,16 @@ exports.inviteeService = {
             imported: 0,
             updated: 0,
             removed: 0,
+            // never-invited guests of an earlier list that this upload replaced: archived, not deleted
+            archived: 0,
+            // guests in lists that were already sent (kept whole); rows that matched them are not imported again
+            alreadyInvited: 0,
+            // guests of earlier lists with a failed or unresolved delivery: always kept, never set aside
+            failedKept: 0,
+            unknownKept: 0,
+            preservedSets: 0,
+            setId: null,
+            mode,
             rejected: 0,
             duplicateCount: 0,
             errors: [],
@@ -296,7 +346,7 @@ exports.inviteeService = {
             throw { statusCode: 400, message: 'The sheet has no invitee rows' };
         }
         // Header matching (same rules as the frontend preview in utils/inviteeSheet.ts)
-        let nameColIdx = -1, emailColIdx = -1, mobileColIdx = -1, companyColIdx = -1, dietaryColIdx = -1;
+        let nameColIdx = -1, emailColIdx = -1, mobileColIdx = -1, companyColIdx = -1, dietaryColIdx = -1, identityColIdx = -1;
         const sessionColMap = new Map();
         const firstRowCols = nonBlankRows[0].map((c) => cleanCellValue(c).toLowerCase());
         const isHeaderPresent = firstRowCols.some((col) => col.includes('name') || col.includes('email') || col.includes('mobile') || col.includes('phone') || col.includes('company'));
@@ -304,7 +354,9 @@ exports.inviteeService = {
             firstRowCols.forEach((colStr, colIdx) => {
                 if (!colStr)
                     return;
-                if (colStr.includes('company') || colStr.includes('organization') || colStr.includes('organisation'))
+                if (colStr.includes('identity') || colStr.includes('designation'))
+                    identityColIdx = colIdx;
+                else if (colStr.includes('company') || colStr.includes('organization') || colStr.includes('organisation'))
                     companyColIdx = colIdx;
                 else if (colStr.includes('name'))
                     nameColIdx = colIdx;
@@ -335,9 +387,12 @@ exports.inviteeService = {
         results.totalRows = dataRows.length;
         const cell = (row, idx) => (idx !== -1 && row[idx] !== undefined ? cleanCellValue(row[idx]) : '');
         const existingInvitees = await Invitee_1.Invitee.find({ eventId });
-        const isStaged = (inv) => inv.invitationStatus === Invitee_2.InvitationStatus.PENDING && inv.rsvpStatus === Invitee_2.RsvpStatus.PENDING;
-        const checkedInIds = new Set((await CheckIn_1.CheckIn.distinct('inviteeId', { eventId })).map(String));
-        const hasHistory = (inv) => !isStaged(inv) || checkedInIds.has(String(inv._id));
+        // What has really happened to each guest: delivery records, access passes, RSVPs and check-ins, not only the guest row
+        const activity = await (0, inviteeSet_service_1.loadActivity)(eventId, existingInvitees);
+        const hasHistory = (inv) => !(0, inviteeSet_service_1.neverAttempted)(activity.get(String(inv._id)));
+        // Lists an invitation has been dispatched from (or answered, or attended): kept whole, whatever the new file contains
+        const lockedSets = (0, inviteeSet_service_1.lockedSetKeys)(existingInvitees, activity);
+        const inLockedSet = (inv) => lockedSets.has((0, inviteeSet_service_1.setKeyOf)(inv));
         const byEmail = new Map();
         const byMobile = new Map();
         for (const inv of existingInvitees) {
@@ -359,6 +414,7 @@ exports.inviteeService = {
             const mobile = cell(row, mobileColIdx);
             const company = cell(row, companyColIdx);
             const dietary = cell(row, dietaryColIdx);
+            const professionalIdentity = cell(row, identityColIdx).slice(0, 100);
             if (!name) {
                 results.rejected++;
                 results.errors.push({ row: rowNum, error: 'Name is required' });
@@ -425,6 +481,8 @@ exports.inviteeService = {
             }
             if (existing) {
                 matchedIds.add(String(existing._id));
+                if (hasHistory(existing) || inLockedSet(existing))
+                    results.alreadyInvited++;
                 const access = new Map((existing.sessionAccess || []).map((sa) => [String(sa.sessionId), sa.allowed]));
                 const hadImplicitAll = access.size === 0;
                 if (targetSession) {
@@ -470,6 +528,8 @@ exports.inviteeService = {
                     else if (existingCompany !== company)
                         kept.push(`company '${existingCompany}'`);
                 }
+                if (professionalIdentity && !existing.professionalIdentity)
+                    existing.professionalIdentity = professionalIdentity;
                 if (dietary) {
                     if (!existing.dietaryPreference)
                         existing.dietaryPreference = dietary;
@@ -491,6 +551,7 @@ exports.inviteeService = {
                     companyName: company || undefined,
                     company: company || undefined,
                     dietaryPreference: dietary || undefined,
+                    professionalIdentity: professionalIdentity || undefined,
                     sessionAccess: rowAccess.map((a) => ({ sessionId: new mongoose_1.default.Types.ObjectId(a.sessionId), allowed: a.allowed })),
                     invitationStatus: Invitee_2.InvitationStatus.PENDING,
                     rsvpStatus: Invitee_2.RsvpStatus.PENDING
@@ -501,36 +562,103 @@ exports.inviteeService = {
         if (matchedIds.size === 0 && toInsert.length === 0) {
             return results;
         }
+        // The upload becomes its own list; guests already in the event are never copied into it
+        let newSetId = null;
         if (toInsert.length > 0) {
-            await invitee_repository_1.inviteeRepository.insertMany(toInsert);
+            const created = await InviteeSet_1.InviteeSet.create({
+                eventId: new mongoose_1.default.Types.ObjectId(eventId),
+                sessionId: targetSession ? targetSession._id : null,
+                name: (options.fileName || 'Uploaded list').slice(0, 200),
+                mode,
+                createdBy: new mongoose_1.default.Types.ObjectId(organizerId),
+                createdByRole: options.role,
+                importedCount: toInsert.length
+            });
+            newSetId = created._id;
+            results.setId = String(newSetId);
+            toInsert.forEach((row) => { row.inviteeSetId = newSetId; });
+            try {
+                await invitee_repository_1.inviteeRepository.insertMany(toInsert);
+            }
+            catch (err) {
+                // nothing was archived yet; take the half-made list back out so the event looks exactly as before the upload
+                await Invitee_1.Invitee.deleteMany({ inviteeSetId: newSetId, invitationStatus: Invitee_2.InvitationStatus.PENDING, rsvpStatus: Invitee_2.RsvpStatus.PENDING }).setOptions({ includeArchived: true });
+                await InviteeSet_1.InviteeSet.deleteOne({ _id: newSetId });
+                throw err;
+            }
             results.imported = toInsert.length;
         }
-        // Replace the staged list with the new file
-        const notInFile = existingInvitees.filter((inv) => !matchedIds.has(String(inv._id)) && !hasHistory(inv));
-        if (targetSession) {
-            const sid = String(targetSession._id);
-            const otherOwnSessions = ownSessionIds.filter((id) => id !== sid);
-            for (const inv of notInFile) {
-                const access = (inv.sessionAccess || []).map((sa) => ({ sessionId: String(sa.sessionId), allowed: sa.allowed }));
-                const wasAllowed = access.length === 0 || access.some((a) => a.sessionId === sid && a.allowed);
-                if (!wasAllowed)
+        // Replace: only never-invited guests of unlocked lists can be superseded, and they are archived, not deleted.
+        // Append (and any guest with history, or in a locked list) leaves everything as it was.
+        if (mode === InviteeSet_1.ImportMode.REPLACE) {
+            const notInFile = existingInvitees.filter((inv) => !matchedIds.has(String(inv._id)) && !hasHistory(inv) && !inLockedSet(inv));
+            results.preservedSets = lockedSets.size;
+            // guests of earlier lists whose delivery failed or never settled are not "never invited": they are kept and stay retryable
+            for (const inv of existingInvitees) {
+                if (matchedIds.has(String(inv._id)))
                     continue;
-                const remaining = access.length === 0
-                    ? otherOwnSessions.map((sessionId) => ({ sessionId, allowed: true }))
-                    : access.filter((a) => a.sessionId !== sid);
-                if (!remaining.some((a) => a.allowed)) {
-                    await Invitee_1.Invitee.deleteOne({ _id: inv._id });
+                const state = (0, inviteeSet_service_1.deliveryStateOf)(activity.get(String(inv._id)));
+                if (state === 'FAILED')
+                    results.failedKept++;
+                else if (state === 'UNKNOWN')
+                    results.unknownKept++;
+            }
+            const actorId = new mongoose_1.default.Types.ObjectId(organizerId);
+            const archive = async (ids) => {
+                if (!ids.length)
+                    return;
+                const now = new Date();
+                try {
+                    // The conditions are re-checked by the database in the same step, so a guest who was invited a moment ago is skipped
+                    const res = await Invitee_1.Invitee.updateMany({ _id: { $in: ids }, archivedAt: null, invitationStatus: Invitee_2.InvitationStatus.PENDING, rsvpStatus: Invitee_2.RsvpStatus.PENDING, qrTokenHash: null }, { $set: { archivedAt: now, archivedReason: 'SUPERSEDED_BY_UPLOAD', supersededBySetId: newSetId, archivedBy: actorId, archivedByRole: options.role } });
+                    results.archived += res.modifiedCount;
+                    results.removed += res.modifiedCount;
                 }
-                else {
-                    inv.sessionAccess = remaining.map((a) => ({ sessionId: new mongoose_1.default.Types.ObjectId(a.sessionId), allowed: a.allowed }));
-                    await inv.save();
+                catch (err) {
+                    // undo whatever part was applied and take the new list back out, so a failed Replace changes nothing
+                    await Invitee_1.Invitee.updateMany({ supersededBySetId: newSetId, archivedBy: actorId }, { $set: { archivedAt: null, supersededBySetId: null, archivedBy: null, archivedByRole: null }, $unset: { archivedReason: '' } });
+                    if (newSetId) {
+                        await Invitee_1.Invitee.deleteMany({ inviteeSetId: newSetId, invitationStatus: Invitee_2.InvitationStatus.PENDING, rsvpStatus: Invitee_2.RsvpStatus.PENDING });
+                        await InviteeSet_1.InviteeSet.deleteOne({ _id: newSetId });
+                    }
+                    throw err;
                 }
-                results.removed++;
+            };
+            if (targetSession) {
+                const sid = String(targetSession._id);
+                const otherOwnSessions = ownSessionIds.filter((id) => id !== sid);
+                const toArchive = [];
+                for (const inv of notInFile) {
+                    const access = (inv.sessionAccess || []).map((sa) => ({ sessionId: String(sa.sessionId), allowed: sa.allowed }));
+                    const wasAllowed = access.length === 0 || access.some((a) => a.sessionId === sid && a.allowed);
+                    if (!wasAllowed)
+                        continue;
+                    const remaining = access.length === 0
+                        ? otherOwnSessions.map((sessionId) => ({ sessionId, allowed: true }))
+                        : access.filter((a) => a.sessionId !== sid);
+                    if (!remaining.some((a) => a.allowed)) {
+                        toArchive.push(inv._id);
+                    }
+                    else {
+                        inv.sessionAccess = remaining.map((a) => ({ sessionId: new mongoose_1.default.Types.ObjectId(a.sessionId), allowed: a.allowed }));
+                        await inv.save();
+                        results.removed++;
+                    }
+                }
+                await archive(toArchive);
+            }
+            else {
+                await archive(notInFile.map((inv) => inv._id));
             }
         }
-        else if (notInFile.length > 0) {
-            await Invitee_1.Invitee.deleteMany({ _id: { $in: notInFile.map((inv) => inv._id) } });
-            results.removed = notInFile.length;
+        if (results.archived > 0) {
+            // one summary entry: who set how many guests aside, because of which upload (the guests themselves carry the same facts)
+            await auditLog_service_1.auditLogService.record({
+                actorId: organizerId, actorRole: options.role, eventId, organizerId: event.organizerId,
+                action: 'INVITEE_SET_ASIDE', entityType: 'InviteeSet', entityId: newSetId,
+                description: 'Never-invited guests set aside by a Replace',
+                metadata: { setId: results.setId, mode, archived: results.archived, failedKept: results.failedKept, unknownKept: results.unknownKept, preservedSets: results.preservedSets }
+            });
         }
         return results;
     }

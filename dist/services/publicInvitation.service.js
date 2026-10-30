@@ -6,6 +6,8 @@ const Invitee_1 = require("../models/Invitee");
 const Event_1 = require("../models/Event");
 const Session_1 = require("../models/Session");
 const User_1 = require("../models/User");
+const CredentialEvent_1 = require("../models/CredentialEvent");
+const credentialPolicy_1 = require("../utils/credentialPolicy");
 const invitation_util_1 = require("../utils/invitation.util");
 const sessionAccess_1 = require("../utils/sessionAccess");
 const context_1 = require("./cardTemplates/context");
@@ -58,6 +60,15 @@ exports.publicInvitationService = {
         const tokenHash = (0, invitation_util_1.hashToken)(rawToken);
         const invitee = await Invitee_1.Invitee.findOne({ qrTokenHash: tokenHash });
         if (!invitee) {
+            // A link whose pass was replaced: explain it (and name the event) without revealing the new pass
+            const old = await CredentialEvent_1.CredentialEvent.findOne({ tokenHash }).select('+tokenHash eventId inviteeId createdAt').lean();
+            const successor = old && (await CredentialEvent_1.CredentialEvent.exists({ inviteeId: old.inviteeId, createdAt: { $gt: old.createdAt }, type: 'REPLACED' }));
+            if (old && successor) {
+                const ev = await Event_1.Event.findById(old.eventId).select('title').lean();
+                const who = await Invitee_1.Invitee.findById(old.inviteeId).select('name').lean();
+                if (ev && who)
+                    return { credential: { status: 'REPLACED' }, event: { title: ev.title }, invitee: { name: who.name } };
+            }
             throw new Error('INVITATION_NOT_FOUND');
         }
         const event = await Event_1.Event.findById(invitee.eventId).select('title description format location contactNumber schedule admission status cancelledAt cancellationReason rsvp dietaryPreference organizerId templateId categoryId subcategoryId');
@@ -111,6 +122,8 @@ exports.publicInvitationService = {
                 dietaryPreference: event.dietaryPreference
             },
             theme,
+            // The guest's CURRENT pass: the page hides the pass image when it is revoked (never says "replaced" for a pass that has a successor)
+            credential: { status: (0, credentialPolicy_1.credentialStatus)(invitee, event).status },
             invitee: {
                 name: invitee.name,
                 rsvpStatus: invitee.rsvpStatus,
@@ -137,6 +150,10 @@ exports.publicInvitationService = {
         const closesAt = event.rsvp.acceptanceLastDate || event.schedule?.end;
         if (closesAt && new Date(closesAt) < new Date())
             throw new Error('RSVP_CLOSED');
+        // A guest who declines has no food preference to give: refuse it instead of quietly dropping it (also for direct API calls)
+        if (rsvpStatus === Invitee_1.RsvpStatus.DECLINED && ((dietarySelections && dietarySelections.length > 0) || (legacyDietaryPreference && legacyDietaryPreference.trim()))) {
+            throw new Error('DIETARY_NOT_ALLOWED_WHEN_DECLINED');
+        }
         const previous = invitee.rsvpStatus;
         invitee.rsvpStatus = rsvpStatus;
         if (rsvpStatus === Invitee_1.RsvpStatus.DECLINED) {

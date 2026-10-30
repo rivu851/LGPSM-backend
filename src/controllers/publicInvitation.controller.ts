@@ -18,6 +18,12 @@ export const publicInvitationController = {
       if (error.message === 'INVITATION_NOT_FOUND' || error.message === 'INVALID_TOKEN') {
         return res.status(404).json({ success: false, message: 'Invitation not found or token is invalid' });
       }
+      if (error.message === 'CREDENTIAL_REPLACED') {
+        return res.status(410).json({ success: false, code: 'CREDENTIAL_REPLACED', message: 'This access pass was replaced. Please use the new one we sent you.' });
+      }
+      if (error.message === 'CREDENTIAL_REVOKED') {
+        return res.status(410).json({ success: false, code: 'CREDENTIAL_REVOKED', message: 'This access pass has been withdrawn and no longer works.' });
+      }
       if (error.message === 'EVENT_CANCELLED') {
         return res.status(410).json({ success: false, code: 'EVENT_CANCELLED', message: 'This event has been cancelled. This access pass is no longer valid.' });
       }
@@ -59,6 +65,9 @@ export const publicInvitationController = {
       }
       if (error.message === 'RSVP_CLOSED') {
         return res.status(400).json({ success: false, message: 'The RSVP deadline for this event has passed.' });
+      }
+      if (error.message === 'DIETARY_NOT_ALLOWED_WHEN_DECLINED') {
+        return res.status(400).json({ success: false, code: 'DIETARY_NOT_ALLOWED_WHEN_DECLINED', message: 'A food preference can only be given when you accept.' });
       }
       if (error.message === 'INVALID_DIETARY_PREFERENCE') {
         return res.status(400).json({ success: false, message: 'Choose only from the dietary options provided for this event.' });

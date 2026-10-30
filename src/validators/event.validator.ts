@@ -44,6 +44,14 @@ export const admissionSchema = z.object({
 
 export const updateAdmissionSchema = z.object({ body: admissionSchema });
 
+// Event Location (the venue named on the invitation card) and the optional Address (extra directions) are separate fields
+const locationFieldsSchema = z.object({
+  address: z.string().trim().min(1, 'Event location is required').max(300, 'Event location cannot exceed 300 characters').optional(),
+  addressDetails: z.string().trim().max(500, 'Address cannot exceed 500 characters').optional(),
+  coordinates: z.any().optional()
+}).passthrough();
+const hasVenue = (loc: unknown) => (typeof loc === 'string' ? loc.trim() !== '' : !!loc && typeof loc === 'object' && typeof (loc as any).address === 'string' && (loc as any).address.trim() !== '');
+
 export const createEventSchema = z.object({
   body: z.object({
     title: z.string().min(1, 'Title is required').max(EVENT_TITLE_MAX_LENGTH, `Title cannot exceed ${EVENT_TITLE_MAX_LENGTH} characters`),
@@ -51,7 +59,7 @@ export const createEventSchema = z.object({
     categoryId: objectIdSchema.optional(),
     subcategoryId: objectIdSchema.optional(),
     format: z.nativeEnum(EventFormat).optional().default(EventFormat.PHYSICAL),
-    location: z.any().optional(),
+    location: z.union([z.string().max(300), locationFieldsSchema]).optional(),
     contactNumber: z.string().optional(),
     schedule: z.object({
       start: z.string().optional(),
@@ -76,6 +84,10 @@ export const createEventSchema = z.object({
       logoKey: z.string().refine((k) => k === '' || isAcceptedImageKey(k), 'Invalid logo image reference').optional(),
       bannerKey: z.string().refine((k) => k === '' || isAcceptedImageKey(k), 'Invalid banner image reference').optional()
     }).optional()
+  }).superRefine((body, ctx) => {
+    if (body.format === EventFormat.PHYSICAL && !hasVenue(body.location)) {
+      ctx.addIssue({ code: 'custom', path: ['location', 'address'], message: 'Event location is required' });
+    }
   })
 });
 
@@ -87,7 +99,8 @@ export const updateEventSchema = z.object({
     subcategoryId: objectIdSchema.optional(),
     format: z.nativeEnum(EventFormat).optional(),
     location: z.object({
-      address: z.string().optional(),
+      address: z.string().trim().min(1, 'Event location is required').max(300, 'Event location cannot exceed 300 characters').optional(),
+      addressDetails: z.string().trim().max(500, 'Address cannot exceed 500 characters').optional(),
       coordinates: z.tuple([
         z.number().min(-180).max(180),
         z.number().min(-90).max(90)

@@ -75,7 +75,7 @@ export const checkInController = {
       };
 
       const result = await checkInService.scanCheckIn(actor, req.body);
-      res.status(201).json({ success: true, message: 'Check-in successful', data: result });
+      res.status(201).json({ success: true, message: (result as any)?.reEntry ? 'Repeat entry allowed' : 'Check-in successful', data: result });
     } catch (error: any) {
       if (!sendRefusal(res, error)) next(error);
     }
@@ -89,7 +89,7 @@ export const checkInController = {
       };
 
       const result = await checkInService.manualCheckIn(actor, req.body);
-      res.status(201).json({ success: true, message: 'Check-in successful', data: result });
+      res.status(201).json({ success: true, message: (result as any)?.reEntry ? 'Repeat entry allowed' : 'Check-in successful', data: result });
     } catch (error: any) {
       if (!sendRefusal(res, error)) next(error);
     }

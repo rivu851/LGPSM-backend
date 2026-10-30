@@ -2,6 +2,7 @@ import dns from 'dns';
 import app from './app';
 import connectDatabase from './config/database';
 import { env } from './config/env';
+import { passNoticeService } from './services/passNotice.service';
 import { cancellationNoticeService } from './services/cancellationNotice.service';
 import { recoverOnStartup } from './services/stitch/templateGeneration.service';
 
@@ -18,6 +19,7 @@ async function startServer() {
     await recoverOnStartup().catch((e) => console.error('Template generation recovery failed:', e?.message));
 
     // cancellation notices that were still waiting when the process stopped are sent now (they are stored, not held in memory)
+    passNoticeService.resumeAll().catch((e) => console.error('Pass notice resume failed:', e?.message));
     cancellationNoticeService.resumeAll().catch((e) => console.error('Cancellation notice resume failed:', e?.message));
 
     app.listen(env.PORT, () => {

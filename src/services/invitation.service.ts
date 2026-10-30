@@ -3,6 +3,8 @@ import { alertService } from './alert.service';
 import mongoose from 'mongoose';
 import { Event, EventStatus } from '../models/Event';
 import { cancellationNoticeService } from './cancellationNotice.service';
+import { credentialService } from './credential.service';
+import { CredentialEvent } from '../models/CredentialEvent';
 import { Invitee, InvitationStatus } from '../models/Invitee';
 import { Invitation, DeliveryChannel, InvitationDeliveryStatus } from '../models/Invitation';
 import { Session } from '../models/Session';
@@ -159,6 +161,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const SKIPPED_NO_CONTACT = 'No email address or WhatsApp number';
 export const SKIPPED_ALREADY_INVITED = 'Already invited';
 export const SKIPPED_EVENT_CANCELLED = 'The event was cancelled';
+export const SKIPPED_PASS_REVOKED = 'Pass revoked: use Replace Access Pass';
 
 /** Read fresh on every use: a cancellation can land while a long send is running. */
 const eventIsCancelled = async (eventId: unknown) => !!(await Event.exists({ _id: eventId as any, status: EventStatus.CANCELLED }));
@@ -186,12 +189,23 @@ export const invitationService = {
   async publicInvitationCard(rawToken: string): Promise<Buffer> {
     if (!rawToken || typeof rawToken !== 'string') throw new Error('INVALID_TOKEN');
     const invitee = await Invitee.findOne({ qrTokenHash: hashToken(rawToken) }).select('+qrTokenCipher');
-    if (!invitee) throw new Error('INVITATION_NOT_FOUND');
+    if (!invitee) {
+      // an old link whose pass was replaced: say so instead of "not found"
+      if (await CredentialEvent.exists({ tokenHash: hashToken(rawToken) })) throw new Error('CREDENTIAL_REPLACED');
+      throw new Error('INVITATION_NOT_FOUND');
+    }
     const event = await Event.findById(invitee.eventId);
     if (!event) throw new Error('INVITATION_NOT_FOUND');
     // The page shows a notice instead; a cancelled event's pass is never drawn (and would be refused at the door anyway)
     if (event.status === EventStatus.CANCELLED) throw new Error('EVENT_CANCELLED');
+    // A revoked pass is not drawn either: the page explains instead
+    if ((invitee as any).credentialRevokedAt) throw new Error('CREDENTIAL_REVOKED');
 
+    return this.renderPassCard(event, invitee, rawToken);
+  },
+
+  /** Draws the guest's card with the QR for `rawToken`. Used for the public card and for replacement notices. */
+  async renderPassCard(event: any, invitee: any, rawToken: string): Promise<Buffer> {
     const cardContext = await loadCardContext(event);
     const eventPhotoBase64 = await resolveImageKeyBase64((event as any).media?.logoKey);
     const guestLines = cardGuestLines(invitee, (event as any).cardInfo);
@@ -462,6 +476,9 @@ export const invitationService = {
 
       await invitation.save();
       await invitee.save();
+      if (invitation.status === InvitationDeliveryStatus.SENT) {
+        await credentialService.recordIssuance({ invitee, tokenHash, source: 'SEND', actorId: organizerId, actorRole: userRole || 'ORGANIZER', organizerId: (event as any).organizerId }).catch((e) => console.error('Credential history not recorded:', e?.message));
+      }
       if (invitation.status === InvitationDeliveryStatus.SENT && (await eventIsCancelled(eventId))) {
         await cancellationNoticeService.enqueueLateInvitee(eventId, invitee._id).catch((e) => console.error('Late cancellation notice failed:', e?.message));
       }
@@ -557,6 +574,10 @@ export const invitationService = {
 
       if (await eventIsCancelled(eventId)) {
         return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: SKIPPED_EVENT_CANCELLED } as any;
+      }
+      // A revoked pass is not re-sent: that would deliver a pass that does not work. Replacing it is a deliberate, recorded action.
+      if (invitee.credentialRevokedAt) {
+        return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: SKIPPED_PASS_REVOKED } as any;
       }
       const activeChannel = (channelOverride || invitation.channel) as DeliveryChannel;
       const use = channelsForInvitee(activeChannel, invitee);
@@ -722,6 +743,9 @@ export const invitationService = {
 
       await resendInvitation.save();
       await invitee.save();
+      if (resendInvitation.status === InvitationDeliveryStatus.SENT) {
+        await credentialService.recordIssuance({ invitee, tokenHash, source: 'RESEND', actorId: organizerId, actorRole: userRole || 'ORGANIZER', organizerId: (event as any).organizerId }).catch((e) => console.error('Credential history not recorded:', e?.message));
+      }
       if (resendInvitation.status === InvitationDeliveryStatus.SENT && (await eventIsCancelled(eventId))) {
         await cancellationNoticeService.enqueueLateInvitee(eventId, invitee._id).catch((e) => console.error('Late cancellation notice failed:', e?.message));
       }

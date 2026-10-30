@@ -80,7 +80,21 @@ const InviteeSchema = new mongoose_1.Schema({
     qrTokenHash: { type: String },
     // Encrypted copy of the current token (see utils/tokenCipher); never returned by default
     qrTokenCipher: { type: String, select: false },
-    credentialRevokedAt: { type: Date, default: null }
+    credentialRevokedAt: { type: Date, default: null },
+    credentialRevocation: { type: new mongoose_1.Schema({ category: String, note: String, by: mongoose_1.Schema.Types.ObjectId, at: Date }, { _id: false }), default: null },
+    credentialVersion: { type: Number },
+    inviteeSetId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'InviteeSet', default: null },
+    archivedAt: { type: Date, default: null },
+    archivedReason: { type: String },
+    supersededBySetId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'InviteeSet', default: null },
+    archivedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', default: null },
+    archivedByRole: { type: String, default: null },
+    restoredAt: { type: Date, default: null },
+    restoredBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', default: null },
+    setAsideHistory: {
+        type: [new mongoose_1.Schema({ archivedAt: Date, reason: String, supersededBySetId: mongoose_1.Schema.Types.ObjectId, archivedBy: mongoose_1.Schema.Types.ObjectId, archivedByRole: String, restoredAt: { type: Date, required: true }, restoredBy: { type: mongoose_1.Schema.Types.ObjectId, required: true } }, { _id: false })],
+        default: undefined
+    }
 }, {
     timestamps: true
 });
@@ -89,4 +103,22 @@ InviteeSchema.index({ eventId: 1 });
 InviteeSchema.index({ eventId: 1, email: 1 });
 InviteeSchema.index({ eventId: 1, mobile: 1 });
 InviteeSchema.index({ eventId: 1, rsvpStatus: 1 });
+// Archived (superseded, never-invited) guests are invisible to every read. A query that must see them asks with
+// `.setOptions({ includeArchived: true })`; event deletion still removes them with the rest of the event.
+const READ_OPS = ['find', 'findOne', 'findOneAndUpdate', 'findOneAndDelete', 'countDocuments', 'distinct'];
+for (const op of READ_OPS) {
+    InviteeSchema.pre(op, function () {
+        if (this.getOptions().includeArchived)
+            return;
+        const filter = this.getFilter();
+        if (filter.archivedAt === undefined)
+            this.where({ archivedAt: null });
+    });
+}
+InviteeSchema.pre('aggregate', function () {
+    if (this.options?.includeArchived)
+        return;
+    this.pipeline().unshift({ $match: { archivedAt: null } });
+});
+InviteeSchema.index({ eventId: 1, inviteeSetId: 1 });
 exports.Invitee = mongoose_1.default.model('Invitee', InviteeSchema);

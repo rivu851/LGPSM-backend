@@ -5,7 +5,15 @@ import { Role } from '../models/User';
 export const updateProfileSchema = z.object({
   fullName: z.string().min(2, 'Full name must be at least 2 characters').optional(),
   phone: z.string().optional(),
-  profile: z.record(z.string(), z.any()).optional()
+  profile: z.record(z.string(), z.any()).optional(),
+  // The organizer's organization, kept apart from their personal details (name, phone). Organizers and admins only.
+  organization: z.object({
+    name: z.string().trim().min(1, 'Organization name is required').max(150),
+    phone: z.string().trim().max(30).regex(/^[+\d][\d\s()-]*$/, 'Enter a valid phone number').optional().or(z.literal('')),
+    email: z.string().trim().email('Enter a valid organization email').max(150).optional().or(z.literal('')),
+    address: z.string().trim().max(300).optional(),
+    website: z.string().trim().max(200).regex(/^https?:\/\/[^\s]+$/i, 'Website must start with http:// or https://').optional().or(z.literal(''))
+  }).strict().optional()
 }).strict();
 
 export const createUserSchema = z.object({

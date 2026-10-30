@@ -106,7 +106,23 @@ exports.userService = {
         return user;
     },
     async updateProfile(userId, data) {
-        const payload = data.phone !== undefined ? { ...data, phone: (0, whatsapp_service_1.normalizePhoneNumber)(data.phone) } : data;
+        const { organization, ...personal } = data || {};
+        let payload = personal.phone !== undefined ? { ...personal, phone: (0, whatsapp_service_1.normalizePhoneNumber)(personal.phone) } : { ...personal };
+        if (organization) {
+            const me = await user_repository_1.userRepository.findById(userId);
+            if (!me)
+                throw { statusCode: 404, message: 'User not found' };
+            if (me.role !== User_1.Role.ORGANIZER && me.role !== User_1.Role.ADMIN)
+                throw { statusCode: 403, message: 'Only organizers can set organization details' };
+            // dotted paths: the rest of the profile (logo, avatar) is left exactly as it is
+            payload['profile.organizationName'] = organization.name;
+            payload['profile.organization'] = {
+                phone: organization.phone || undefined, email: organization.email || undefined,
+                address: organization.address || undefined, website: organization.website || undefined
+            };
+            if (payload.profile)
+                delete payload.profile.organizationName; // the name is changed only through `organization`
+        }
         const user = await user_repository_1.userRepository.updateById(userId, payload);
         if (!user) {
             throw { statusCode: 404, message: 'User not found' };

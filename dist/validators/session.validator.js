@@ -15,7 +15,7 @@ exports.createSessionSchema = zod_1.z.object({
             path: ['end']
         }),
         admission: event_validator_1.admissionSchema.optional(),
-        accessControl: zod_1.z.nativeEnum(Session_1.AccessControl).default(Session_1.AccessControl.NO_RESTRICTION),
+        accessControl: zod_1.z.nativeEnum(Session_1.AccessControl).default(Session_1.AccessControl.ONLY_ONCE),
         validateAgainstOtherSessions: zod_1.z.boolean().default(false),
         inviteeSource: zod_1.z.nativeEnum(Session_1.InviteeSource).default(Session_1.InviteeSource.NEW_LIST),
         sourceSessionId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid session ID').nullable().optional()

@@ -3,6 +3,8 @@ import { Invitee, RsvpStatus } from '../models/Invitee';
 import { Event } from '../models/Event';
 import { Session } from '../models/Session';
 import { User } from '../models/User';
+import { CredentialEvent } from '../models/CredentialEvent';
+import { credentialStatus } from '../utils/credentialPolicy';
 import { hashToken } from '../utils/invitation.util';
 import { inviteeAllowedInSession } from '../utils/sessionAccess';
 import { cardHostName } from './cardTemplates/context';
@@ -61,6 +63,14 @@ export const publicInvitationService = {
     const invitee = await Invitee.findOne({ qrTokenHash: tokenHash });
 
     if (!invitee) {
+      // A link whose pass was replaced: explain it (and name the event) without revealing the new pass
+      const old: any = await CredentialEvent.findOne({ tokenHash }).select('+tokenHash eventId inviteeId createdAt').lean();
+      const successor = old && (await CredentialEvent.exists({ inviteeId: old.inviteeId, createdAt: { $gt: old.createdAt }, type: 'REPLACED' }));
+      if (old && successor) {
+        const ev: any = await Event.findById(old.eventId).select('title').lean();
+        const who: any = await Invitee.findById(old.inviteeId).select('name').lean();
+        if (ev && who) return { credential: { status: 'REPLACED' as const }, event: { title: ev.title }, invitee: { name: who.name } };
+      }
       throw new Error('INVITATION_NOT_FOUND');
     }
 
@@ -116,6 +126,8 @@ export const publicInvitationService = {
         dietaryPreference: event.dietaryPreference
       },
       theme,
+      // The guest's CURRENT pass: the page hides the pass image when it is revoked (never says "replaced" for a pass that has a successor)
+      credential: { status: credentialStatus(invitee as any, event as any).status },
       invitee: {
         name: invitee.name,
         rsvpStatus: invitee.rsvpStatus,
@@ -143,6 +155,11 @@ export const publicInvitationService = {
     if (!event.rsvp?.enabled) throw new Error('RSVP_DISABLED');
     const closesAt = event.rsvp.acceptanceLastDate || event.schedule?.end;
     if (closesAt && new Date(closesAt) < new Date()) throw new Error('RSVP_CLOSED');
+
+    // A guest who declines has no food preference to give: refuse it instead of quietly dropping it (also for direct API calls)
+    if (rsvpStatus === RsvpStatus.DECLINED && ((dietarySelections && dietarySelections.length > 0) || (legacyDietaryPreference && legacyDietaryPreference.trim()))) {
+      throw new Error('DIETARY_NOT_ALLOWED_WHEN_DECLINED');
+    }
 
     const previous = invitee.rsvpStatus;
     invitee.rsvpStatus = rsvpStatus;

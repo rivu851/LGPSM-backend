@@ -73,3 +73,39 @@ describe('venue pin through the API', () => {
     expect(await storedPin(id)).toBeUndefined();
   });
 });
+
+describe('Event Location (required) and Address (optional) are separate fields', () => {
+  let tok: string; let ownerId: any;
+  beforeAll(async () => {
+    const { User, Role } = await import('../src/models/User');
+    const { generateAccessToken } = await import('../src/utils/token');
+    const u = await User.create({ fullName: 'Loc Owner', email: 'loc.sep@example.com', role: Role.ORGANIZER });
+    ownerId = u._id; tok = generateAccessToken(String(u._id), Role.ORGANIZER);
+  });
+  const create = (body: object) => request(app).post('/api/v1/events').set('Authorization', `Bearer ${tok}`).send({ title: 'Sep Event', format: 'PHYSICAL', ...body });
+
+  it('refuses a physical event without a venue', async () => {
+    expect((await create({})).status).toBe(400);
+    expect((await create({ location: { address: '   ' } })).status).toBe(400);
+    expect((await create({ location: { addressDetails: 'Gate 3' } })).status).toBe(400);
+  });
+  it('stores the venue and the optional address separately, and keeps the address through an edit', async () => {
+    const res = await create({ location: { address: 'Grand Hall', addressDetails: 'Gate 3, Sector V' } });
+    expect(res.status).toBe(201);
+    const id = res.body.data.eventId;
+    let ev: any = await Event.findById(id).lean();
+    expect(ev.location.address).toBe('Grand Hall');
+    expect(ev.location.addressDetails).toBe('Gate 3, Sector V');
+    const edit = await request(app).patch(`/api/v1/events/${id}`).set('Authorization', `Bearer ${tok}`).send({ location: { address: 'Grand Hall Annex', addressDetails: 'Gate 4' } });
+    expect(edit.status).toBe(200);
+    ev = await Event.findById(id).lean();
+    expect([ev.location.address, ev.location.addressDetails]).toEqual(['Grand Hall Annex', 'Gate 4']);
+  });
+  it('the address is optional and length-limited; an empty venue on edit is refused', async () => {
+    const ok = await create({ location: { address: 'Only Venue' } });
+    expect(ok.status).toBe(201);
+    expect((await create({ location: { address: 'V', addressDetails: 'x'.repeat(501) } })).status).toBe(400);
+    const patch = await request(app).patch(`/api/v1/events/${ok.body.data.eventId}`).set('Authorization', `Bearer ${tok}`).send({ location: { address: '' } });
+    expect(patch.status).toBe(400);
+  });
+});

@@ -22,6 +22,8 @@ export interface IEvent extends Document {
   format: EventFormat;
   location?: {
     address?: string;
+    /** optional full address / directions (the Event Location in `address` is what the card shows) */
+    addressDetails?: string;
     coordinates?: {
       type: 'Point';
       coordinates: [number, number]; // [longitude, latitude]
@@ -87,6 +89,7 @@ const EventSchema: Schema = new Schema(
     format: { type: String, enum: Object.values(EventFormat), required: true },
     location: {
       address: { type: String },
+      addressDetails: { type: String, maxlength: 300 },
       coordinates: {
         type: { type: String, enum: ['Point'], required: false },
         coordinates: { type: [Number], required: false } // [longitude, latitude]

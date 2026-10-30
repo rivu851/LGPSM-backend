@@ -22,6 +22,12 @@ const SLOT_OVERRIDES: Record<string, Record<string, Partial<TextSlotLayout>>> = 
   RICE_CEREMONY: { honoree: { maxLines: 1 } },
 };
 
+/**
+ * Slots that must keep their designed number of lines because the artwork has something fixed right next to them that the
+ * layout data does not describe: the Wedding address pin is printed in the background just above the address.
+ */
+export const FIXED_LINES: Record<string, readonly string[]> = { WEDDING: ['address'] };
+
 export const LAYOUTS: Record<string, CardLayout> = Object.fromEntries(
   Object.entries(CARD_LAYOUTS).map(([design, layout]) => {
     const patch = SLOT_OVERRIDES[design];

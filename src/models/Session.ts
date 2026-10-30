@@ -42,7 +42,7 @@ const SessionSchema: Schema = new Schema(
     accessControl: { 
       type: String, 
       enum: Object.values(AccessControl), 
-      default: AccessControl.NO_RESTRICTION, 
+      default: AccessControl.ONLY_ONCE, 
       required: true 
     },
     validateAgainstOtherSessions: { type: Boolean, default: false, required: true },
