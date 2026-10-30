@@ -284,6 +284,7 @@ export const inviteeController = {
       const result = await inviteeService.processExcelImport(eventId, organizerId, req.file.buffer, {
         mode: rawMode as ImportMode,
         fileName: req.file.originalname,
+        dryRun: String(req.body?.dryRun ?? req.query.dryRun ?? '') === 'true',
         sessionId: rawSessionId || undefined,
         role: (req as any).user.role
       });
@@ -292,6 +293,10 @@ export const inviteeController = {
     } catch (error: any) {
       if (error.message === 'EVENT_NOT_FOUND') {
         res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
+      } else if (error?.code === 11000) {
+        // The database's one-active-guest-per-email/phone rule refused a row (another change added the same person during
+        // this import). The import has been rolled back as a whole.
+        res.status(409).json({ success: false, code: 'IMPORT_CONFLICT', message: 'Another change added the same guest while this list was being imported, so nothing was imported. Please try again.' });
       } else {
         next(error);
       }

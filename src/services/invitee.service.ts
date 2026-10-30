@@ -288,13 +288,15 @@ export const inviteeService = {
    *   (ACCEPTED, DECLINED), or recorded Check-Ins are NEVER deleted or reset. Their contact details
    *   and session access are safely updated/expanded without wiping their invitation or check-in state.
    */
-  async processExcelImport(eventId: string, organizerId: string, fileBuffer: Buffer, options: { sessionId?: string; role?: string; mode?: ImportMode; fileName?: string } = {}) {
+  async processExcelImport(eventId: string, organizerId: string, fileBuffer: Buffer, options: { sessionId?: string; role?: string; mode?: ImportMode; fileName?: string; dryRun?: boolean } = {}) {
     // one import (or restore) per event at a time: the duplicate checks read the list and then write to it
     return withEventLock(eventId, () => inviteeService.runExcelImport(eventId, organizerId, fileBuffer, options));
   },
 
-  async runExcelImport(eventId: string, organizerId: string, fileBuffer: Buffer, options: { sessionId?: string; role?: string; mode?: ImportMode; fileName?: string } = {}) {
+  async runExcelImport(eventId: string, organizerId: string, fileBuffer: Buffer, options: { sessionId?: string; role?: string; mode?: ImportMode; fileName?: string; dryRun?: boolean } = {}) {
     const mode = options.mode === ImportMode.APPEND ? ImportMode.APPEND : ImportMode.REPLACE;
+    // A dry run works out exactly what the import would do, from the same checks, and writes nothing
+    const dryRun = options.dryRun === true;
     const event = await findManageableEvent(eventId, organizerId, options.role);
     if (!event) {
       throw new Error('EVENT_NOT_FOUND');
@@ -509,7 +511,7 @@ export const inviteeService = {
         }
         if (kept.length) results.notices.push({ row: rowNum, message: `Matches ${existing.name}; kept the existing ${kept.join(', ')}` });
         existing.sessionAccess = [...access.entries()].map(([sessionId, allowed]) => ({ sessionId: new mongoose.Types.ObjectId(sessionId), allowed })) as any;
-        await existing.save();
+        if (!dryRun) await existing.save();
         results.updated++;
       } else {
         toInsert.push({
@@ -535,7 +537,9 @@ export const inviteeService = {
 
     // The upload becomes its own list; guests already in the event are never copied into it
     let newSetId: mongoose.Types.ObjectId | null = null;
-    if (toInsert.length > 0) {
+    if (dryRun) {
+      results.imported = toInsert.length;
+    } else if (toInsert.length > 0) {
       const created = await InviteeSet.create({
         eventId: new mongoose.Types.ObjectId(eventId),
         sessionId: targetSession ? targetSession._id : null,
@@ -577,6 +581,7 @@ export const inviteeService = {
         const now = new Date();
         try {
           // The conditions are re-checked by the database in the same step, so a guest who was invited a moment ago is skipped
+          if (dryRun) { results.archived += ids.length; results.removed += ids.length; return; }
           const res = await Invitee.updateMany(
             { _id: { $in: ids }, archivedAt: null, invitationStatus: InvitationStatus.PENDING, rsvpStatus: RsvpStatus.PENDING, qrTokenHash: null },
             { $set: { archivedAt: now, archivedReason: 'SUPERSEDED_BY_UPLOAD', supersededBySetId: newSetId, archivedBy: actorId, archivedByRole: options.role } }
@@ -608,7 +613,7 @@ export const inviteeService = {
             toArchive.push(inv._id as mongoose.Types.ObjectId);
           } else {
             inv.sessionAccess = remaining.map((a) => ({ sessionId: new mongoose.Types.ObjectId(a.sessionId), allowed: a.allowed })) as any;
-            await inv.save();
+            if (!dryRun) await inv.save();
             results.removed++;
           }
         }
@@ -616,6 +621,17 @@ export const inviteeService = {
       } else {
         await archive(notInFile.map((inv) => inv._id as mongoose.Types.ObjectId));
       }
+    }
+
+    if (dryRun) {
+      const lockedKept = existingInvitees.filter((inv) => lockedSets.has(setKeyOf(inv))).length;
+      (results as any).dryRun = true;
+      (results as any).preview = {
+        totalRows: results.totalRows, validNew: results.imported, duplicateRows: results.duplicateCount, matchedExistingGuests: matchedIds.size,
+        existingActive: existingInvitees.length, lockedGuestsKept: lockedKept, failedKept: results.failedKept, unknownKept: results.unknownKept,
+        wouldSetAside: results.archived, preservedSets: results.preservedSets, rejectedRows: results.rejected, errors: results.errors.slice(0, 20)
+      };
+      return results;
     }
 
     if (results.archived > 0) {

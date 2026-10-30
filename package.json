@@ -8,7 +8,8 @@
     "build": "tsc && node scripts/copy-assets.js",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
-    "check:deployed-layout": "node scripts/check-deployed-layout.js"
+    "check:deployed-layout": "node scripts/check-deployed-layout.js",
+    "migrate:invitee-uniqueness": "node scripts/migrate-invitee-uniqueness.js"
   },
   "keywords": [],
   "author": "",

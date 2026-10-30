@@ -276,6 +276,8 @@ exports.inviteeService = {
     },
     async runExcelImport(eventId, organizerId, fileBuffer, options = {}) {
         const mode = options.mode === InviteeSet_1.ImportMode.APPEND ? InviteeSet_1.ImportMode.APPEND : InviteeSet_1.ImportMode.REPLACE;
+        // A dry run works out exactly what the import would do, from the same checks, and writes nothing
+        const dryRun = options.dryRun === true;
         const event = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId, options.role);
         if (!event) {
             throw new Error('EVENT_NOT_FOUND');
@@ -539,7 +541,8 @@ exports.inviteeService = {
                 if (kept.length)
                     results.notices.push({ row: rowNum, message: `Matches ${existing.name}; kept the existing ${kept.join(', ')}` });
                 existing.sessionAccess = [...access.entries()].map(([sessionId, allowed]) => ({ sessionId: new mongoose_1.default.Types.ObjectId(sessionId), allowed }));
-                await existing.save();
+                if (!dryRun)
+                    await existing.save();
                 results.updated++;
             }
             else {
@@ -564,7 +567,10 @@ exports.inviteeService = {
         }
         // The upload becomes its own list; guests already in the event are never copied into it
         let newSetId = null;
-        if (toInsert.length > 0) {
+        if (dryRun) {
+            results.imported = toInsert.length;
+        }
+        else if (toInsert.length > 0) {
             const created = await InviteeSet_1.InviteeSet.create({
                 eventId: new mongoose_1.default.Types.ObjectId(eventId),
                 sessionId: targetSession ? targetSession._id : null,
@@ -610,6 +616,11 @@ exports.inviteeService = {
                 const now = new Date();
                 try {
                     // The conditions are re-checked by the database in the same step, so a guest who was invited a moment ago is skipped
+                    if (dryRun) {
+                        results.archived += ids.length;
+                        results.removed += ids.length;
+                        return;
+                    }
                     const res = await Invitee_1.Invitee.updateMany({ _id: { $in: ids }, archivedAt: null, invitationStatus: Invitee_2.InvitationStatus.PENDING, rsvpStatus: Invitee_2.RsvpStatus.PENDING, qrTokenHash: null }, { $set: { archivedAt: now, archivedReason: 'SUPERSEDED_BY_UPLOAD', supersededBySetId: newSetId, archivedBy: actorId, archivedByRole: options.role } });
                     results.archived += res.modifiedCount;
                     results.removed += res.modifiedCount;
@@ -641,7 +652,8 @@ exports.inviteeService = {
                     }
                     else {
                         inv.sessionAccess = remaining.map((a) => ({ sessionId: new mongoose_1.default.Types.ObjectId(a.sessionId), allowed: a.allowed }));
-                        await inv.save();
+                        if (!dryRun)
+                            await inv.save();
                         results.removed++;
                     }
                 }
@@ -650,6 +662,16 @@ exports.inviteeService = {
             else {
                 await archive(notInFile.map((inv) => inv._id));
             }
+        }
+        if (dryRun) {
+            const lockedKept = existingInvitees.filter((inv) => lockedSets.has((0, inviteeSet_service_1.setKeyOf)(inv))).length;
+            results.dryRun = true;
+            results.preview = {
+                totalRows: results.totalRows, validNew: results.imported, duplicateRows: results.duplicateCount, matchedExistingGuests: matchedIds.size,
+                existingActive: existingInvitees.length, lockedGuestsKept: lockedKept, failedKept: results.failedKept, unknownKept: results.unknownKept,
+                wouldSetAside: results.archived, preservedSets: results.preservedSets, rejectedRows: results.rejected, errors: results.errors.slice(0, 20)
+            };
+            return results;
         }
         if (results.archived > 0) {
             // one summary entry: who set how many guests aside, because of which upload (the guests themselves carry the same facts)

@@ -37,6 +37,8 @@ const validate = (schema) => (req, res, next) => {
         res.status(400).json({ success: false, error: 'Validation Error', message: err.issues?.[0]?.message || 'Invalid input data', details: err.issues ?? err.errors });
     }
 };
+// A preview changes nothing, so it leaves no audit entry (the real import that follows does)
+const skipWhenDryRun = (audit) => (req, res, next) => String(req.body?.dryRun ?? req.query.dryRun ?? '') === 'true' ? next() : audit(req, res, next);
 exports.eventInviteeRoutes = (0, express_1.Router)({ mergeParams: true });
 exports.eventInviteeRoutes.use(authenticate_1.authenticate);
 exports.eventInviteeRoutes.post('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(invitee_validator_1.createInviteeSchema), (0, auditAction_1.auditAction)({ action: 'INVITEE_CREATE', entityType: 'Invitee', eventParam: 'eventId' }), invitee_controller_1.inviteeController.createInvitee);
@@ -65,7 +67,7 @@ exports.eventInviteeRoutes.post('/import', (0, authorizeRoles_1.authorizeRoles)(
         }
         next();
     });
-}, (0, auditAction_1.auditAction)({ action: 'INVITEE_IMPORT', entityType: 'Invitee', eventParam: 'eventId', describe: 'Invitee list imported', meta: (_req, body) => { const d = body?.data || {}; return { mode: d.mode, setId: d.setId, imported: d.imported, archived: d.archived, alreadyInvited: d.alreadyInvited, preservedSets: d.preservedSets, rejected: d.rejected }; } }), invitee_controller_1.inviteeController.importExcel);
+}, skipWhenDryRun((0, auditAction_1.auditAction)({ action: 'INVITEE_IMPORT', entityType: 'Invitee', eventParam: 'eventId', describe: 'Invitee list imported', meta: (_req, body) => { const d = body?.data || {}; return { mode: d.mode, setId: d.setId, imported: d.imported, archived: d.archived, alreadyInvited: d.alreadyInvited, preservedSets: d.preservedSets, rejected: d.rejected }; } })), invitee_controller_1.inviteeController.importExcel);
 exports.inviteeRoutes = (0, express_1.Router)();
 exports.inviteeRoutes.use(authenticate_1.authenticate);
 exports.inviteeRoutes.get('/:inviteeId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), invitee_controller_1.inviteeController.getInviteeById);

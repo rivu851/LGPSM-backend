@@ -95,7 +95,12 @@ exports.inviteeRepository = {
         return await Invitee_1.Invitee.find({ eventId, $or: orConditions });
     },
     async update(inviteeId, data) {
-        return await Invitee_1.Invitee.findByIdAndUpdate(inviteeId, data, { new: true, runValidators: true });
+        // load + save (not findByIdAndUpdate) so that validation runs and the derived phone key stays in step with the phone number
+        const doc = await Invitee_1.Invitee.findById(inviteeId);
+        if (!doc)
+            return null;
+        doc.set(data);
+        return await doc.save();
     },
     async bulkUpdateSessionAccess(inviteeIds, sessionAccess) {
         return await Invitee_1.Invitee.updateMany({ _id: { $in: inviteeIds } }, { $set: { sessionAccess } }, { runValidators: true });

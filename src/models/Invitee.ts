@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import { normalizePhoneNumber } from '../services/whatsapp.service';
 
 export enum InvitationStatus {
   PENDING = 'PENDING',
@@ -22,6 +23,8 @@ export interface IInvitee extends Document {
   name: string;
   email?: string;
   mobile?: string;
+  /** The phone number in the one form every duplicate check uses (digits, +91 for ten-digit numbers). Derived on save. */
+  mobileKey?: string;
   invitationStatus: InvitationStatus;
   rsvpStatus: RsvpStatus;
   dietaryPreference?: string;
@@ -66,6 +69,7 @@ const InviteeSchema: Schema = new Schema(
     name: { type: String, required: true, maxlength: 100 },
     email: { type: String, lowercase: true, trim: true },
     mobile: { type: String, trim: true },
+    mobileKey: { type: String, select: false },
     invitationStatus: { 
       type: String, 
       enum: Object.values(InvitationStatus), 
@@ -115,6 +119,19 @@ const InviteeSchema: Schema = new Schema(
 InviteeSchema.index({ eventId: 1 });
 InviteeSchema.index({ eventId: 1, email: 1 });
 InviteeSchema.index({ eventId: 1, mobile: 1 });
+
+// The phone number in comparison form, kept in step with `mobile` whenever a guest is validated/saved.
+InviteeSchema.pre('validate', function (this: IInvitee) {
+  this.mobileKey = normalizePhoneNumber(this.mobile) || undefined;
+});
+
+// One ACTIVE guest per email and per phone number within an event. The database enforces this, so it holds across
+// every backend instance. A guest is active while `archivedAt` is null; set-aside guests are outside these indexes (so
+// they never block a re-upload, and restoring one is refused by the database if an active guest has taken its place).
+// Guests without an email, or without a usable phone number, are outside them too. Different events are independent.
+// The key order differs from the older plain (eventId, email) index on purpose, so that index can stay untouched.
+InviteeSchema.index({ email: 1, eventId: 1 }, { name: 'uniq_active_event_email', unique: true, partialFilterExpression: { archivedAt: { $type: 'null' }, email: { $gt: '' } } });
+InviteeSchema.index({ mobileKey: 1, eventId: 1 }, { name: 'uniq_active_event_mobile', unique: true, partialFilterExpression: { archivedAt: { $type: 'null' }, mobileKey: { $gt: '' } } });
 InviteeSchema.index({ eventId: 1, rsvpStatus: 1 });
 
 // Archived (superseded, never-invited) guests are invisible to every read. A query that must see them asks with

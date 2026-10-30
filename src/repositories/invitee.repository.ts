@@ -116,7 +116,11 @@ export const inviteeRepository = {
   },
 
   async update(inviteeId: string, data: Partial<IInvitee>): Promise<IInvitee | null> {
-    return await Invitee.findByIdAndUpdate(inviteeId, data, { new: true, runValidators: true });
+    // load + save (not findByIdAndUpdate) so that validation runs and the derived phone key stays in step with the phone number
+    const doc = await Invitee.findById(inviteeId);
+    if (!doc) return null;
+    doc.set(data as any);
+    return await doc.save();
   },
 
   async bulkUpdateSessionAccess(inviteeIds: string[], sessionAccess: any[]): Promise<any> {

@@ -22,6 +22,10 @@ import { encryptToken } from '../src/utils/tokenCipher';
 import { generateAccessToken } from '../src/utils/token';
 import { generateSecureToken, hashToken } from '../src/utils/invitation.util';
 
+// every guest of an event has their own phone number (the database allows one active guest per number)
+let mobileSeq = 0;
+const uniqueMobile = () => `98765${String(43210 + ++mobileSeq)}`;
+
 const auth = (t: string) => ({ Authorization: `Bearer ${t}` });
 const HOUR = 3600e3;
 jest.setTimeout(30_000); // each replacement renders a card
@@ -61,7 +65,7 @@ describe('P4 — individual access pass: revoke, replace, history', () => {
     const raw = generateSecureToken();
     const issued = opts.issued !== false;
     const inv: any = await Invitee.create({
-      eventId: event._id, name, email: `${key}@x.com`, mobile: '9876543210', invitationStatus: issued ? InvitationStatus.SENT : InvitationStatus.PENDING,
+      eventId: event._id, name, email: `${key}@x.com`, mobile: uniqueMobile(), invitationStatus: issued ? InvitationStatus.SENT : InvitationStatus.PENDING,
       rsvpStatus: opts.rsvp ?? RsvpStatus.ACCEPTED, sessionAccess: [],
       ...(issued ? { qrTokenHash: hashToken(raw), qrTokenCipher: encryptToken(raw), credentialVersion: 1 } : {})
     });
@@ -255,7 +259,7 @@ describe('P4 — individual access pass: revoke, replace, history', () => {
       expect(row.status).toBe('SUCCESS');
       expect(String(row.actorId)).toBe(String(org._id));
       expect(String(row.organizerId)).toBe(String(org._id));
-      expect(JSON.stringify(row.toObject())).not.toMatch(/private details|@x\.com|9876543210/);
+      expect(JSON.stringify(row.toObject())).not.toMatch(/private details|@x\.com|98765\d{5}/);
       expect(row.metadata.category).toBe('OTHER');
       jest.spyOn(auditLogRepository, 'create').mockRejectedValue(new Error('down'));
       const res = await revoke('ben');

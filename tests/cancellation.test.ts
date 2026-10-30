@@ -19,6 +19,10 @@ import { clock } from '../src/utils/clock';
 import { generateAccessToken } from '../src/utils/token';
 import { generateSecureToken, hashToken } from '../src/utils/invitation.util';
 
+// every guest of an event has their own phone number (the database allows one active guest per number)
+let mobileSeq = 0;
+const uniqueMobile = () => `98765${String(43210 + ++mobileSeq)}`;
+
 const auth = (t: string) => ({ Authorization: `Bearer ${t}` });
 const START = new Date('2026-10-31T04:30:00.000Z');
 const END = new Date('2026-10-31T11:30:00.000Z');
@@ -53,7 +57,7 @@ describe('P0.3 — event cancellation lifecycle', () => {
 
   const invite = async (key: string, name: string, over: Record<string, unknown>, delivery?: Record<string, unknown>) => {
     const raw = generateSecureToken();
-    const inv = await Invitee.create({ eventId: event._id, name, email: `${key}@x.com`, mobile: '9876543210', invitationStatus: InvitationStatus.SENT, rsvpStatus: RsvpStatus.PENDING, qrTokenHash: hashToken(raw), sessionAccess: [], ...over });
+    const inv = await Invitee.create({ eventId: event._id, name, email: `${key}@x.com`, mobile: uniqueMobile(), invitationStatus: InvitationStatus.SENT, rsvpStatus: RsvpStatus.PENDING, qrTokenHash: hashToken(raw), sessionAccess: [], ...over });
     if (delivery) await Invitation.create({ eventId: event._id, inviteeId: inv._id, tokenHash: hashToken(raw), ...delivery });
     guests[key] = { inv, raw };
   };
@@ -458,7 +462,7 @@ describe('P0.3 — event cancellation lifecycle', () => {
       expect(String(row.eventId)).toBe(String(event._id));
       expect(String(row.organizerId)).toBe(String(org._id));
       expect(row.metadata.reason).toBe('Venue unavailable');
-      expect(JSON.stringify(row.toObject())).not.toMatch(/@x\.com|9876543210/);
+      expect(JSON.stringify(row.toObject())).not.toMatch(/@x\.com|98765432\d\d/);
       const log = await request(app).get(`/api/v1/audit-logs?eventId=${event._id}`).set(auth(tOrg));
       expect(log.body.data.map((r: any) => r.action)).toEqual(expect.arrayContaining(['EVENT_CANCEL', 'EVENT_CANCEL_NOTIFICATIONS']));
       expect((await request(app).get(`/api/v1/audit-logs?eventId=${event._id}`).set(auth(tOther))).body.data).toHaveLength(0);

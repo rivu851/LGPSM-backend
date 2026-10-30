@@ -23,6 +23,11 @@ function resolveStatus(err) {
         return { statusCode: 401, message: 'Invalid or expired token' };
     }
     if (err.code === 11000) {
+        const keys = Object.keys(err.keyPattern || err.keyValue || {});
+        if (keys.includes('mobileKey'))
+            return { statusCode: 409, message: 'A guest with this mobile number is already on this event\'s active list.', code: 'DUPLICATE_INVITEE' };
+        if (keys.includes('email') && keys.includes('eventId'))
+            return { statusCode: 409, message: 'A guest with this email address is already on this event\'s active list.', code: 'DUPLICATE_INVITEE' };
         return { statusCode: 409, message: 'A record with the same unique value already exists' };
     }
     if (err.type === 'entity.parse.failed') {
@@ -54,12 +59,13 @@ const errorHandler = (err, req, res, next) => {
         return;
     }
     const error = err && typeof err === 'object' ? err : {};
-    const { statusCode, message } = resolveStatus(error);
+    const { statusCode, message, code } = resolveStatus(error);
     if (statusCode >= 500) {
         console.error('Error:', error.message || err);
     }
     res.status(statusCode).json({
         success: false,
+        ...(code ? { code } : {}),
         message,
         ...(env_1.env.NODE_ENV === 'development' && statusCode >= 500 && { stack: error.stack }),
     });

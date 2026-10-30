@@ -19,7 +19,7 @@ type ErrorLike = {
   issues?: Array<{ path?: PropertyKey[]; message?: string }>;
 };
 
-function resolveStatus(err: ErrorLike): { statusCode: number; message: string } {
+function resolveStatus(err: ErrorLike): { statusCode: number; message: string; code?: string } {
   if (err.name === 'CastError') {
     return { statusCode: 400, message: `Invalid ${err.path || 'identifier'} format` };
   }
@@ -36,6 +36,9 @@ function resolveStatus(err: ErrorLike): { statusCode: number; message: string } 
     return { statusCode: 401, message: 'Invalid or expired token' };
   }
   if (err.code === 11000) {
+    const keys = Object.keys((err as any).keyPattern || (err as any).keyValue || {});
+    if (keys.includes('mobileKey')) return { statusCode: 409, message: 'A guest with this mobile number is already on this event\'s active list.', code: 'DUPLICATE_INVITEE' };
+    if (keys.includes('email') && keys.includes('eventId')) return { statusCode: 409, message: 'A guest with this email address is already on this event\'s active list.', code: 'DUPLICATE_INVITEE' };
     return { statusCode: 409, message: 'A record with the same unique value already exists' };
   }
   if (err.type === 'entity.parse.failed') {
@@ -78,7 +81,7 @@ export const errorHandler: ErrorRequestHandler = (
   }
 
   const error = err && typeof err === 'object' ? err as ErrorLike : {};
-  const { statusCode, message } = resolveStatus(error);
+  const { statusCode, message, code } = resolveStatus(error);
 
   if (statusCode >= 500) {
     console.error('Error:', error.message || err);
@@ -86,6 +89,7 @@ export const errorHandler: ErrorRequestHandler = (
 
   res.status(statusCode).json({
     success: false,
+    ...(code ? { code } : {}),
     message,
     ...(env.NODE_ENV === 'development' && statusCode >= 500 && { stack: error.stack }),
   });

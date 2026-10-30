@@ -254,25 +254,27 @@ export const inviteeSetService = {
         }
         const snapshot = { archivedAt: g.archivedAt, reason: g.archivedReason, supersededBySetId: g.supersededBySetId || null, archivedBy: g.archivedBy || null, archivedByRole: g.archivedByRole || null };
         const now = new Date();
-        const done = await Invitee.updateOne(
-          { _id: g._id, archivedAt: { $ne: null } },
-          {
-            $set: { archivedAt: null, supersededBySetId: null, archivedBy: null, archivedByRole: null, restoredAt: now, restoredBy: actor.userId },
-            $unset: { archivedReason: '' },
-            $push: { setAsideHistory: { ...snapshot, restoredAt: now, restoredBy: new mongoose.Types.ObjectId(actor.userId) } }
-          }
-        );
-        if (done.modifiedCount !== 1) { results.push({ id, status: 'ALREADY_ACTIVE' }); continue; }
-        // second look: something else may have created the same person between the check and the write; if so, undo
-        const rival = (await Invitee.find({ eventId: eid, _id: { $ne: g._id }, $or: [...(g.email ? [{ email: String(g.email).toLowerCase() }] : []), ...(g.mobile ? [{ mobile: g.mobile }] : [])] }).limit(1).lean())[0] as any;
-        if (rival) {
-          await Invitee.updateOne({ _id: g._id }, {
-            $set: { archivedAt: snapshot.archivedAt, archivedReason: snapshot.reason, supersededBySetId: snapshot.supersededBySetId, archivedBy: snapshot.archivedBy, archivedByRole: snapshot.archivedByRole, restoredAt: null, restoredBy: null },
-            $pop: { setAsideHistory: 1 }
-          });
-          results.push({ id, status: 'DUPLICATE_ACTIVE', conflictsWith: { id: String(rival._id), name: rival.name, matchedOn: g.email && rival.email === String(g.email).toLowerCase() ? 'email' : 'mobile' } });
+        let done;
+        try {
+          done = await Invitee.updateOne(
+            { _id: g._id, archivedAt: { $ne: null } },
+            {
+              $set: { archivedAt: null, supersededBySetId: null, archivedBy: null, archivedByRole: null, restoredAt: now, restoredBy: actor.userId },
+              $unset: { archivedReason: '' },
+              $push: { setAsideHistory: { ...snapshot, restoredAt: now, restoredBy: new mongoose.Types.ObjectId(actor.userId) } }
+            }
+          );
+        } catch (e: any) {
+          // The database's unique indexes (one active guest per event email / phone) refused it: someone else holds that
+          // email or number right now, whichever instance put them there. The archived record is untouched.
+          if (e?.code !== 11000) throw e;
+          const rival = (await Invitee.find({ eventId: eid, _id: { $ne: g._id }, $or: [...(g.email ? [{ email: String(g.email).toLowerCase() }] : []), ...(g.mobile ? [{ mobileKey: mobileKey(g.mobile) }] : [])] }).limit(1).lean())[0] as any;
+          const conflictsWith = { id: String(rival?._id || ''), name: rival?.name || 'another guest', matchedOn: (g.email && rival?.email === String(g.email).toLowerCase() ? 'email' : 'mobile') as 'email' | 'mobile' };
+          results.push({ id, status: 'DUPLICATE_ACTIVE', conflictsWith });
+          await auditLogService.record({ ...auditBase, action: 'INVITEE_RESTORE_CONFLICT', entityId: id, status: 'FAILED', description: 'Restoration refused by the database: an active guest has the same email or mobile', metadata: { reason: 'DUPLICATE_ACTIVE', matchedOn: conflictsWith.matchedOn, conflictingInviteeId: conflictsWith.id, enforcedBy: 'database' } });
           continue;
         }
+        if (done.modifiedCount !== 1) { results.push({ id, status: 'ALREADY_ACTIVE' }); continue; }
         index(g);
         results.push({ id, status: 'RESTORED' });
         await auditLogService.record({ ...auditBase, action: 'INVITEE_RESTORED', entityId: id, description: 'Set-aside guest restored to the active list as Not Sent', metadata: { setId: g.inviteeSetId ? String(g.inviteeSetId) : LEGACY_SET, wasSetAsideAt: snapshot.archivedAt, reason: snapshot.reason } });

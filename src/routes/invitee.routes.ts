@@ -33,6 +33,10 @@ const validate = (schema: ZodSchema) => (req: Request, res: Response, next: Next
   }
 };
 
+// A preview changes nothing, so it leaves no audit entry (the real import that follows does)
+const skipWhenDryRun = (audit: (req: Request, res: Response, next: NextFunction) => unknown) => (req: Request, res: Response, next: NextFunction) =>
+  String((req.body as any)?.dryRun ?? req.query.dryRun ?? '') === 'true' ? next() : audit(req, res, next);
+
 export const eventInviteeRoutes = Router({ mergeParams: true });
 eventInviteeRoutes.use(authenticate);
 
@@ -62,7 +66,7 @@ eventInviteeRoutes.post('/import', authorizeRoles(Role.ADMIN, Role.ORGANIZER), (
     }
     next();
   });
-}, auditAction({ action: 'INVITEE_IMPORT', entityType: 'Invitee', eventParam: 'eventId', describe: 'Invitee list imported', meta: (_req, body) => { const d = body?.data || {}; return { mode: d.mode, setId: d.setId, imported: d.imported, archived: d.archived, alreadyInvited: d.alreadyInvited, preservedSets: d.preservedSets, rejected: d.rejected }; } }), inviteeController.importExcel);
+}, skipWhenDryRun(auditAction({ action: 'INVITEE_IMPORT', entityType: 'Invitee', eventParam: 'eventId', describe: 'Invitee list imported', meta: (_req, body) => { const d = body?.data || {}; return { mode: d.mode, setId: d.setId, imported: d.imported, archived: d.archived, alreadyInvited: d.alreadyInvited, preservedSets: d.preservedSets, rejected: d.rejected }; } })), inviteeController.importExcel);
 
 export const inviteeRoutes = Router();
 inviteeRoutes.use(authenticate);
