@@ -1,3 +1,4 @@
+import { requestId } from './middlewares/requestId';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -33,6 +34,7 @@ app.set('trust proxy', 1);
 
 // Security and Middleware
 app.use(helmet());
+app.use(requestId);
 // Per-request logging (method, path, status, response time). Silenced during
 // the test suite so Jest output stays readable.
 if (env.NODE_ENV !== 'test') {

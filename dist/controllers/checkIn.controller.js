@@ -12,6 +12,58 @@ const QR_REJECTION_RESPONSES = {
     QR_TOKEN_SUPERSEDED: { status: 410, error: 'Gone', message: 'This pass was replaced by a newer invitation. Ask the guest for the latest one' },
     INVALID_QR_TOKEN: { status: 404, error: 'Not Found', message: 'No invitation matches this QR pass' },
 };
+// Every refusal carries a machine-readable `code` the scanner can act on, and a message safe to show to staff: it never
+// contains the pass, the guest's details or anything about other guests.
+const REFUSALS = {
+    EVENT_NOT_FOUND: { status: 404, error: 'Not Found', message: 'Event not found' },
+    SESSION_NOT_FOUND: { status: 404, error: 'Not Found', message: 'Session not found for this event' },
+    INVITEE_NOT_FOUND: { status: 404, error: 'Not Found', message: 'Invitee not found in this event' },
+    EVENT_ID_REQUIRED: { status: 400, error: 'Bad Request', message: 'eventId is required' },
+    EVENT_MISMATCH: { status: 400, error: 'Bad Request', message: 'QR token does not belong to the specified event' },
+    SESSION_REQUIRED: { status: 400, error: 'Bad Request', message: 'Choose a session before checking guests in. You are assigned to specific sessions.' },
+    RSVP_DECLINED: { status: 400, error: 'Bad Request', message: 'Check-in denied: Invitee RSVP is DECLINED' },
+    RSVP_PENDING: { status: 400, error: 'Bad Request', message: 'Check-in denied: Invitee RSVP is PENDING and unconfirmed entry is disabled' },
+    FORBIDDEN: { status: 403, error: 'Forbidden', message: 'You are not authorized for this event' },
+    STAFF_EVENT_FORBIDDEN: { status: 403, error: 'Forbidden', message: 'You are not authorized for this event' },
+    STAFF_SESSION_FORBIDDEN: { status: 403, error: 'Forbidden', message: 'Staff is not assigned to check in guests for this session' },
+    INVITEE_SESSION_DENIED: { status: 403, error: 'Forbidden', message: 'Invitee does not have permission for this session' },
+    EVENT_CANCELLED: { status: 409, error: 'Conflict', message: 'This event has been cancelled.' },
+    EVENT_COMPLETED: { status: 409, error: 'Conflict', message: 'This event is already completed.' },
+    EVENT_NOT_PUBLISHED: { status: 409, error: 'Conflict', message: 'This event is not open for check-in.' },
+    CREDENTIAL_REVOKED: { status: 410, error: 'Gone', message: 'This access pass has been revoked.' },
+    ONLY_ONCE_VIOLATION: { status: 409, error: 'Conflict', message: 'Invitee has already checked into this session (ONLY_ONCE rule)' },
+    DUPLICATE_CHECKIN: { status: 409, error: 'Conflict', message: 'Invitee has already checked in' },
+    PRIMARY_SESSION_CHECKIN_REQUIRED: { status: 409, error: 'Conflict', message: 'Guest must check in to the first session before entering this session' },
+    CROSS_SESSION_CONFLICT: { status: 409, error: 'Conflict', message: 'Cross-session conflict: Invitee has already checked into another session for this event' },
+};
+const TIME_REFUSAL_STATUS = {
+    ADMISSION_NOT_OPEN: { status: 409, error: 'Conflict' },
+    SESSION_NOT_OPEN: { status: 409, error: 'Conflict' },
+    ADMISSION_CLOSED: { status: 409, error: 'Conflict' },
+    SESSION_CLOSED: { status: 409, error: 'Conflict' },
+    CREDENTIAL_EXPIRED: { status: 410, error: 'Gone' },
+};
+/** Sends the refusal for a known check-in failure; returns false when the error is not one of them. */
+function sendRefusal(res, error) {
+    if (error instanceof checkIn_service_1.AdmissionError) {
+        const t = TIME_REFUSAL_STATUS[error.code];
+        res.status(t.status).json({ success: false, code: error.code, error: t.error, message: error.describe(), opensAt: error.opensAt, closesAt: error.closesAt });
+        return true;
+    }
+    const qr = QR_REJECTION_RESPONSES[error?.message];
+    if (qr) {
+        res.status(qr.status).json({ success: false, code: error.message, error: qr.error, message: qr.message });
+        return true;
+    }
+    const code = error?.code === 11000 ? 'DUPLICATE_CHECKIN' : error?.message;
+    const refusal = REFUSALS[code];
+    if (refusal) {
+        // The existing 'already checked in' wording is kept; the code makes it machine-readable (ALREADY_CHECKED_IN)
+        res.status(refusal.status).json({ success: false, code: code === 'DUPLICATE_CHECKIN' ? 'ALREADY_CHECKED_IN' : code, error: refusal.error, message: refusal.message });
+        return true;
+    }
+    return false;
+}
 exports.checkInController = {
     async scanCheckIn(req, res, next) {
         try {
@@ -23,49 +75,8 @@ exports.checkInController = {
             res.status(201).json({ success: true, message: 'Check-in successful', data: result });
         }
         catch (error) {
-            const qrRejection = QR_REJECTION_RESPONSES[error.message];
-            if (qrRejection) {
-                res.status(qrRejection.status).json({ success: false, code: error.message, error: qrRejection.error, message: qrRejection.message });
-            }
-            else if (error.message === 'EVENT_NOT_FOUND') {
-                res.status(404).json({ success: false, error: 'Not Found', message: 'Event not found' });
-            }
-            else if (error.message === 'SESSION_NOT_FOUND') {
-                res.status(404).json({ success: false, error: 'Not Found', message: 'Session not found for this event' });
-            }
-            else if (error.message === 'EVENT_MISMATCH') {
-                res.status(400).json({ success: false, error: 'Bad Request', message: 'QR token does not belong to the specified event' });
-            }
-            else if (error.message === 'RSVP_DECLINED') {
-                res.status(400).json({ success: false, error: 'Bad Request', message: 'Check-in denied: Invitee RSVP is DECLINED' });
-            }
-            else if (error.message === 'RSVP_PENDING') {
-                res.status(400).json({ success: false, error: 'Bad Request', message: 'Check-in denied: Invitee RSVP is PENDING and unconfirmed entry is disabled' });
-            }
-            else if (error.message === 'FORBIDDEN' || error.message === 'STAFF_EVENT_FORBIDDEN') {
-                res.status(403).json({ success: false, error: 'Forbidden', message: 'You are not authorized for this event' });
-            }
-            else if (error.message === 'STAFF_SESSION_FORBIDDEN') {
-                res.status(403).json({ success: false, error: 'Forbidden', message: 'Staff is not assigned to check in guests for this session' });
-            }
-            else if (error.message === 'INVITEE_SESSION_DENIED') {
-                res.status(403).json({ success: false, error: 'Forbidden', message: 'Invitee does not have permission for this session' });
-            }
-            else if (error.message === 'ONLY_ONCE_VIOLATION') {
-                res.status(409).json({ success: false, error: 'Conflict', message: 'Invitee has already checked into this session (ONLY_ONCE rule)' });
-            }
-            else if (error.message === 'DUPLICATE_CHECKIN' || error.code === 11000) {
-                res.status(409).json({ success: false, error: 'Conflict', message: 'Invitee has already checked in' });
-            }
-            else if (error.message === 'PRIMARY_SESSION_CHECKIN_REQUIRED') {
-                res.status(409).json({ success: false, error: 'Conflict', message: 'Guest must check in to the first session before entering this session' });
-            }
-            else if (error.message === 'CROSS_SESSION_CONFLICT') {
-                res.status(409).json({ success: false, error: 'Conflict', message: 'Cross-session conflict: Invitee has already checked into another session for this event' });
-            }
-            else {
+            if (!sendRefusal(res, error))
                 next(error);
-            }
         }
     },
     async manualCheckIn(req, res, next) {
@@ -78,48 +89,8 @@ exports.checkInController = {
             res.status(201).json({ success: true, message: 'Check-in successful', data: result });
         }
         catch (error) {
-            if (error.message === 'INVITEE_NOT_FOUND') {
-                res.status(404).json({ success: false, error: 'Not Found', message: 'Invitee not found in this event' });
-            }
-            else if (error.message === 'EVENT_NOT_FOUND') {
-                res.status(404).json({ success: false, error: 'Not Found', message: 'Event not found' });
-            }
-            else if (error.message === 'SESSION_NOT_FOUND') {
-                res.status(404).json({ success: false, error: 'Not Found', message: 'Session not found for this event' });
-            }
-            else if (error.message === 'EVENT_ID_REQUIRED') {
-                res.status(400).json({ success: false, error: 'Bad Request', message: 'eventId is required' });
-            }
-            else if (error.message === 'RSVP_DECLINED') {
-                res.status(400).json({ success: false, error: 'Bad Request', message: 'Check-in denied: Invitee RSVP is DECLINED' });
-            }
-            else if (error.message === 'RSVP_PENDING') {
-                res.status(400).json({ success: false, error: 'Bad Request', message: 'Check-in denied: Invitee RSVP is PENDING and unconfirmed entry is disabled' });
-            }
-            else if (error.message === 'FORBIDDEN' || error.message === 'STAFF_EVENT_FORBIDDEN') {
-                res.status(403).json({ success: false, error: 'Forbidden', message: 'You are not authorized for this event' });
-            }
-            else if (error.message === 'STAFF_SESSION_FORBIDDEN') {
-                res.status(403).json({ success: false, error: 'Forbidden', message: 'Staff is not assigned to check in guests for this session' });
-            }
-            else if (error.message === 'INVITEE_SESSION_DENIED') {
-                res.status(403).json({ success: false, error: 'Forbidden', message: 'Invitee does not have permission for this session' });
-            }
-            else if (error.message === 'ONLY_ONCE_VIOLATION') {
-                res.status(409).json({ success: false, error: 'Conflict', message: 'Invitee has already checked into this session (ONLY_ONCE rule)' });
-            }
-            else if (error.message === 'DUPLICATE_CHECKIN' || error.code === 11000) {
-                res.status(409).json({ success: false, error: 'Conflict', message: 'Invitee has already checked in' });
-            }
-            else if (error.message === 'PRIMARY_SESSION_CHECKIN_REQUIRED') {
-                res.status(409).json({ success: false, error: 'Conflict', message: 'Guest must check in to the first session before entering this session' });
-            }
-            else if (error.message === 'CROSS_SESSION_CONFLICT') {
-                res.status(409).json({ success: false, error: 'Conflict', message: 'Cross-session conflict: Invitee has already checked into another session for this event' });
-            }
-            else {
+            if (!sendRefusal(res, error))
                 next(error);
-            }
         }
     },
     async getCheckIns(req, res, next) {

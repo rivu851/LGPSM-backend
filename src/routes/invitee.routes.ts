@@ -1,3 +1,4 @@
+import { auditAction } from '../middlewares/auditAction';
 import { Router, Request, Response, NextFunction } from 'express';
 import { inviteeController } from '../controllers/invitee.controller';
 import { authenticate } from '../middlewares/authenticate';
@@ -35,10 +36,10 @@ const validate = (schema: ZodSchema) => (req: Request, res: Response, next: Next
 export const eventInviteeRoutes = Router({ mergeParams: true });
 eventInviteeRoutes.use(authenticate);
 
-eventInviteeRoutes.post('/', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(createInviteeSchema), inviteeController.createInvitee);
+eventInviteeRoutes.post('/', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(createInviteeSchema), auditAction({ action: 'INVITEE_CREATE', entityType: 'Invitee', eventParam: 'eventId' }), inviteeController.createInvitee);
 // SYSTEM_USER may read invitees of events they are assigned to (for check-in)
 eventInviteeRoutes.get('/', authorizeRoles(Role.ADMIN, Role.ORGANIZER, Role.SYSTEM_USER), inviteeController.getInvitees);
-eventInviteeRoutes.put('/session-access/bulk', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(bulkUpdateSessionAccessSchema), inviteeController.bulkUpdateSessionAccess);
+eventInviteeRoutes.put('/session-access/bulk', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(bulkUpdateSessionAccessSchema), auditAction({ action: 'INVITEE_SESSION_ACCESS_BULK', entityType: 'Invitee', eventParam: 'eventId' }), inviteeController.bulkUpdateSessionAccess);
 
 // Upload handling
 eventInviteeRoutes.post('/import', authorizeRoles(Role.ADMIN, Role.ORGANIZER), (req, res, next) => {
@@ -53,12 +54,12 @@ eventInviteeRoutes.post('/import', authorizeRoles(Role.ADMIN, Role.ORGANIZER), (
     }
     next();
   });
-}, inviteeController.importExcel);
+}, auditAction({ action: 'INVITEE_IMPORT', entityType: 'Invitee', eventParam: 'eventId' }), inviteeController.importExcel);
 
 export const inviteeRoutes = Router();
 inviteeRoutes.use(authenticate);
 
 inviteeRoutes.get('/:inviteeId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), inviteeController.getInviteeById);
-inviteeRoutes.patch('/:inviteeId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(updateInviteeSchema), inviteeController.updateInvitee);
-inviteeRoutes.delete('/:inviteeId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), inviteeController.deleteInvitee);
-inviteeRoutes.put('/:inviteeId/session-access', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(updateSessionAccessSchema), inviteeController.updateSessionAccess);
+inviteeRoutes.patch('/:inviteeId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(updateInviteeSchema), auditAction({ action: 'INVITEE_UPDATE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee' }), inviteeController.updateInvitee);
+inviteeRoutes.delete('/:inviteeId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), auditAction({ action: 'INVITEE_DELETE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee', critical: true }), inviteeController.deleteInvitee);
+inviteeRoutes.put('/:inviteeId/session-access', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(updateSessionAccessSchema), auditAction({ action: 'INVITEE_SESSION_ACCESS_UPDATE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee' }), inviteeController.updateSessionAccess);

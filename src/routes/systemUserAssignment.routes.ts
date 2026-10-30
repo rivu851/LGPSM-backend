@@ -1,3 +1,4 @@
+import { auditAction } from '../middlewares/auditAction';
 import { Router, Request, Response, NextFunction } from 'express';
 import { systemUserAssignmentController } from '../controllers/systemUserAssignment.controller';
 import { authenticate } from '../middlewares/authenticate';
@@ -19,14 +20,14 @@ const validate = (schema: ZodSchema) => (req: Request, res: Response, next: Next
 export const eventAssignmentRoutes = Router({ mergeParams: true });
 eventAssignmentRoutes.use(authenticate);
 
-eventAssignmentRoutes.post('/', authorizeRoles(Role.ORGANIZER, Role.ADMIN), validate(createAssignmentSchema), systemUserAssignmentController.createAssignment);
+eventAssignmentRoutes.post('/', authorizeRoles(Role.ORGANIZER, Role.ADMIN), validate(createAssignmentSchema), auditAction({ action: 'STAFF_ASSIGN', entityType: 'SystemUserAssignment', eventParam: 'eventId' }), systemUserAssignmentController.createAssignment);
 eventAssignmentRoutes.get('/', authorizeRoles(Role.ORGANIZER, Role.ADMIN), systemUserAssignmentController.getAssignmentsByEvent);
 
 export const assignmentRoutes = Router();
 assignmentRoutes.use(authenticate);
 
-assignmentRoutes.patch('/:assignmentId', authorizeRoles(Role.ORGANIZER, Role.ADMIN), validate(updateAssignmentSchema), systemUserAssignmentController.updateAssignment);
-assignmentRoutes.delete('/:assignmentId', authorizeRoles(Role.ORGANIZER, Role.ADMIN), systemUserAssignmentController.deleteAssignment);
+assignmentRoutes.patch('/:assignmentId', authorizeRoles(Role.ORGANIZER, Role.ADMIN), validate(updateAssignmentSchema), auditAction({ action: 'STAFF_ASSIGNMENT_UPDATE', entityType: 'SystemUserAssignment', entityParam: 'assignmentId', eventOf: 'SystemUserAssignment' }), systemUserAssignmentController.updateAssignment);
+assignmentRoutes.delete('/:assignmentId', authorizeRoles(Role.ORGANIZER, Role.ADMIN), auditAction({ action: 'STAFF_UNASSIGN', entityType: 'SystemUserAssignment', entityParam: 'assignmentId', eventOf: 'SystemUserAssignment', critical: true }), systemUserAssignmentController.deleteAssignment);
 
 export const myAssignmentRoutes = Router();
 myAssignmentRoutes.use(authenticate);

@@ -36,6 +36,14 @@ const dietaryPreferenceUpdateSchema = z.object({
   options: z.array(z.any()).optional()
 }).superRefine(validateDietaryOptions);
 
+// When guests may be admitted (see utils/admissionWindow). null / absent = follow the event's start and end.
+export const admissionSchema = z.object({
+  opensAt: z.string().datetime().nullable().optional(),
+  closesAt: z.string().datetime().nullable().optional()
+}).strict();
+
+export const updateAdmissionSchema = z.object({ body: admissionSchema });
+
 export const createEventSchema = z.object({
   body: z.object({
     title: z.string().min(1, 'Title is required').max(EVENT_TITLE_MAX_LENGTH, `Title cannot exceed ${EVENT_TITLE_MAX_LENGTH} characters`),
@@ -49,6 +57,7 @@ export const createEventSchema = z.object({
       start: z.string().optional(),
       end: z.string().optional()
     }).optional(),
+    admission: admissionSchema.optional(),
     rsvp: z.object({
       enabled: z.boolean().optional(),
       acceptanceLastDate: z.string().optional(),
@@ -92,6 +101,7 @@ export const updateEventSchema = z.object({
       message: "End time must be after start time",
       path: ["end"]
     }).optional(),
+    admission: admissionSchema.optional(),
     rsvp: z.object({
       enabled: z.boolean(),
       acceptanceLastDate: z.string().datetime().optional(),

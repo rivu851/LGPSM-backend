@@ -52,6 +52,10 @@ const SessionSchema = new mongoose_1.Schema({
         start: { type: Date, required: true },
         end: { type: Date, required: true }
     },
+    admission: {
+        opensAt: { type: Date, default: undefined },
+        closesAt: { type: Date, default: undefined }
+    },
     accessControl: {
         type: String,
         enum: Object.values(AccessControl),

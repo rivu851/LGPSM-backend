@@ -33,6 +33,8 @@ export interface IInvitee extends Document {
   sessionAccess: ISessionAccess[];
   qrTokenHash?: string;
   qrTokenCipher?: string;
+  // Set when this guest's access pass is withdrawn; check-in refuses it. Nothing sets it yet (issuance/revocation is a later phase).
+  credentialRevokedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -71,7 +73,8 @@ const InviteeSchema: Schema = new Schema(
     sessionAccess: { type: [SessionAccessSchema], default: [] },
     qrTokenHash: { type: String },
     // Encrypted copy of the current token (see utils/tokenCipher); never returned by default
-    qrTokenCipher: { type: String, select: false }
+    qrTokenCipher: { type: String, select: false },
+    credentialRevokedAt: { type: Date, default: null }
   },
   {
     timestamps: true

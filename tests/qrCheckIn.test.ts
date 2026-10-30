@@ -82,7 +82,7 @@ describe('QR check-in pipeline (preview card -> scan)', () => {
     organizerToken = generateAccessToken(String(organizer._id), organizer.role);
     event = await Event.create({
       organizerId: organizer._id, title: 'Summit', description: 'd', categoryId: new mongoose.Types.ObjectId(),
-      format: EventFormat.PHYSICAL, schedule: { start: new Date(), end: new Date() }, status: EventStatus.PUBLISHED,
+      format: EventFormat.PHYSICAL, schedule: { start: new Date(Date.now() - 3600e3), end: new Date(Date.now() + 3600e3) }, status: EventStatus.PUBLISHED,
       rsvp: { enabled: true, allowAllInvited: true, allowNotResponded: true, allowDeclined: false },
     });
     session = await Session.create({ eventId: event._id, name: 'Entry', schedule: event.schedule, accessControl: AccessControl.ONLY_ONCE });
@@ -123,7 +123,7 @@ describe('QR check-in pipeline (preview card -> scan)', () => {
     expect((await scan(sentToken, { sessionId: String(session._id) })).status).toBe(201);
     const again = await scan(invitationUrlFor(sentToken), { sessionId: String(session._id) });
     expect(again.status).toBe(409);
-    expect(again.body.code).toBeUndefined();
+    expect(again.body.code).toBe('ONLY_ONCE_VIOLATION'); // a business rule (this session admits once), not a QR-format problem
   });
 
   it('preview of a guest without an invitation is a marked sample that check-in rejects', async () => {
@@ -153,8 +153,16 @@ describe('QR check-in pipeline (preview card -> scan)', () => {
   });
 
   it('a pass for another event is refused', async () => {
+    // an event that does not exist is refused before the pass is even looked at
     const res = await scan(sentToken, { eventId: String(new mongoose.Types.ObjectId()) });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
+    // an event the staff member is entitled to, but the pass belongs elsewhere
+    const other = await Event.create({
+      organizerId: event.organizerId, title: 'Other', description: 'd', categoryId: new mongoose.Types.ObjectId(),
+      format: EventFormat.PHYSICAL, schedule: { start: new Date(Date.now() - 3600e3), end: new Date(Date.now() + 3600e3) }, status: EventStatus.PUBLISHED
+    });
+    const mismatch = await scan(sentToken, { eventId: String(other._id) });
+    expect(mismatch.status).toBe(400);
     expect(await CheckIn.countDocuments()).toBe(0);
   });
 

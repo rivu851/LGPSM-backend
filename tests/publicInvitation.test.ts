@@ -37,7 +37,9 @@ describe('Public Invitation & RSVP Endpoints', () => {
       location: { type: 'Point', address: 'Convention Hall, City', coordinates: [0, 0] } as any,
       // RSVP is only accepted while the event has it enabled and before it closes
       schedule: { start: new Date(), end: new Date(Date.now() + 86400e3) },
-      rsvp: { enabled: true, allowAllInvited: true, allowNotResponded: false, allowDeclined: false }
+      rsvp: { enabled: true, allowAllInvited: true, allowNotResponded: false, allowDeclined: false },
+      // Guests may only pick from the options the organizer configured
+      dietaryPreference: { enabled: true, title: 'Dietary Preference', options: ['Vegan', 'Veg', 'Non-Veg'] }
     });
     eventId = (event as any)._id as mongoose.Types.ObjectId;
 
@@ -86,6 +88,35 @@ describe('Public Invitation & RSVP Endpoints', () => {
       await Event.updateMany({}, { $set: { 'rsvp.enabled': true } });
     });
 
+    it('themes the page after the event\'s invitation design, with safe colour values only', async () => {
+      const res = await request(app).get(`/api/v1/public/invitations/${rawToken}`);
+      const theme = res.body.data.theme;
+      expect(theme.design).toBe('CORPORATE_V2'); // no template chosen: the default design
+      for (const k of ['background', 'primary', 'accent', 'ink']) expect(theme[k]).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(['serif', 'sans']).toContain(theme.heading);
+    });
+
+    it('uses the palette of a custom (AI) template, and ignores a malformed one', async () => {
+      const { Template } = await import('../src/models/Template');
+      const spec = { palette: { background: '#101820', primary: '#FEE715', accent: '#00A6A6', text: '#FFFFFF' }, elements: [{ type: 'text', role: 'title', fontFamily: 'Playfair Display' }] };
+      const tpl = await Template.create({ name: 'Custom', cardDesign: 'CUSTOM', designSpec: spec });
+      await Event.updateMany({}, { $set: { templateId: tpl._id } });
+      let res = await request(app).get(`/api/v1/public/invitations/${rawToken}`);
+      expect(res.body.data.theme).toMatchObject({ design: 'CUSTOM', primary: '#FEE715', accent: '#00A6A6', heading: 'serif' });
+
+      await Template.updateOne({ _id: tpl._id }, { $set: { 'designSpec.palette.primary': 'url(javascript:alert(1))' } });
+      res = await request(app).get(`/api/v1/public/invitations/${rawToken}`);
+      for (const k of ['background', 'primary', 'accent', 'ink']) expect(res.body.data.theme[k]).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(JSON.stringify(res.body.data.theme)).not.toContain('javascript');
+    });
+
+    it('lets the web app (another origin) display the access card image', async () => {
+      const res = await request(app).get(`/api/v1/public/invitations/${rawToken}/card`);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('image/png');
+      expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
+    });
+
     it('should return 404 for invalid or unknown token', async () => {
       const invalidToken = generateSecureToken();
       const res = await request(app).get(`/api/v1/public/invitations/${invalidToken}`);
@@ -111,6 +142,14 @@ describe('Public Invitation & RSVP Endpoints', () => {
       const updatedInvitee = await Invitee.findById(inviteeId);
       expect(updatedInvitee?.rsvpStatus).toBe(RsvpStatus.ACCEPTED);
       expect(updatedInvitee?.dietaryPreference).toBe('Vegan');
+    });
+
+    it('rejects a dietary choice the organizer did not offer', async () => {
+      const res = await request(app)
+        .post(`/api/v1/public/invitations/${rawToken}/rsvp`)
+        .send({ rsvpStatus: 'ACCEPTED', dietaryPreference: 'Fruitarian' });
+      expect(res.statusCode).toBe(400);
+      expect((await Invitee.findById(inviteeId))?.rsvpStatus).toBe(RsvpStatus.PENDING);
     });
 
     it('should successfully submit DECLINED RSVP', async () => {

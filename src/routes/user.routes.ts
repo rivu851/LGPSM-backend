@@ -1,3 +1,4 @@
+import { auditAction } from '../middlewares/auditAction';
 import { Router } from 'express';
 import { userController } from '../controllers/user.controller';
 import { authenticate } from '../middlewares/authenticate';
@@ -22,7 +23,7 @@ router.use(authenticate);
 
 router.get('/profile', userController.getProfile);
 router.patch('/profile', validate(updateProfileSchema), userController.updateProfile);
-router.patch('/me/password', validate(changePasswordSchema), userController.changePassword);
+router.patch('/me/password', validate(changePasswordSchema), auditAction({ action: 'USER_PASSWORD_CHANGE', entityType: 'User' }), userController.changePassword);
 
 // Endpoint for Admins and Organizers to list users (supports ?role=SYSTEM_USER)
 router.get(
@@ -36,6 +37,7 @@ router.post(
   '/', 
   authorizeRoles(Role.ADMIN, Role.ORGANIZER), 
   validate(createUserSchema), 
+  auditAction({ action: 'USER_CREATE', entityType: 'User' }),
   userController.createUser
 );
 
@@ -50,6 +52,7 @@ router.get(
 router.delete(
   '/:id',
   authorizeRoles(Role.ADMIN, Role.ORGANIZER),
+  auditAction({ action: 'USER_DELETE', entityType: 'User', entityParam: 'id', critical: true }),
   userController.deleteUser
 );
 
@@ -58,6 +61,7 @@ router.patch(
   '/:id',
   authorizeRoles(Role.ADMIN, Role.ORGANIZER),
   validate(updateUserSchema),
+  auditAction({ action: 'USER_UPDATE', entityType: 'User', entityParam: 'id' }),
   userController.updateUser
 );
 

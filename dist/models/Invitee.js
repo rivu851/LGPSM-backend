@@ -79,7 +79,8 @@ const InviteeSchema = new mongoose_1.Schema({
     sessionAccess: { type: [SessionAccessSchema], default: [] },
     qrTokenHash: { type: String },
     // Encrypted copy of the current token (see utils/tokenCipher); never returned by default
-    qrTokenCipher: { type: String, select: false }
+    qrTokenCipher: { type: String, select: false },
+    credentialRevokedAt: { type: Date, default: null }
 }, {
     timestamps: true
 });

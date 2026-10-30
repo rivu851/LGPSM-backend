@@ -8,6 +8,9 @@ export const publicInvitationController = {
       const token = req.params.token as string;
       const png = await invitationService.publicInvitationCard(token);
       res.setHeader('Content-Type', 'image/png');
+      // The invitation page is served from another origin (the web app) and shows this card in an <img>; helmet's default
+      // same-origin policy would make the browser refuse to display it. The token in the URL is the access control.
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
       res.setHeader('Cache-Control', 'private, no-store');
       res.setHeader('Content-Disposition', 'inline; filename="digital-access-pass.png"');
       return res.status(200).send(png);

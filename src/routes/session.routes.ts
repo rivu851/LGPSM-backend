@@ -1,3 +1,4 @@
+import { auditAction } from '../middlewares/auditAction';
 import { Router, Request, Response, NextFunction } from 'express';
 import { sessionController } from '../controllers/session.controller';
 import { authenticate } from '../middlewares/authenticate';
@@ -19,7 +20,7 @@ const validate = (schema: ZodSchema) => (req: Request, res: Response, next: Next
 export const eventSessionRoutes = Router({ mergeParams: true });
 eventSessionRoutes.use(authenticate);
 
-eventSessionRoutes.post('/', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(createSessionSchema), sessionController.createSession);
+eventSessionRoutes.post('/', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(createSessionSchema), auditAction({ action: 'SESSION_CREATE', entityType: 'Session', eventParam: 'eventId' }), sessionController.createSession);
 // SYSTEM_USER may read the sessions of events they are assigned to (for check-in)
 eventSessionRoutes.get('/', authorizeRoles(Role.ADMIN, Role.ORGANIZER, Role.SYSTEM_USER), sessionController.getSessions);
 
@@ -27,5 +28,5 @@ export const sessionRoutes = Router();
 sessionRoutes.use(authenticate);
 
 sessionRoutes.get('/:sessionId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), sessionController.getSessionById);
-sessionRoutes.patch('/:sessionId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(updateSessionSchema), sessionController.updateSession);
-sessionRoutes.delete('/:sessionId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), sessionController.deleteSession);
+sessionRoutes.patch('/:sessionId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(updateSessionSchema), auditAction({ action: 'SESSION_UPDATE', entityType: 'Session', entityParam: 'sessionId', eventOf: 'Session' }), sessionController.updateSession);
+sessionRoutes.delete('/:sessionId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), auditAction({ action: 'SESSION_DELETE', entityType: 'Session', entityParam: 'sessionId', eventOf: 'Session', critical: true }), sessionController.deleteSession);

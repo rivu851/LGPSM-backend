@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateEventSchema = exports.createEventSchema = void 0;
+exports.updateEventSchema = exports.createEventSchema = exports.updateAdmissionSchema = exports.admissionSchema = void 0;
 const mediaKey_1 = require("../utils/mediaKey");
 const zod_1 = require("zod");
 const eventLimits_1 = require("../constants/eventLimits");
@@ -37,6 +37,12 @@ const dietaryPreferenceUpdateSchema = zod_1.z.object({
     title: zod_1.z.string().optional(),
     options: zod_1.z.array(zod_1.z.any()).optional()
 }).superRefine(validateDietaryOptions);
+// When guests may be admitted (see utils/admissionWindow). null / absent = follow the event's start and end.
+exports.admissionSchema = zod_1.z.object({
+    opensAt: zod_1.z.string().datetime().nullable().optional(),
+    closesAt: zod_1.z.string().datetime().nullable().optional()
+}).strict();
+exports.updateAdmissionSchema = zod_1.z.object({ body: exports.admissionSchema });
 exports.createEventSchema = zod_1.z.object({
     body: zod_1.z.object({
         title: zod_1.z.string().min(1, 'Title is required').max(eventLimits_1.EVENT_TITLE_MAX_LENGTH, `Title cannot exceed ${eventLimits_1.EVENT_TITLE_MAX_LENGTH} characters`),
@@ -50,6 +56,7 @@ exports.createEventSchema = zod_1.z.object({
             start: zod_1.z.string().optional(),
             end: zod_1.z.string().optional()
         }).optional(),
+        admission: exports.admissionSchema.optional(),
         rsvp: zod_1.z.object({
             enabled: zod_1.z.boolean().optional(),
             acceptanceLastDate: zod_1.z.string().optional(),
@@ -92,6 +99,7 @@ exports.updateEventSchema = zod_1.z.object({
             message: "End time must be after start time",
             path: ["end"]
         }).optional(),
+        admission: exports.admissionSchema.optional(),
         rsvp: zod_1.z.object({
             enabled: zod_1.z.boolean(),
             acceptanceLastDate: zod_1.z.string().datetime().optional(),

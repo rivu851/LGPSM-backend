@@ -67,6 +67,10 @@ const EventSchema = new mongoose_1.Schema({
         start: { type: Date, required: true },
         end: { type: Date, required: true }
     },
+    admission: {
+        opensAt: { type: Date, default: undefined },
+        closesAt: { type: Date, default: undefined }
+    },
     rsvp: {
         enabled: { type: Boolean, required: true, default: false },
         acceptanceLastDate: { type: Date },
@@ -97,7 +101,9 @@ const EventSchema = new mongoose_1.Schema({
         currency: { type: String },
         lockedAt: { type: Date }
     },
-    operationalDataCleared: { type: Boolean, default: false }
+    operationalDataCleared: { type: Boolean, default: false },
+    closedAt: { type: Date },
+    closedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }
 }, {
     timestamps: true
 });

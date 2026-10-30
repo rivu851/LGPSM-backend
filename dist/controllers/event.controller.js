@@ -105,6 +105,9 @@ exports.eventController = {
             if (error.message === 'EVENT_NOT_FOUND') {
                 res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
             }
+            else if (error.message === 'EVENT_CLOSED') {
+                res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_CLOSED', message: 'A closed or cancelled event can no longer be edited.' });
+            }
             else if (error.message === 'EVENT_LOCKED') {
                 res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_LOCKED', message: 'This event can’t be edited after invitations have been sent.', details: [] });
             }
@@ -127,6 +130,46 @@ exports.eventController = {
             if (error.message === 'EVENT_NOT_FOUND') {
                 res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
             }
+            else if (error.message === 'INVALID_TRANSITION') {
+                res.status(409).json({ success: false, error: 'Conflict', code: 'INVALID_TRANSITION', message: 'A completed event cannot be cancelled.' });
+            }
+            else {
+                next(error);
+            }
+        }
+    },
+    async updateAdmission(req, res, next) {
+        try {
+            const event = await event_service_1.eventService.updateAdmission(req.params.eventId, { userId: req.user.userId, role: req.user.role }, req.body);
+            res.status(200).json({ success: true, data: event });
+        }
+        catch (error) {
+            if (error.message === 'EVENT_NOT_FOUND') {
+                res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
+            }
+            else if (error.message === 'EVENT_CLOSED') {
+                res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_CLOSED', message: 'The check-in window of a closed or cancelled event can no longer be changed.' });
+            }
+            else if (error.statusCode === 400) {
+                res.status(400).json({ success: false, error: 'Bad Request', message: error.message });
+            }
+            else {
+                next(error);
+            }
+        }
+    },
+    async closeEvent(req, res, next) {
+        try {
+            const event = await event_service_1.eventService.closeEvent(req.params.eventId, { userId: req.user.userId, role: req.user.role });
+            res.status(200).json({ success: true, data: event });
+        }
+        catch (error) {
+            if (error.message === 'EVENT_NOT_FOUND') {
+                res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
+            }
+            else if (error.message === 'INVALID_TRANSITION') {
+                res.status(409).json({ success: false, error: 'Conflict', code: 'INVALID_TRANSITION', message: 'Only a published event can be closed.' });
+            }
             else {
                 next(error);
             }
@@ -139,7 +182,7 @@ exports.eventController = {
                 role: req.user.role
             };
             const eventId = req.params.eventId;
-            const result = await event_service_1.eventService.cleanupEventOperationalData(eventId, actor);
+            const result = await event_service_1.eventService.cleanupEventOperationalData(eventId, actor, typeof req.body?.confirmTitle === 'string' ? req.body.confirmTitle : undefined);
             res.status(200).json({
                 success: true,
                 message: result.alreadyCleared
@@ -156,8 +199,11 @@ exports.eventController = {
             else if (error.message === 'FORBIDDEN_CLEANUP') {
                 res.status(403).json({ success: false, error: 'Forbidden', message: 'Only authorized ADMIN can perform event operational data cleanup' });
             }
-            else if (error.message === 'EVENT_NOT_ENDED') {
-                res.status(400).json({ success: false, error: 'Bad Request', message: 'Cannot clean operational data for an active or unended event' });
+            else if (error.message === 'EVENT_NOT_CLOSED') {
+                res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_NOT_CLOSED', message: 'Close the event first. Permanent deletion is only available for closed events.' });
+            }
+            else if (error.message === 'CONFIRMATION_REQUIRED') {
+                res.status(400).json({ success: false, error: 'Bad Request', code: 'CONFIRMATION_REQUIRED', message: 'Type the event title exactly to confirm permanent deletion.' });
             }
             else {
                 next(error);

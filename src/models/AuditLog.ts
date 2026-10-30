@@ -7,7 +7,12 @@ export interface IAuditLog extends Document {
   action: string;
   entityType?: string;
   entityId?: mongoose.Types.ObjectId;
-  status: 'SUCCESS' | 'FAILED';
+  // Tenant that owns the audited event; organizers can only read entries with their own id here
+  organizerId?: mongoose.Types.ObjectId;
+  // PENDING = intent recorded before a critical operation ran; it is moved to SUCCESS/FAILED when the operation ends
+  status: 'PENDING' | 'SUCCESS' | 'FAILED';
+  description?: string;
+  requestId?: string;
   metadata?: Record<string, any>;
   createdAt: Date;
 }
@@ -20,7 +25,10 @@ const AuditLogSchema: Schema = new Schema(
     action: { type: String, required: true },
     entityType: { type: String },
     entityId: { type: Schema.Types.ObjectId },
-    status: { type: String, enum: ['SUCCESS', 'FAILED'], default: 'SUCCESS' },
+    organizerId: { type: Schema.Types.ObjectId, ref: 'User' },
+    status: { type: String, enum: ['PENDING', 'SUCCESS', 'FAILED'], default: 'SUCCESS' },
+    description: { type: String, maxlength: 300 },
+    requestId: { type: String, maxlength: 100 },
     metadata: { type: Schema.Types.Mixed, default: {} }
   },
   {
@@ -32,5 +40,7 @@ AuditLogSchema.index({ actorId: 1 });
 AuditLogSchema.index({ eventId: 1 });
 AuditLogSchema.index({ action: 1 });
 AuditLogSchema.index({ createdAt: -1 });
+AuditLogSchema.index({ organizerId: 1, createdAt: -1 });
+AuditLogSchema.index({ eventId: 1, createdAt: -1 });
 
 export const AuditLog = mongoose.model<IAuditLog>('AuditLog', AuditLogSchema);

@@ -17,6 +17,8 @@ export interface ISession extends Document {
     start: Date;
     end: Date;
   };
+  // Optional own admission window for this session; absent = only the event's window applies
+  admission?: { opensAt?: Date | null; closesAt?: Date | null };
   accessControl: AccessControl;
   validateAgainstOtherSessions: boolean;
   inviteeSource: InviteeSource;
@@ -32,6 +34,10 @@ const SessionSchema: Schema = new Schema(
     schedule: {
       start: { type: Date, required: true },
       end: { type: Date, required: true }
+    },
+    admission: {
+      opensAt: { type: Date, default: undefined },
+      closesAt: { type: Date, default: undefined }
     },
     accessControl: { 
       type: String, 

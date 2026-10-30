@@ -42,7 +42,10 @@ const AuditLogSchema = new mongoose_1.Schema({
     action: { type: String, required: true },
     entityType: { type: String },
     entityId: { type: mongoose_1.Schema.Types.ObjectId },
-    status: { type: String, enum: ['SUCCESS', 'FAILED'], default: 'SUCCESS' },
+    organizerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    status: { type: String, enum: ['PENDING', 'SUCCESS', 'FAILED'], default: 'SUCCESS' },
+    description: { type: String, maxlength: 300 },
+    requestId: { type: String, maxlength: 100 },
     metadata: { type: mongoose_1.Schema.Types.Mixed, default: {} }
 }, {
     timestamps: { createdAt: true, updatedAt: false }
@@ -51,4 +54,6 @@ AuditLogSchema.index({ actorId: 1 });
 AuditLogSchema.index({ eventId: 1 });
 AuditLogSchema.index({ action: 1 });
 AuditLogSchema.index({ createdAt: -1 });
+AuditLogSchema.index({ organizerId: 1, createdAt: -1 });
+AuditLogSchema.index({ eventId: 1, createdAt: -1 });
 exports.AuditLog = mongoose_1.default.model('AuditLog', AuditLogSchema);

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { admissionSchema } from './event.validator';
 import { AccessControl, InviteeSource } from '../models/Session';
 
 export const createSessionSchema = z.object({
@@ -11,6 +12,7 @@ export const createSessionSchema = z.object({
       message: 'End date must be after start date',
       path: ['end']
     }),
+    admission: admissionSchema.optional(),
     accessControl: z.nativeEnum(AccessControl).default(AccessControl.NO_RESTRICTION),
     validateAgainstOtherSessions: z.boolean().default(false),
     inviteeSource: z.nativeEnum(InviteeSource).default(InviteeSource.NEW_LIST),
@@ -36,6 +38,7 @@ export const updateSessionSchema = z.object({
       message: 'End date must be after start date',
       path: ['end']
     }).optional(),
+    admission: admissionSchema.optional(),
     accessControl: z.nativeEnum(AccessControl).optional(),
     validateAgainstOtherSessions: z.boolean().optional(),
     inviteeSource: z.nativeEnum(InviteeSource).optional(),

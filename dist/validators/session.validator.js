@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateSessionSchema = exports.createSessionSchema = void 0;
 const zod_1 = require("zod");
+const event_validator_1 = require("./event.validator");
 const Session_1 = require("../models/Session");
 exports.createSessionSchema = zod_1.z.object({
     body: zod_1.z.object({
@@ -13,6 +14,7 @@ exports.createSessionSchema = zod_1.z.object({
             message: 'End date must be after start date',
             path: ['end']
         }),
+        admission: event_validator_1.admissionSchema.optional(),
         accessControl: zod_1.z.nativeEnum(Session_1.AccessControl).default(Session_1.AccessControl.NO_RESTRICTION),
         validateAgainstOtherSessions: zod_1.z.boolean().default(false),
         inviteeSource: zod_1.z.nativeEnum(Session_1.InviteeSource).default(Session_1.InviteeSource.NEW_LIST),
@@ -37,6 +39,7 @@ exports.updateSessionSchema = zod_1.z.object({
             message: 'End date must be after start date',
             path: ['end']
         }).optional(),
+        admission: event_validator_1.admissionSchema.optional(),
         accessControl: zod_1.z.nativeEnum(Session_1.AccessControl).optional(),
         validateAgainstOtherSessions: zod_1.z.boolean().optional(),
         inviteeSource: zod_1.z.nativeEnum(Session_1.InviteeSource).optional(),

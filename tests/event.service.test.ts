@@ -15,7 +15,7 @@ jest.mock('../src/services/platformSettings.service', () => ({
 }));
 jest.mock('../src/services/alert.service', () => ({ alertService: { notifyAdmins: jest.fn(), notifyUser: jest.fn() } }));
 jest.mock('../src/utils/eventAccess', () => ({
-  findManageableEvent: jest.fn(async (eventId: string) => ({ _id: eventId, organizerId: 'owner-id' }))
+  findManageableEvent: jest.fn(async (eventId: string) => ({ _id: eventId, organizerId: 'owner-id', status: 'PUBLISHED' }))
 }));
 
 describe('Event Service', () => {

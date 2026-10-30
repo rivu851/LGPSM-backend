@@ -1,3 +1,4 @@
+import { auditAction } from '../middlewares/auditAction';
 import { Router, Request, Response, NextFunction } from 'express';
 import { checkInController } from '../controllers/checkIn.controller';
 import { authenticate } from '../middlewares/authenticate';
@@ -23,6 +24,7 @@ checkInRoutes.post(
   '/scan',
   authorizeRoles(Role.ORGANIZER, Role.SYSTEM_USER, Role.ADMIN),
   validate(scanCheckInSchema),
+  auditAction({ action: 'CHECKIN_SCAN', entityType: 'CheckIn' }),
   checkInController.scanCheckIn
 );
 
@@ -30,6 +32,7 @@ checkInRoutes.post(
   '/manual',
   authorizeRoles(Role.ORGANIZER, Role.SYSTEM_USER, Role.ADMIN),
   validate(manualCheckInSchema),
+  auditAction({ action: 'CHECKIN_MANUAL', entityType: 'CheckIn' }),
   checkInController.manualCheckIn
 );
 

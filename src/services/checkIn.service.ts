@@ -10,9 +10,16 @@ import { hashToken } from '../utils/invitation.util';
 import { Invitation } from '../models/Invitation';
 import { parseInvitationQrPayload } from '../utils/qrPayload';
 import { inviteeAllowedInSession } from '../utils/sessionAccess';
+import { clock } from '../utils/clock';
+import { admissionState, effectiveAdmission, formatAdmissionTime } from '../utils/admissionWindow';
 
 /**
  * Core service for event check-in operations (QR scanning and manual entry).
+ *
+ * Order of checks (first failure wins, nothing is written until all pass):
+ *   1 staff identity (route)  2 assignment to the event  3 event status  4 admission window (server clock)
+ *   5 credential (known, current, not revoked)  6 required session / session window / guest access
+ *   7 repeat-entry rules  8 attendance record (unique index decides concurrent scans)
  *
  * Security & Access Rules:
  * - Admin/Organizer: Full check-in access for owned events.
@@ -55,6 +62,23 @@ export interface GetCheckInsOptions {
   limit?: number;
 }
 
+/** A time-based refusal that carries the window so the response can say when check-in opens or closed. */
+export class AdmissionError extends Error {
+  constructor(public code: string, public opensAt: Date, public closesAt: Date) {
+    super(code);
+  }
+  /** Staff-facing sentence; times are written in the platform timezone */
+  describe(): string {
+    switch (this.code) {
+      case 'ADMISSION_NOT_OPEN': return `Check-in has not opened yet. It opens on ${formatAdmissionTime(this.opensAt)}.`;
+      case 'SESSION_NOT_OPEN': return `Check-in for this session has not opened yet. It opens on ${formatAdmissionTime(this.opensAt)}.`;
+      case 'SESSION_CLOSED': return `Check-in for this session ended on ${formatAdmissionTime(this.closesAt)}.`;
+      case 'CREDENTIAL_EXPIRED': return `This access pass has expired. Event admission ended on ${formatAdmissionTime(this.closesAt)}.`;
+      default: return `Event admission has ended. It closed on ${formatAdmissionTime(this.closesAt)}.`;
+    }
+  }
+}
+
 export const checkInService = {
   /**
    * Processes a QR scan check-in attempt.
@@ -65,6 +89,14 @@ export const checkInService = {
     if (!parsed.ok) {
       throw new Error(QR_REJECTIONS[parsed.reason]);
     }
+
+    // The server clock decides every time-based rule; the device's clock is never consulted
+    const now = clock.now();
+
+    // When the scanner names the event, who may act and what state the event is in are settled before the pass is
+    // looked at, so a stranger or a closed door learns nothing about the credential.
+    let context = dto.eventId ? await this.validateActorAndEvent(actor, dto.eventId) : null;
+    if (context) this.assertEventAdmitting(context.event, now, true);
 
     const tokenHash = hashToken(parsed.token);
     const invitee = await Invitee.findOne({ qrTokenHash: tokenHash });
@@ -78,38 +110,13 @@ export const checkInService = {
     if (dto.eventId && dto.eventId !== eventId) {
       throw new Error('EVENT_MISMATCH');
     }
-
-    const { event, assignment } = await this.validateActorAndEvent(actor, eventId);
-
-    if (dto.sessionId) {
-      await this.validateStaffSessionAccess(actor, assignment, dto.sessionId);
+    if (!context) {
+      context = await this.validateActorAndEvent(actor, eventId);
+      this.assertEventAdmitting(context.event, now, true);
     }
+    const { event, assignment } = context;
 
-    await this.validateInviteeEligibility(invitee, event);
-
-    let session = null;
-    if (dto.sessionId) {
-      session = await this.validateSessionAndRules(invitee, eventId, dto.sessionId);
-    }
-
-    // Check duplicate event-wide check-in if no sessionId
-    if (!dto.sessionId) {
-      const existing = await checkInRepository.findEventWideCheckIn((invitee._id as any).toString(), eventId);
-      if (existing) {
-        throw new Error('DUPLICATE_CHECKIN');
-      }
-    }
-
-    const checkIn = await checkInRepository.create({
-      eventId: new mongoose.Types.ObjectId(eventId),
-      inviteeId: invitee._id as any,
-      sessionId: dto.sessionId ? new mongoose.Types.ObjectId(dto.sessionId) : null,
-      checkInMethod: CheckInMethod.QR,
-      checkedInBy: new mongoose.Types.ObjectId(actor.userId),
-      checkInAt: new Date()
-    });
-
-    return this.formatCheckInResponse(checkIn, invitee, session);
+    return this.admit({ actor, event, assignment, invitee, sessionId: dto.sessionId, method: CheckInMethod.QR, now });
   },
 
   async manualCheckIn(actor: { userId: string; role: Role }, dto: ManualCheckInDto) {
@@ -117,11 +124,9 @@ export const checkInService = {
       throw new Error('EVENT_ID_REQUIRED');
     }
 
+    const now = clock.now();
     const { event, assignment } = await this.validateActorAndEvent(actor, dto.eventId);
-
-    if (dto.sessionId) {
-      await this.validateStaffSessionAccess(actor, assignment, dto.sessionId);
-    }
+    this.assertEventAdmitting(event, now, false);
 
     let invitee: IInvitee | null = null;
     if (dto.inviteeId) {
@@ -136,30 +141,70 @@ export const checkInService = {
       throw new Error('INVITEE_NOT_FOUND');
     }
 
+    return this.admit({ actor, event, assignment, invitee, sessionId: dto.sessionId, method: CheckInMethod.MANUAL, now });
+  },
+
+  /**
+   * Steps 5-8 shared by QR and manual entry. Everything that can refuse runs before the single write, and the write
+   * itself is guarded by the unique {event, invitee, session} index, so two scans racing each other produce one
+   * attendance record and one refusal.
+   */
+  async admit(args: { actor: { userId: string; role: Role }; event: any; assignment: any; invitee: IInvitee; sessionId?: string; method: CheckInMethod; now: Date }) {
+    const { actor, event, assignment, invitee, sessionId, method, now } = args;
+    const eventId = String(event._id);
+
+    if (invitee.credentialRevokedAt) {
+      throw new Error('CREDENTIAL_REVOKED');
+    }
+
+    // Staff limited to certain sessions must say which one: leaving it out would otherwise be an event-wide entry that
+    // skips the restriction.
+    if (actor.role === Role.SYSTEM_USER && assignment?.sessionIds?.length > 0 && !sessionId) {
+      throw new Error('SESSION_REQUIRED');
+    }
+    if (sessionId) {
+      await this.validateStaffSessionAccess(actor, assignment, sessionId);
+    }
+
     await this.validateInviteeEligibility(invitee, event);
 
     let session = null;
-    if (dto.sessionId) {
-      session = await this.validateSessionAndRules(invitee, dto.eventId, dto.sessionId);
-    }
-
-    if (!dto.sessionId) {
-      const existing = await checkInRepository.findEventWideCheckIn((invitee._id as any).toString(), dto.eventId);
+    if (sessionId) {
+      session = await this.validateSessionAndRules(invitee, eventId, sessionId, now);
+    } else {
+      const existing = await checkInRepository.findEventWideCheckIn((invitee._id as any).toString(), eventId);
       if (existing) {
         throw new Error('DUPLICATE_CHECKIN');
       }
     }
 
+    // A duplicate key (11000) from a concurrent scan surfaces as "already checked in" in the controller
     const checkIn = await checkInRepository.create({
-      eventId: new mongoose.Types.ObjectId(dto.eventId),
+      eventId: new mongoose.Types.ObjectId(eventId),
       inviteeId: invitee._id as any,
-      sessionId: dto.sessionId ? new mongoose.Types.ObjectId(dto.sessionId) : null,
-      checkInMethod: CheckInMethod.MANUAL,
+      sessionId: sessionId ? new mongoose.Types.ObjectId(sessionId) : null,
+      checkInMethod: method,
       checkedInBy: new mongoose.Types.ObjectId(actor.userId),
-      checkInAt: new Date()
+      checkInAt: now
     });
 
     return this.formatCheckInResponse(checkIn, invitee, session);
+  },
+
+  /**
+   * Event status and admission window. `qr` only changes which word is used once the window has ended: a pass is
+   * "expired" at that moment (a QR pass has no life of its own beyond the event's window), a manual entry is simply
+   * "closed". Both stay refused for ever after, because the check is made on every request, not by a job.
+   */
+  assertEventAdmitting(event: any, now: Date, qr: boolean) {
+    if (event.status === EventStatus.CANCELLED) throw new Error('EVENT_CANCELLED');
+    if (event.status === EventStatus.COMPLETED) throw new Error('EVENT_COMPLETED');
+    if (event.status !== EventStatus.PUBLISHED) throw new Error('EVENT_NOT_PUBLISHED');
+    const window = effectiveAdmission(event);
+    if (!window) return; // an event without usable times is not time-gated
+    const state = admissionState(window, now);
+    if (state === 'NOT_OPEN') throw new AdmissionError('ADMISSION_NOT_OPEN', window.opensAt, window.closesAt);
+    if (state === 'CLOSED') throw new AdmissionError(qr ? 'CREDENTIAL_EXPIRED' : 'ADMISSION_CLOSED', window.opensAt, window.closesAt);
   },
 
   async getCheckIns(actor: { userId: string; role: Role }, eventId: string, options: GetCheckInsOptions) {
@@ -291,10 +336,20 @@ export const checkInService = {
     }
   },
 
-  async validateSessionAndRules(invitee: IInvitee, eventId: string, sessionId: string) {
+  async validateSessionAndRules(invitee: IInvitee, eventId: string, sessionId: string, now: Date = clock.now()) {
     const session = await Session.findOne({ _id: sessionId, eventId });
     if (!session) {
       throw new Error('SESSION_NOT_FOUND');
+    }
+
+    // A session may carry its own admission window on top of the event's; without one, only the event's applies
+    if (session.admission && (session.admission.opensAt || session.admission.closesAt)) {
+      const own = effectiveAdmission({ schedule: session.schedule, admission: session.admission });
+      if (own) {
+        const state = admissionState(own, now);
+        if (state === 'NOT_OPEN') throw new AdmissionError('SESSION_NOT_OPEN', own.opensAt, own.closesAt);
+        if (state === 'CLOSED') throw new AdmissionError('SESSION_CLOSED', own.opensAt, own.closesAt);
+      }
     }
 
     // Invitee session permissions (sessions that keep another session's invitees use that list)

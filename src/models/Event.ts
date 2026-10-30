@@ -32,6 +32,8 @@ export interface IEvent extends Document {
     start: Date;
     end: Date;
   };
+  // When guests may be admitted. Absent = follows `schedule` (opens at start, closes at end). Instants are UTC.
+  admission?: { opensAt?: Date | null; closesAt?: Date | null };
   rsvp: {
     enabled: boolean;
     acceptanceLastDate?: Date;
@@ -58,6 +60,9 @@ export interface IEvent extends Document {
   // Per-invitee rate locked when the event was created (null when no rate was configured then)
   pricing?: { ratePerInvitee: number | null; currency: string; lockedAt: Date };
   operationalDataCleared?: boolean;
+  // Set by the non-destructive close operation; the event and all its history are kept
+  closedAt?: Date;
+  closedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -81,6 +86,10 @@ const EventSchema: Schema = new Schema(
     schedule: {
       start: { type: Date, required: true },
       end: { type: Date, required: true }
+    },
+    admission: {
+      opensAt: { type: Date, default: undefined },
+      closesAt: { type: Date, default: undefined }
     },
     rsvp: {
       enabled: { type: Boolean, required: true, default: false },
@@ -112,7 +121,9 @@ const EventSchema: Schema = new Schema(
       currency: { type: String },
       lockedAt: { type: Date }
     },
-    operationalDataCleared: { type: Boolean, default: false }
+    operationalDataCleared: { type: Boolean, default: false },
+    closedAt: { type: Date },
+    closedBy: { type: Schema.Types.ObjectId, ref: 'User' }
   },
   {
     timestamps: true

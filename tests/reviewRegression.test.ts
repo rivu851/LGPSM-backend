@@ -240,7 +240,7 @@ describe('Sessions', () => {
 
   it('resolves "keep same invitees" through the source session at check-in and keeps access when the source is deleted', async () => {
     const event = await makeEvent(organizer._id);
-    await Event.updateOne({ _id: event._id }, { status: 'PUBLISHED' });
+    await Event.updateOne({ _id: event._id }, { status: 'PUBLISHED', admission: { opensAt: new Date(Date.now() - 3600e3) } });
     const s1 = await Session.create({ eventId: event._id, name: 'Entry', schedule: event.schedule });
     const s2 = await Session.create({ eventId: event._id, name: 'Lunch', schedule: event.schedule });
     const copy = await request(app).post(`/api/v1/events/${event._id}/sessions`).set(bearer(organizerToken)).send({

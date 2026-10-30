@@ -87,7 +87,7 @@ describe('Phase 6 — Step 12: Check-in, Access Validation & Logs', () => {
       description: 'Annual Tech Summit',
       categoryId: new mongoose.Types.ObjectId(),
       format: EventFormat.PHYSICAL,
-      schedule: { start: new Date(), end: new Date() },
+      schedule: { start: new Date(Date.now() - 3600e3), end: new Date(Date.now() + 3600e3) },
       rsvp: {
         enabled: true,
         allowAllInvited: true,
@@ -103,7 +103,7 @@ describe('Phase 6 — Step 12: Check-in, Access Validation & Logs', () => {
       description: 'Private Gala',
       categoryId: new mongoose.Types.ObjectId(),
       format: EventFormat.PHYSICAL,
-      schedule: { start: new Date(), end: new Date() },
+      schedule: { start: new Date(Date.now() - 3600e3), end: new Date(Date.now() + 3600e3) },
       status: EventStatus.PUBLISHED
     });
 
@@ -235,13 +235,24 @@ describe('Phase 6 — Step 12: Check-in, Access Validation & Logs', () => {
       expect(res.body.code).toBe('INVALID_QR_TOKEN');
     });
 
+    it('refuses a scanner that names an event it has no access to, before looking at the pass', async () => {
+      const res = await request(app).post('/api/v1/checkins/scan').set('Authorization', `Bearer ${organizerToken}`)
+        .send({ qrCode: rawToken1, eventId: event2._id.toString() });
+      expect(res.statusCode).toBe(403);
+      expect(JSON.stringify(res.body)).not.toContain('John Guest');
+    });
+
     it('should reject scan if specified eventId does not match QR token event', async () => {
+      const event3 = await Event.create({
+        organizerId: organizer._id, title: 'Second event', description: 'd', categoryId: new mongoose.Types.ObjectId(),
+        format: EventFormat.PHYSICAL, schedule: { start: new Date(Date.now() - 3600e3), end: new Date(Date.now() + 3600e3) }, status: EventStatus.PUBLISHED
+      });
       const res = await request(app)
         .post('/api/v1/checkins/scan')
         .set('Authorization', `Bearer ${organizerToken}`)
         .send({
           qrCode: rawToken1,
-          eventId: event2._id.toString()
+          eventId: event3._id.toString()
         });
 
       expect(res.statusCode).toBe(400);

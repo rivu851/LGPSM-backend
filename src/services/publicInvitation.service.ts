@@ -7,6 +7,11 @@ import { hashToken } from '../utils/invitation.util';
 import { inviteeAllowedInSession } from '../utils/sessionAccess';
 import { cardHostName } from './cardTemplates/context';
 import { env } from '../config/env';
+import { Template } from '../models/Template';
+import { Category } from '../models/Category';
+import { resolveCardDesign } from './cardTemplates/designs';
+import { effectiveAdmission } from '../utils/admissionWindow';
+import { publicThemeFor } from './cardTemplates/publicTheme';
 
 interface DietarySelection {
   title: string;
@@ -59,7 +64,7 @@ export const publicInvitationService = {
       throw new Error('INVITATION_NOT_FOUND');
     }
 
-    const event = await Event.findById(invitee.eventId).select('title description format location contactNumber schedule status rsvp dietaryPreference organizerId');
+    const event = await Event.findById(invitee.eventId).select('title description format location contactNumber schedule admission status rsvp dietaryPreference organizerId templateId categoryId subcategoryId');
     if (!event) throw new Error('INVITATION_NOT_FOUND');
 
     const [sessions, organizer] = await Promise.all([
@@ -69,6 +74,19 @@ export const publicInvitationService = {
         .lean(),
       User.findById(event.organizerId).select('profile.organizationName').lean()
     ]);
+    // Same design choice the card renderer makes, so the page matches the card in the guest's email
+    const [template, categories] = await Promise.all([
+      event.templateId ? Template.findById(event.templateId).select('cardDesign designSpec').lean() : null,
+      Category.find({ _id: { $in: [event.categoryId, event.subcategoryId].filter(Boolean) } }).select('name').lean()
+    ]);
+    const nameOf = (id: unknown) => categories.find((c: any) => String(c._id) === String(id))?.name;
+    const design = resolveCardDesign({
+      templateDesign: (template as any)?.cardDesign,
+      categoryName: nameOf(event.categoryId),
+      subcategoryName: nameOf(event.subcategoryId),
+      title: event.title
+    });
+    const theme = publicThemeFor(design, (template as any)?.designSpec);
     const attendeeSessions = sessions
       .filter((session) => inviteeAllowedInSession(invitee, session as any))
       .map((session) => ({
@@ -87,12 +105,15 @@ export const publicInvitationService = {
         organizerName: cardHostName(organizer as any),
         schedule: event.schedule,
         timeZone: env.APP_TIMEZONE,
+        // When guests can be admitted (defaults to the schedule): lets the page say "check-in opens at ..."
+        admission: (() => { const w = effectiveAdmission(event as any); return w ? { opensAt: w.opensAt, closesAt: w.closesAt } : null; })(),
         sessions: attendeeSessions,
         status: event.status,
         // Whether guests can answer at all; when off, the page shows no RSVP control (submitRsvp refuses it anyway)
         rsvp: { enabled: !!event.rsvp?.enabled, closesAt: event.rsvp?.enabled ? event.rsvp.acceptanceLastDate || event.schedule?.end || null : null },
         dietaryPreference: event.dietaryPreference
       },
+      theme,
       invitee: {
         name: invitee.name,
         rsvpStatus: invitee.rsvpStatus,

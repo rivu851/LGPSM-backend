@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const auditAction_1 = require("../middlewares/auditAction");
 const express_1 = require("express");
 const invitation_controller_1 = require("../controllers/invitation.controller");
 const authenticate_1 = require("../middlewares/authenticate");
@@ -19,9 +20,9 @@ const validate = (schema) => (req, res, next) => {
 };
 router.use(authenticate_1.authenticate);
 // POST /api/v1/events/:eventId/invitations/send
-router.post('/send', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), validate(invitation_validator_1.sendInvitationSchema), invitation_controller_1.invitationController.sendInvitations);
+router.post('/send', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), validate(invitation_validator_1.sendInvitationSchema), (0, auditAction_1.auditAction)({ action: 'INVITATION_SEND', entityType: 'Invitation', critical: true, describe: 'Invitations dispatched' }), invitation_controller_1.invitationController.sendInvitations);
 // POST /api/v1/events/:eventId/invitations/resend
-router.post('/resend', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), validate(invitation_validator_1.resendInvitationSchema), invitation_controller_1.invitationController.resendInvitations);
+router.post('/resend', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), validate(invitation_validator_1.resendInvitationSchema), (0, auditAction_1.auditAction)({ action: 'INVITATION_RESEND', entityType: 'Invitation', critical: true, describe: 'Invitations re-dispatched (previous credential superseded)' }), invitation_controller_1.invitationController.resendInvitations);
 // GET /api/v1/events/:eventId/invitations/preview
 router.get('/preview', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), invitation_controller_1.invitationController.previewInvitationCard);
 // GET /api/v1/events/:eventId/invitations

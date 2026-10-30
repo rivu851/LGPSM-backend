@@ -19,12 +19,14 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const eventAccess_1 = require("../utils/eventAccess");
 const platformSettings_service_1 = require("./platformSettings.service");
 const alert_service_1 = require("./alert.service");
+const admissionWindow_1 = require("../utils/admissionWindow");
+const eventLifecycle_1 = require("../utils/eventLifecycle");
 const invitationContent_1 = require("../utils/invitationContent");
 // Client-writable event fields. Anything else in a request body (organizerId, status flags,
 // operationalDataCleared, pricing, ...) is server-controlled and is dropped before it reaches the database.
 const EVENT_WRITABLE_FIELDS = [
     'title', 'description', 'categoryId', 'subcategoryId', 'format', 'location', 'contactNumber',
-    'schedule', 'rsvp', 'attendeeSettings', 'dietaryPreference', 'templateId', 'cardInfo', 'media'
+    'schedule', 'admission', 'rsvp', 'attendeeSettings', 'dietaryPreference', 'templateId', 'cardInfo', 'media'
 ];
 /**
  * Clients send a pin as [longitude, latitude]; the database keeps a GeoJSON Point (which the 2dsphere index needs).
@@ -101,6 +103,9 @@ class EventService {
         // Admin event settings apply on the server too
         await platformSettings_service_1.platformSettingsService.applyEventFeatureRules(eventData, true);
         const targetOrganizer = organizerId;
+        const admissionError = (0, admissionWindow_1.validateAdmissionInput)({ start: new Date(startVal), end: new Date(endVal) }, eventData.admission);
+        if (admissionError)
+            throw { statusCode: 400, message: admissionError };
         // Force organizerId and default status to PUBLISHED so it shows on event listing
         const dataToCreate = {
             ...eventData,
@@ -165,10 +170,13 @@ class EventService {
         return json;
     }
     async updateEvent(eventId, organizerId, rawUpdateData, role) {
-        const updateData = pickEventFields(rawUpdateData, ['status']);
+        const updateData = pickEventFields(rawUpdateData);
         const existingEvent = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId, role);
         if (!existingEvent)
             throw new Error('EVENT_NOT_FOUND');
+        // A closed or cancelled event is a historical record
+        if (existingEvent.status === Event_1.EventStatus.COMPLETED || existingEvent.status === Event_1.EventStatus.CANCELLED)
+            throw new Error('EVENT_CLOSED');
         // Feedback 14: once invitations have gone out (or were attempted), neither the organizer nor an admin can edit
         // the event, so guests' cards and passes always match what was sent. The web edit form applies the same rule.
         if (await this.invitationsStarted(existingEvent._id))
@@ -183,6 +191,12 @@ class EventService {
             if (!(await template_service_1.templateService.isUsableByOrganizer(String(updateData.templateId), String(existingEvent.organizerId))))
                 throw new Error('TEMPLATE_NOT_FOUND');
         }
+        // The check-in window is validated against the schedule that will be in force after this update
+        if (updateData.admission !== undefined || updateData.schedule) {
+            const admissionError = (0, admissionWindow_1.validateAdmissionInput)({ start: updateData.schedule?.start ?? existingEvent.schedule?.start, end: updateData.schedule?.end ?? existingEvent.schedule?.end }, updateData.admission !== undefined ? updateData.admission : existingEvent.admission);
+            if (admissionError)
+                throw { statusCode: 400, message: admissionError };
+        }
         // Disallow updating organizerId, _id, createdAt and the locked rate
         delete updateData.organizerId;
         delete updateData._id;
@@ -195,17 +209,72 @@ class EventService {
         }
         return updatedEvent;
     }
+    /**
+     * Change only the check-in window. Unlike a general edit this is allowed after invitations went out: the window is
+     * not printed on any card or pass, so changing it cannot make what guests received wrong, and organizers need to be
+     * able to open earlier or extend on the day. Only a PUBLISHED event can be changed; the route audits it.
+     */
+    async updateAdmission(eventId, actor, admission) {
+        if (actor.role !== User_1.Role.ADMIN && actor.role !== User_1.Role.ORGANIZER)
+            throw new Error('FORBIDDEN');
+        const event = await (0, eventAccess_1.findManageableEvent)(eventId, actor.userId, actor.role);
+        if (!event)
+            throw new Error('EVENT_NOT_FOUND');
+        if (event.status !== Event_1.EventStatus.PUBLISHED)
+            throw new Error('EVENT_CLOSED');
+        // Merge over what is stored so a request may change one side only; null returns that side to its default
+        const current = event.admission || {};
+        const next = {
+            opensAt: admission.opensAt !== undefined ? admission.opensAt : current.opensAt ?? null,
+            closesAt: admission.closesAt !== undefined ? admission.closesAt : current.closesAt ?? null
+        };
+        const admissionError = (0, admissionWindow_1.validateAdmissionInput)(event.schedule, next);
+        if (admissionError)
+            throw { statusCode: 400, message: admissionError };
+        const updated = await Event_1.Event.findOneAndUpdate({ _id: event._id, status: Event_1.EventStatus.PUBLISHED }, { $set: { admission: { opensAt: next.opensAt ? new Date(next.opensAt) : null, closesAt: next.closesAt ? new Date(next.closesAt) : null } } }, { new: true });
+        if (!updated)
+            throw new Error('EVENT_CLOSED');
+        return updated;
+    }
     async deactivateEvent(eventId, organizerId, role) {
         const existing = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId, role);
         if (!existing)
             throw new Error('EVENT_NOT_FOUND');
+        if (existing.status === Event_1.EventStatus.CANCELLED)
+            return existing; // already cancelled: nothing to change
+        if (!(0, eventLifecycle_1.canTransition)(existing.status, Event_1.EventStatus.CANCELLED))
+            throw new Error('INVALID_TRANSITION');
         const deletedEvent = await event_repository_1.eventRepository.softDeleteByIdAndOrganizer(eventId, String(existing.organizerId));
         if (!deletedEvent) {
             throw new Error('DELETION_FAILED');
         }
         return deletedEvent;
     }
-    async cleanupEventOperationalData(eventId, actor) {
+    /**
+     * Non-destructive close: PUBLISHED -> COMPLETED. Nothing is deleted; sessions, invitees, invitations, RSVPs,
+     * check-ins, assignments, reports and audit entries all stay available. Admin may close any event, an organizer
+     * only their own.
+     */
+    async closeEvent(eventId, actor) {
+        if (actor.role !== User_1.Role.ADMIN && actor.role !== User_1.Role.ORGANIZER)
+            throw new Error('FORBIDDEN_CLOSE');
+        const event = await (0, eventAccess_1.findManageableEvent)(eventId, actor.userId, actor.role);
+        if (!event)
+            throw new Error('EVENT_NOT_FOUND');
+        if (!(0, eventLifecycle_1.canTransition)(event.status, Event_1.EventStatus.COMPLETED))
+            throw new Error('INVALID_TRANSITION');
+        // Conditional update so two concurrent closes (or a close racing a cancel) cannot both win
+        const closed = await Event_1.Event.findOneAndUpdate({ _id: event._id, status: Event_1.EventStatus.PUBLISHED }, { $set: { status: Event_1.EventStatus.COMPLETED, closedAt: new Date(), closedBy: new mongoose_1.default.Types.ObjectId(actor.userId) } }, { new: true });
+        if (!closed)
+            throw new Error('INVALID_TRANSITION');
+        return closed;
+    }
+    /**
+     * PERMANENT deletion of an event's operational data (admin only, irreversible). It is a separate operation from
+     * closing: the event must already have been closed (COMPLETED), the caller must retype the event title, and the
+     * event record itself is kept so reports of what existed remain attributable.
+     */
+    async cleanupEventOperationalData(eventId, actor, confirmTitle) {
         // 1. Authorization: Only ADMIN
         if (actor.role !== User_1.Role.ADMIN) {
             throw new Error('FORBIDDEN_CLEANUP');
@@ -223,12 +292,12 @@ class EventService {
                 cleanedCounts: { sessions: 0, invitees: 0, invitations: 0, checkIns: 0, assignments: 0 }
             };
         }
-        // 4. Validate Event Has Ended
-        const now = new Date();
-        const endDate = event.schedule?.end ? new Date(event.schedule.end) : null;
-        const isEnded = (endDate && now > endDate) || event.status === Event_1.EventStatus.COMPLETED;
-        if (!isEnded) {
-            throw new Error('EVENT_NOT_ENDED');
+        // 4. Only an event that was explicitly closed can be purged; being past its end date is not enough
+        if (event.status !== Event_1.EventStatus.COMPLETED) {
+            throw new Error('EVENT_NOT_CLOSED');
+        }
+        if (!confirmTitle || confirmTitle.trim() !== String(event.title).trim()) {
+            throw new Error('CONFIRMATION_REQUIRED');
         }
         // 5. Atomic Deletion of Event-Specific Operational Data
         // DO NOT DELETE GLOBAL USERS (User model)!
@@ -241,7 +310,6 @@ class EventService {
             SystemUserAssignment_1.SystemUserAssignment.deleteMany({ eventId: eventObjId }),
         ]);
         event.operationalDataCleared = true;
-        event.status = Event_1.EventStatus.COMPLETED;
         await event.save();
         return {
             event,

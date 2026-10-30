@@ -36,6 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+const requestId_1 = require("./middlewares/requestId");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
@@ -67,6 +68,7 @@ const app = (0, express_1.default)();
 app.set('trust proxy', 1);
 // Security and Middleware
 app.use((0, helmet_1.default)());
+app.use(requestId_1.requestId);
 // Per-request logging (method, path, status, response time). Silenced during
 // the test suite so Jest output stays readable.
 if (env_1.env.NODE_ENV !== 'test') {
