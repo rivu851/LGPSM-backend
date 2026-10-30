@@ -1,4 +1,5 @@
 import type { Request } from 'express';
+import { redactTokens } from './redact';
 
 // Structured security events: one JSON object per line on stdout, so a log drain / SIEM can filter on
 // `"channel":"security"` and alert on event names. This is logging only; alerting must be configured
@@ -45,7 +46,7 @@ export function securityEvent(event: SecurityEvent, req?: Request, detail?: Reco
           ip: req.ip,
           method: req.method,
           // Route only: the query string can carry tokens
-          path: (req.originalUrl || req.url || '').split('?')[0].slice(0, 200),
+          path: redactTokens((req.originalUrl || req.url || '').split('?')[0]).slice(0, 200),
           userId: req.user?.userId,
           role: req.user?.role
         }

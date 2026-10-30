@@ -4,7 +4,10 @@ import mongoose, { Document, Schema } from 'mongoose';
 // with its reason even after the pass is replaced). The raw token is never stored; `tokenHash` is the same one-way hash the
 // guest record already holds, kept so a superseded link can be recognised and explained.
 
-export const CREDENTIAL_EVENT_TYPES = ['ISSUED', 'REPLACED', 'REVOKED'] as const;
+// ISSUED: a pass was created and delivered. ACTIVATED: it became the guest's current pass (written with ISSUED / REPLACED).
+// REPLACED: a newer pass took over. REVOKED: withdrawn. EXPIRED is not stored: it follows from the event's own state, and the
+// history shows it as a derived row.
+export const CREDENTIAL_EVENT_TYPES = ['ISSUED', 'ACTIVATED', 'REPLACED', 'REVOKED'] as const;
 export type CredentialEventType = (typeof CREDENTIAL_EVENT_TYPES)[number];
 
 export interface ICredentialEvent extends Document {
@@ -16,6 +19,10 @@ export interface ICredentialEvent extends Document {
   version: number;
   /** REPLACED only: the pass that was superseded */
   previousVersion?: number;
+  /** The credential this row is about (stable across its issue, activation and revocation) and, for a replacement, the one it replaced */
+  credentialId?: mongoose.Types.ObjectId;
+  previousCredentialId?: mongoose.Types.ObjectId;
+  result?: 'SUCCESS';
   source: 'SEND' | 'RESEND' | 'REPLACE' | 'REVOKE';
   reasonCategory?: string;
   note?: string;
@@ -35,6 +42,9 @@ const CredentialEventSchema = new Schema(
     type: { type: String, enum: CREDENTIAL_EVENT_TYPES, required: true },
     version: { type: Number, required: true },
     previousVersion: { type: Number },
+    credentialId: { type: Schema.Types.ObjectId },
+    previousCredentialId: { type: Schema.Types.ObjectId },
+    result: { type: String, enum: ['SUCCESS'], default: 'SUCCESS' },
     source: { type: String, enum: ['SEND', 'RESEND', 'REPLACE', 'REVOKE'], required: true },
     reasonCategory: { type: String },
     note: { type: String, maxlength: 500 },

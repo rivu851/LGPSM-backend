@@ -11,7 +11,7 @@ import { CheckIn } from '../src/models/CheckIn';
 import { generateAccessToken } from '../src/utils/token';
 import { generateSecureToken, hashToken } from '../src/utils/invitation.util';
 import { encryptToken, decryptToken } from '../src/utils/tokenCipher';
-import { invitationBaseUrl, invitationUrlFor, parseInvitationQrPayload, previewSampleUrl } from '../src/utils/qrPayload';
+import { invitationBaseUrl, invitationUrlFor, parseInvitationQrPayload, previewSampleUrl, admissionPayloadFor } from '../src/utils/qrPayload';
 import { invitationCardService } from '../src/services/invitationCard.service';
 
 describe('QR payload parser', () => {
@@ -108,7 +108,7 @@ describe('QR check-in pipeline (preview card -> scan)', () => {
     const res = await preview(String(sent._id));
     expect(res.status).toBe(200);
     expect(res.headers['x-invitation-qr']).toBe('ISSUED');
-    expect(cardUrl()).toBe(invitationUrlFor(sentToken));
+    expect(cardUrl()).toBe(admissionPayloadFor(sentToken)); // the QR carries the admission credential only
 
     const checkIn = await scan(cardUrl(), { sessionId: String(session._id) });
     expect(checkIn.status).toBe(201);

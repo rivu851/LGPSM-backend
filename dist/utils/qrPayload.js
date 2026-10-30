@@ -10,7 +10,7 @@
  * - Sensitive raw tokens are normalized without logging raw secret material.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.previewSampleUrl = exports.invitationUrlFor = exports.invitationBaseUrl = exports.PREVIEW_SAMPLE_SEGMENT = void 0;
+exports.admissionPayloadFor = exports.PASS_PREFIX = exports.previewSampleUrl = exports.invitationUrlFor = exports.invitationBaseUrl = exports.PREVIEW_SAMPLE_SEGMENT = void 0;
 exports.parseInvitationQrPayload = parseInvitationQrPayload;
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/i;
 // Marker segment used on preview cards for guests who have not been sent an invitation yet.
@@ -21,6 +21,13 @@ const invitationUrlFor = (token) => `${(0, exports.invitationBaseUrl)()}/${token
 exports.invitationUrlFor = invitationUrlFor;
 const previewSampleUrl = () => (0, exports.invitationUrlFor)(exports.PREVIEW_SAMPLE_SEGMENT);
 exports.previewSampleUrl = previewSampleUrl;
+/**
+ * What the QR on a guest's pass carries: the ADMISSION credential only, as plain text (not a web address, so it cannot be opened,
+ * previewed or logged by a browser and it never reveals the invitation link). The invitation link is a different secret.
+ */
+exports.PASS_PREFIX = 'lgpsm-pass:';
+const admissionPayloadFor = (admissionToken) => `${exports.PASS_PREFIX}${admissionToken}`;
+exports.admissionPayloadFor = admissionPayloadFor;
 /**
  * Accepts exactly two shapes:
  *  - a raw invitation token (64 hex chars)
@@ -36,6 +43,13 @@ function parseInvitationQrPayload(input) {
         return { ok: false, reason: 'EMPTY' };
     if (TOKEN_PATTERN.test(value))
         return { ok: true, token: value.toLowerCase() };
+    // The current pass format
+    if (value.toLowerCase().startsWith(exports.PASS_PREFIX)) {
+        const rest = value.slice(exports.PASS_PREFIX.length);
+        if (rest === exports.PREVIEW_SAMPLE_SEGMENT)
+            return { ok: false, reason: 'PREVIEW_SAMPLE' };
+        return TOKEN_PATTERN.test(rest) ? { ok: true, token: rest.toLowerCase() } : { ok: false, reason: 'UNSUPPORTED_FORMAT' };
+    }
     if (!/^https?:\/\//i.test(value))
         return { ok: false, reason: 'UNSUPPORTED_FORMAT' };
     let url;

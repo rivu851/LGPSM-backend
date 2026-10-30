@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sanitizeDetail = sanitizeDetail;
 exports.securityEvent = securityEvent;
+const redact_1 = require("./redact");
 const SENSITIVE_KEY = /pass(word)?|token|secret|otp|code|authorization|cookie|signature|key|credential/i;
 const MAX_VALUE_LENGTH = 120;
 function sanitizeDetail(detail = {}) {
@@ -28,7 +29,7 @@ function securityEvent(event, req, detail) {
                 ip: req.ip,
                 method: req.method,
                 // Route only: the query string can carry tokens
-                path: (req.originalUrl || req.url || '').split('?')[0].slice(0, 200),
+                path: (0, redact_1.redactTokens)((req.originalUrl || req.url || '').split('?')[0]).slice(0, 200),
                 userId: req.user?.userId,
                 role: req.user?.role
             }

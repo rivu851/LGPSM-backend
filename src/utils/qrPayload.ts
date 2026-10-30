@@ -20,6 +20,13 @@ export const invitationUrlFor = (token: string): string => `${invitationBaseUrl(
 
 export const previewSampleUrl = (): string => invitationUrlFor(PREVIEW_SAMPLE_SEGMENT);
 
+/**
+ * What the QR on a guest's pass carries: the ADMISSION credential only, as plain text (not a web address, so it cannot be opened,
+ * previewed or logged by a browser and it never reveals the invitation link). The invitation link is a different secret.
+ */
+export const PASS_PREFIX = 'lgpsm-pass:';
+export const admissionPayloadFor = (admissionToken: string): string => `${PASS_PREFIX}${admissionToken}`;
+
 export type QrPayloadResult =
   | { ok: true; token: string }
   | { ok: false; reason: 'EMPTY' | 'UNSUPPORTED_FORMAT' | 'UNTRUSTED_URL' | 'PREVIEW_SAMPLE' };
@@ -37,6 +44,13 @@ export function parseInvitationQrPayload(input: unknown): QrPayloadResult {
   if (!value) return { ok: false, reason: 'EMPTY' };
 
   if (TOKEN_PATTERN.test(value)) return { ok: true, token: value.toLowerCase() };
+
+  // The current pass format
+  if (value.toLowerCase().startsWith(PASS_PREFIX)) {
+    const rest = value.slice(PASS_PREFIX.length);
+    if (rest === PREVIEW_SAMPLE_SEGMENT) return { ok: false, reason: 'PREVIEW_SAMPLE' };
+    return TOKEN_PATTERN.test(rest) ? { ok: true, token: rest.toLowerCase() } : { ok: false, reason: 'UNSUPPORTED_FORMAT' };
+  }
 
   if (!/^https?:\/\//i.test(value)) return { ok: false, reason: 'UNSUPPORTED_FORMAT' };
 

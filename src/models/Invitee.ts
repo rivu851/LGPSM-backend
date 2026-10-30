@@ -36,6 +36,11 @@ export interface IInvitee extends Document {
   sessionAccess: ISessionAccess[];
   qrTokenHash?: string;
   qrTokenCipher?: string;
+  /** The token in the guest's invitation link (RSVP, page, pass retrieval). Separate from the admission credential above; absent on guests invited before the two were separated. */
+  invitationTokenHash?: string;
+  invitationTokenCipher?: string;
+  /** Identity of the CURRENT admission credential; every history row about it carries the same id */
+  credentialId?: mongoose.Types.ObjectId;
   // Set while this guest's CURRENT access pass is revoked; check-in refuses it. A replacement clears it (the revocation itself
   // stays in the CredentialEvent history, with its reason).
   credentialRevokedAt?: Date | null;
@@ -94,6 +99,9 @@ const InviteeSchema: Schema = new Schema(
     qrTokenHash: { type: String },
     // Encrypted copy of the current token (see utils/tokenCipher); never returned by default
     qrTokenCipher: { type: String, select: false },
+    invitationTokenHash: { type: String },
+    invitationTokenCipher: { type: String, select: false },
+    credentialId: { type: Schema.Types.ObjectId },
     credentialRevokedAt: { type: Date, default: null },
     credentialRevocation: { type: new Schema({ category: String, note: String, by: Schema.Types.ObjectId, at: Date }, { _id: false }), default: null },
     credentialVersion: { type: Number },
@@ -111,7 +119,9 @@ const InviteeSchema: Schema = new Schema(
     }
   },
   {
-    timestamps: true
+    timestamps: true,
+    // whatever serialises a guest (an API response, a log line) leaves the credential material out
+    toJSON: { transform: (_doc: unknown, ret: Record<string, unknown>) => { for (const k of ['qrTokenHash', 'qrTokenCipher', 'invitationTokenHash', 'invitationTokenCipher', 'mobileKey']) delete ret[k]; return ret; } }
   }
 );
 
@@ -133,6 +143,9 @@ InviteeSchema.pre('validate', function (this: IInvitee) {
 InviteeSchema.index({ email: 1, eventId: 1 }, { name: 'uniq_active_event_email', unique: true, partialFilterExpression: { archivedAt: { $type: 'null' }, email: { $gt: '' } } });
 InviteeSchema.index({ mobileKey: 1, eventId: 1 }, { name: 'uniq_active_event_mobile', unique: true, partialFilterExpression: { archivedAt: { $type: 'null' }, mobileKey: { $gt: '' } } });
 InviteeSchema.index({ eventId: 1, rsvpStatus: 1 });
+InviteeSchema.index({ invitationTokenHash: 1 }, { sparse: true });
+// Every door scan looks a guest up by the admission credential's hash: without this each scan reads the whole collection.
+InviteeSchema.index({ qrTokenHash: 1 }, { sparse: true });
 
 // Archived (superseded, never-invited) guests are invisible to every read. A query that must see them asks with
 // `.setOptions({ includeArchived: true })`; event deletion still removes them with the rest of the event.

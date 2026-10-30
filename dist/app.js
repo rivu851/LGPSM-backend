@@ -40,7 +40,7 @@ const requestId_1 = require("./middlewares/requestId");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
-const morgan_1 = __importDefault(require("morgan"));
+const requestLogger_1 = require("./middlewares/requestLogger");
 const env_1 = require("./config/env");
 const errorHandler_1 = require("./middlewares/errorHandler");
 const auth_routes_1 = __importDefault(require("./routes/auth.routes"));
@@ -72,7 +72,7 @@ app.use(requestId_1.requestId);
 // Per-request logging (method, path, status, response time). Silenced during
 // the test suite so Jest output stays readable.
 if (env_1.env.NODE_ENV !== 'test') {
-    app.use((0, morgan_1.default)('dev'));
+    app.use((0, requestLogger_1.requestLogger)());
 }
 // Browsers send the origin without a trailing slash, so entries are normalised before matching
 const allowedOrigins = [

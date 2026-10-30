@@ -1,4 +1,5 @@
 import { alertService } from './alert.service';
+import { invitationLookup } from '../utils/credentialTokens';
 import { Invitee, RsvpStatus } from '../models/Invitee';
 import { Event } from '../models/Event';
 import { Session } from '../models/Session';
@@ -60,7 +61,7 @@ export const publicInvitationService = {
     }
 
     const tokenHash = hashToken(rawToken);
-    const invitee = await Invitee.findOne({ qrTokenHash: tokenHash });
+    const invitee = await Invitee.findOne(invitationLookup(tokenHash));
 
     if (!invitee) {
       // A link whose pass was replaced: explain it (and name the event) without revealing the new pass
@@ -143,7 +144,7 @@ export const publicInvitationService = {
     }
 
     const tokenHash = hashToken(rawToken);
-    const invitee = await Invitee.findOne({ qrTokenHash: tokenHash });
+    const invitee = await Invitee.findOne(invitationLookup(tokenHash));
 
     if (!invitee) {
       throw new Error('INVITATION_NOT_FOUND');

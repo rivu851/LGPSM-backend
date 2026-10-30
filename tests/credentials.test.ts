@@ -21,6 +21,8 @@ import { credentialStatus, replacementAfterRevocation, validateReason } from '..
 import { encryptToken } from '../src/utils/tokenCipher';
 import { generateAccessToken } from '../src/utils/token';
 import { generateSecureToken, hashToken } from '../src/utils/invitation.util';
+import { admissionPayloadFor, invitationUrlFor } from '../src/utils/qrPayload';
+import { decodeQr } from './helpers/qr';
 
 // every guest of an event has their own phone number (the database allows one active guest per number)
 let mobileSeq = 0;
@@ -319,7 +321,7 @@ describe('P4 — individual access pass: revoke, replace, history', () => {
       expect((await listStatus('anna')).credentialStatus).toBe('ACTIVE');
     });
 
-    it('always notifies: new card by email with the new link, never the old token; WhatsApp where the invitation used it', async () => {
+    it('always notifies: the new card by email, the unchanged invitation link, never the old pass; WhatsApp where the invitation used it', async () => {
       await replace('ben');
       await settle();
       const now = await fresh('ben');
@@ -328,8 +330,10 @@ describe('P4 — individual access pass: revoke, replace, history', () => {
       const [to, subject, html, attachments] = emailSpy.mock.calls[0];
       expect(to).toBe('ben@x.com');
       expect(subject).toMatch(/new access pass/i);
-      expect(html).toContain(newRaw);
-      expect(html).not.toContain(guests.ben.raw);
+      // the email carries the guest's own (unchanged) invitation link; the new admission credential is only in the QR of the card
+      expect(html).toContain(invitationUrlFor(guests.ben.raw));
+      expect(html).not.toContain(newRaw);
+      expect(await decodeQr(attachments[0].content)).toBe(admissionPayloadFor(newRaw));
       expect(html).not.toMatch(/ATTENDEE_REQUESTED|reason/i);
       expect(attachments[0].content.length).toBeGreaterThan(1000); // the card image
       expect(waSpy).toHaveBeenCalledTimes(1);
@@ -453,7 +457,7 @@ describe('P4 — individual access pass: revoke, replace, history', () => {
       expect(now.rsvpStatus).toBe(RsvpStatus.ACCEPTED);
       const h = (await history('anna')).body.data as any[];
       const types = h.map((e) => e.type);
-      expect(types).toEqual(['REPLACED', 'REVOKED', 'ISSUED']); // newest first; nothing edited or removed
+      expect(types).toEqual(['ACTIVATED', 'REPLACED', 'REVOKED', 'ISSUED']); // newest first; nothing edited or removed
       const revoked = h.find((e) => e.type === 'REVOKED');
       expect(revoked.reasonCategory).toBe(category);
       expect(revoked.note).toBe('original note');
@@ -514,31 +518,36 @@ describe('P4 — individual access pass: revoke, replace, history', () => {
       const send = await request(app).post(`/api/v1/events/${event._id}/invitations/send`).set(auth(tOrg)).send({ inviteeIds: [String(guests.nora.inv._id)], channel: 'EMAIL' });
       expect(send.status).toBe(200);
       let h = (await history('nora')).body.data as any[];
-      expect(h.map((e) => e.type)).toEqual(['ISSUED']);
+      expect(h.map((e) => e.type)).toEqual(['ACTIVATED', 'ISSUED']);
       const inv: any = await Invitation.findOne({ inviteeId: guests.nora.inv._id });
       await request(app).post(`/api/v1/events/${event._id}/invitations/resend`).set(auth(tOrg)).send({ invitationIds: [String(inv._id)] });
       h = (await history('nora')).body.data as any[];
-      expect(h.map((e) => e.type)).toEqual(['REPLACED', 'ISSUED']);
+      expect(h.map((e) => e.type)).toEqual(['ACTIVATED', 'REPLACED', 'ACTIVATED', 'ISSUED']);
       expect(h[0].source).toBe('RESEND');
+      // one identity per credential, shared by its own rows; the replacement points at the one it replaced
+      expect(h[0].credentialId).toBe(h[1].credentialId);
+      expect(h[1].previousCredentialId).toBe(h[2].credentialId);
+      expect(h[2].credentialId).toBe(h[3].credentialId);
+      expect(h[0].credentialId).not.toBe(h[2].credentialId);
       expect((await listStatus('nora')).credentialStatus).toBe('ACTIVE');
     });
 
-    it('the current link shows the new pass as Active; the old link says it was replaced and reveals nothing new', async () => {
+    it('the invitation link is unchanged by a replacement and shows the new pass; the old admission credential and the new one are not links', async () => {
       await replace('anna'); await settle();
       const now = await fresh('anna');
       const newRaw = (await import('../src/utils/tokenCipher')).decryptToken(now.qrTokenCipher)!;
-      const cur = await request(app).get(`/api/v1/public/invitations/${newRaw}`);
-      expect(cur.status).toBe(200);
-      expect(cur.body.data.credential.status).toBe('ACTIVE');
-      expect((await request(app).get(`/api/v1/public/invitations/${newRaw}/card`)).headers['content-type']).toContain('image/png');
-      const old = await request(app).get(`/api/v1/public/invitations/${guests.anna.raw}`);
-      expect(old.status).toBe(200);
-      expect(old.body.data.credential.status).toBe('REPLACED');
-      expect(JSON.stringify(old.body)).not.toContain(newRaw);
-      expect(JSON.stringify(old.body)).not.toContain(now.qrTokenHash);
-      const oldCard = await request(app).get(`/api/v1/public/invitations/${guests.anna.raw}/card`);
-      expect(oldCard.status).toBe(410);
-      expect(oldCard.body.code).toBe('CREDENTIAL_REPLACED');
+      // the link the guest already holds still opens their page, with the NEW pass Active
+      const page = await request(app).get(`/api/v1/public/invitations/${guests.anna.raw}`);
+      expect(page.status).toBe(200);
+      expect(page.body.data.credential.status).toBe('ACTIVE');
+      expect(JSON.stringify(page.body)).not.toContain(newRaw);
+      expect(JSON.stringify(page.body)).not.toContain(now.qrTokenHash);
+      const card = await request(app).get(`/api/v1/public/invitations/${guests.anna.raw}/card`).buffer(true).parse((res, cb) => { const c: Buffer[] = []; res.on('data', (d: Buffer) => c.push(d)); res.on('end', () => cb(null, Buffer.concat(c))); });
+      expect(card.headers['content-type']).toContain('image/png');
+      expect(await decodeQr(card.body)).toBe(admissionPayloadFor(newRaw)); // the card behind the old link carries the CURRENT pass
+      // the admission credential is not an invitation link
+      expect((await request(app).get(`/api/v1/public/invitations/${newRaw}`)).status).toBe(404);
+      expect((await request(app).post(`/api/v1/public/invitations/${newRaw}/rsvp`).send({ rsvpStatus: 'DECLINED' })).status).toBe(404);
       expect((await request(app).get(`/api/v1/public/invitations/${generateSecureToken()}`)).status).toBe(404);
     });
 

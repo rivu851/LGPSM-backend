@@ -38,7 +38,10 @@ const mongoose_1 = __importStar(require("mongoose"));
 // Append-only history of a guest's access passes. Rows are never edited or removed (the revocation of a pass stays on record
 // with its reason even after the pass is replaced). The raw token is never stored; `tokenHash` is the same one-way hash the
 // guest record already holds, kept so a superseded link can be recognised and explained.
-exports.CREDENTIAL_EVENT_TYPES = ['ISSUED', 'REPLACED', 'REVOKED'];
+// ISSUED: a pass was created and delivered. ACTIVATED: it became the guest's current pass (written with ISSUED / REPLACED).
+// REPLACED: a newer pass took over. REVOKED: withdrawn. EXPIRED is not stored: it follows from the event's own state, and the
+// history shows it as a derived row.
+exports.CREDENTIAL_EVENT_TYPES = ['ISSUED', 'ACTIVATED', 'REPLACED', 'REVOKED'];
 const CredentialEventSchema = new mongoose_1.Schema({
     eventId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Event', required: true },
     inviteeId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Invitee', required: true },
@@ -46,6 +49,9 @@ const CredentialEventSchema = new mongoose_1.Schema({
     type: { type: String, enum: exports.CREDENTIAL_EVENT_TYPES, required: true },
     version: { type: Number, required: true },
     previousVersion: { type: Number },
+    credentialId: { type: mongoose_1.Schema.Types.ObjectId },
+    previousCredentialId: { type: mongoose_1.Schema.Types.ObjectId },
+    result: { type: String, enum: ['SUCCESS'], default: 'SUCCESS' },
     source: { type: String, enum: ['SEND', 'RESEND', 'REPLACE', 'REVOKE'], required: true },
     reasonCategory: { type: String },
     note: { type: String, maxlength: 500 },

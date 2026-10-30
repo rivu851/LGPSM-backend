@@ -11,7 +11,8 @@ import { Session } from '../models/Session';
 import { Role } from '../models/User';
 import { generateSecureToken, hashToken } from '../utils/invitation.util';
 import { generateQRCodeDataURL } from '../utils/qr.util';
-import { invitationUrlFor, previewSampleUrl } from '../utils/qrPayload';
+import { invitationUrlFor, previewSampleUrl, admissionPayloadFor } from '../utils/qrPayload';
+import { invitationLookup, planInvitationToken, readAdmissionToken } from '../utils/credentialTokens';
 import { decryptToken, encryptToken } from '../utils/tokenCipher';
 import { sendEmail } from '../utils/email.provider';
 import { whatsappService, describeWhatsAppError } from './whatsapp.service';
@@ -188,10 +189,11 @@ export function channelsForInvitee(channel: DeliveryChannel, invitee: { email?: 
 export const invitationService = {
   async publicInvitationCard(rawToken: string): Promise<Buffer> {
     if (!rawToken || typeof rawToken !== 'string') throw new Error('INVALID_TOKEN');
-    const invitee = await Invitee.findOne({ qrTokenHash: hashToken(rawToken) }).select('+qrTokenCipher');
+    // The link finds the guest; the pass drawn is their CURRENT admission credential, whichever pass the link was first sent with
+    const invitee = await Invitee.findOne(invitationLookup(hashToken(rawToken))).select('+qrTokenCipher');
     if (!invitee) {
-      // an old link whose pass was replaced: say so instead of "not found"
-      if (await CredentialEvent.exists({ tokenHash: hashToken(rawToken) })) throw new Error('CREDENTIAL_REPLACED');
+      // an address that carried an old admission credential (links sent before the two secrets were separated): say so
+      if (await credentialService.isSupersededToken(hashToken(rawToken))) throw new Error('CREDENTIAL_REPLACED');
       throw new Error('INVITATION_NOT_FOUND');
     }
     const event = await Event.findById(invitee.eventId);
@@ -201,10 +203,13 @@ export const invitationService = {
     // A revoked pass is not drawn either: the page explains instead
     if ((invitee as any).credentialRevokedAt) throw new Error('CREDENTIAL_REVOKED');
 
-    return this.renderPassCard(event, invitee, rawToken);
+    // a guest from before the two secrets were separated, whose pass was stored without a recoverable copy: the link token IS their pass
+    const admissionToken = readAdmissionToken(invitee as any) ?? (hashToken(rawToken) === (invitee as any).qrTokenHash ? rawToken : null);
+    if (!admissionToken) throw new Error('INVITATION_NOT_FOUND');
+    return this.renderPassCard(event, invitee, admissionToken);
   },
 
-  /** Draws the guest's card with the QR for `rawToken`. Used for the public card and for replacement notices. */
+  /** Draws the guest's card with the QR for the ADMISSION credential `rawToken`. Used for the public card and for replacement notices. */
   async renderPassCard(event: any, invitee: any, rawToken: string): Promise<Buffer> {
     const cardContext = await loadCardContext(event);
     const eventPhotoBase64 = await resolveImageKeyBase64((event as any).media?.logoKey);
@@ -212,7 +217,7 @@ export const invitationService = {
     const allSessions = await Session.find({ eventId: event._id }).sort({ 'schedule.start': 1 }).lean();
     const { eventDate, dayOfWeek, eventTime, venue, locationSub, sessions: assignedSessions } =
       buildInvitationContent(event as any, allSessions as any, invitee);
-    const invitationUrl = invitationUrlFor(rawToken);
+    const invitationUrl = admissionPayloadFor(rawToken); // the QR carries the admission credential, nothing else
     const qrDataUrl = await generateQRCodeDataURL(invitationUrl);
 
     return invitationCardService.generateInvitationCardPNG({
@@ -272,7 +277,7 @@ export const invitationService = {
 
     if (validObjectIds.length === 0) throw new Error('INVALID_INVITEES');
 
-    const invitees = await Invitee.find({ _id: { $in: validObjectIds }, eventId });
+    const invitees = await Invitee.find({ _id: { $in: validObjectIds }, eventId }).select('+qrTokenCipher +invitationTokenCipher');
     if (invitees.length === 0) throw new Error('INVALID_INVITEES');
 
     const results = [];
@@ -299,12 +304,13 @@ export const invitationService = {
       }
       const shouldSendEmail = use.email;
       const shouldSendWhatsApp = use.whatsapp;
-      // Core Rule: Generate ONE secure token & ONE QR per event/invitee per send batch
+      // Two separate secrets: a new ADMISSION credential (the QR) and the guest's stable INVITATION token (the link)
       const rawToken = generateSecureToken();
       const tokenHash = hashToken(rawToken);
-      const invitationUrl = invitationUrlFor(rawToken);
-      
-      const qrDataUrl = await generateQRCodeDataURL(invitationUrl);
+      const invitationToken = planInvitationToken(invitee);
+      const invitationUrl = invitationUrlFor(invitationToken.raw);
+
+      const qrDataUrl = await generateQRCodeDataURL(admissionPayloadFor(rawToken));
       const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '');
       const qrBuffer = Buffer.from(base64Data, 'base64');
 
@@ -360,7 +366,7 @@ export const invitationService = {
           },
           sessions: assignedSessions,
           qrDataUrl,
-          invitationUrl,
+          invitationUrl: admissionPayloadFor(rawToken), // the card's QR (fallback) is always the admission credential
           cardDesign,
           designSpec: cardContext.designSpec
         });
@@ -452,9 +458,10 @@ export const invitationService = {
         invitation.sentAt = new Date();
         invitation.failureReason = undefined;
 
-        // Save active token and status on Invitee model
+        // Save the active admission credential and the invitation token, and the status, on the guest
         invitee.qrTokenHash = tokenHash;
         invitee.qrTokenCipher = encryptToken(rawToken);
+        if (invitationToken.persist) { invitee.invitationTokenHash = invitationToken.hash; invitee.invitationTokenCipher = invitationToken.cipher; }
         invitee.invitationStatus = InvitationStatus.SENT;
       } else {
         invitation.status = InvitationDeliveryStatus.FAILED;
@@ -558,7 +565,7 @@ export const invitationService = {
 
     if (validObjectIds.length === 0) throw new Error('INVALID_INVITATIONS');
 
-    const invitations = await Invitation.find({ _id: { $in: validObjectIds }, eventId }).populate('inviteeId');
+    const invitations = await Invitation.find({ _id: { $in: validObjectIds }, eventId }).populate({ path: 'inviteeId', select: '+qrTokenCipher +invitationTokenCipher' });
     if (invitations.length === 0) throw new Error('INVALID_INVITATIONS');
 
     const results = [];
@@ -586,11 +593,13 @@ export const invitationService = {
         return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: SKIPPED_NO_CONTACT } as any;
       }
 
+      // A re-send mints a new ADMISSION credential (the QR already delivered stops working); the invitation link is unchanged
       const rawToken = generateSecureToken();
       const tokenHash = hashToken(rawToken);
-      const invitationUrl = invitationUrlFor(rawToken);
+      const invitationToken = planInvitationToken(invitee);
+      const invitationUrl = invitationUrlFor(invitationToken.raw);
 
-      const qrDataUrl = await generateQRCodeDataURL(invitationUrl);
+      const qrDataUrl = await generateQRCodeDataURL(admissionPayloadFor(rawToken));
       const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '');
       const qrBuffer = Buffer.from(base64Data, 'base64');
 
@@ -641,7 +650,7 @@ export const invitationService = {
           },
           sessions: assignedSessions,
           qrDataUrl,
-          invitationUrl,
+          invitationUrl: admissionPayloadFor(rawToken), // the card's QR (fallback) is always the admission credential
           cardDesign,
           designSpec: cardContext.designSpec
         });
@@ -732,6 +741,7 @@ export const invitationService = {
 
         invitee.qrTokenHash = tokenHash;
         invitee.qrTokenCipher = encryptToken(rawToken);
+        if (invitationToken.persist) { invitee.invitationTokenHash = invitationToken.hash; invitee.invitationTokenCipher = invitationToken.cipher; }
         invitee.invitationStatus = InvitationStatus.SENT;
       } else {
         resendInvitation.status = InvitationDeliveryStatus.FAILED;
@@ -872,7 +882,7 @@ export const invitationService = {
     // A guest who has been sent an invitation gets their current, check-in-valid QR. Otherwise the
     // card carries a clearly marked sample QR that check-in recognises and rejects.
     const issuedToken = invitee ? currentIssuedToken(invitee) : null;
-    const invitationUrl = issuedToken ? invitationUrlFor(issuedToken) : previewSampleUrl();
+    const invitationUrl = issuedToken ? admissionPayloadFor(issuedToken) : previewSampleUrl();
     const qrDataUrl = await generateQRCodeDataURL(invitationUrl);
 
     const png = await invitationCardService.generateInvitationCardPNG({

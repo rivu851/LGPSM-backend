@@ -81,12 +81,17 @@ describe('Replace preview', () => {
     expect(JSON.stringify(res.body)).not.toMatch(/tokenHash|cipher|secret/i);
   });
 
+  // audit rows of the seeding imports are written just after each response: wait until the count stops moving before comparing
+  const quiet = async () => { let last = -1, same = 0; for (let i = 0; i < 100 && same < 4; i++) { const n = await AuditLog.countDocuments({}); same = n === last ? same + 1 : 0; last = n; await new Promise((r) => setTimeout(r, 25)); } };
+
   it('changes nothing: no guest, list, delivery record or audit entry is written', async () => {
     await seed();
+    await quiet();
     const before = await snapshot();
     const replace = await send(FILE, 'REPLACE', true);
     const append = await send(FILE, 'APPEND', true);
     expect(replace.status).toBe(200); expect(append.status).toBe(200);
+    await quiet();
     expect(await snapshot()).toBe(before);
   });
 

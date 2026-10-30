@@ -73,12 +73,14 @@ describe('Invitees — server-side check-in status filter/pagination', () => {
     });
   });
 
+  // each guest of an event has their own phone number (the database allows one active guest per number)
+  let phoneSeq = 0;
   async function makeInvitee(name: string) {
     return Invitee.create({
       eventId: event._id,
       name,
       email: `${name.toLowerCase().replace(/\s+/g, '.')}@example.com`,
-      mobile: '9000000000',
+      mobile: `90000${String(10000 + ++phoneSeq)}`,
       invitationStatus: InvitationStatus.SENT,
       rsvpStatus: RsvpStatus.ACCEPTED,
     });

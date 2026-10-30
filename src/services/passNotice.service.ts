@@ -8,6 +8,7 @@ import { alertService } from './alert.service';
 import { auditLogService } from './auditLog.service';
 import { formatCardDate } from '../utils/invitationContent';
 import { invitationUrlFor } from '../utils/qrPayload';
+import { readInvitationToken } from '../utils/credentialTokens';
 import { decryptToken } from '../utils/tokenCipher';
 
 // "Your access pass was replaced / revoked" messages. Same guarantees as the cancellation notices: stored first and sent
@@ -26,7 +27,7 @@ function replacedEmail(a: { guest: string; title: string; when: string; link: st
 <p>Dear ${escapeHtml(a.guest)},</p>
 <p>We have issued you a new access pass for <strong>${escapeHtml(a.title)}</strong>${a.when ? ` (${escapeHtml(a.when)})` : ''}. <strong>Your previous pass no longer works</strong>; please use only this one.</p>
 <p><img src="cid:${a.cid}" alt="Your access pass" style="max-width:100%;border:1px solid #e0e0e0;border-radius:8px"></p>
-<p><a href="${escapeHtml(a.link)}">Open your pass online</a></p>
+${a.link ? `<p><a href="${escapeHtml(a.link)}">Open your invitation online</a> (your invitation link has not changed)</p>` : ''}
 <p style="color:#6b7280;font-size:12px">Your RSVP has not changed.</p></div>`;
 }
 
@@ -35,6 +36,7 @@ function revokedEmail(a: { guest: string; title: string; contact?: string }) {
 <h2 style="margin:0 0 12px">Your access pass was withdrawn</h2>
 <p>Dear ${escapeHtml(a.guest)},</p>
 <p>Your access pass for <strong>${escapeHtml(a.title)}</strong> is <strong>no longer valid</strong> and cannot be used for entry.</p>
+<p>Your invitation link still works for the event details and your RSVP.</p>
 ${a.contact ? `<p>Questions? Contact the organizer on ${escapeHtml(a.contact)}.</p>` : ''}
 <p style="color:#6b7280;font-size:12px">Your RSVP has not changed.</p></div>`;
 }
@@ -77,7 +79,7 @@ export const passNoticeService = {
   },
 
   async sendOne(key: ChannelKey, notice: any): Promise<{ state: 'SENT' | 'FAILED' | 'UNAVAILABLE' | 'SKIPPED'; reason?: string; messageId?: string }> {
-    const invitee: any = await Invitee.findById(notice.inviteeId).select('+qrTokenCipher name email mobile credentialVersion credentialRevokedAt eventId');
+    const invitee: any = await Invitee.findById(notice.inviteeId).select('+qrTokenCipher +invitationTokenCipher invitationTokenHash qrTokenHash name email mobile credentialVersion credentialRevokedAt eventId');
     const event: any = await Event.findById(notice.eventId).select('title schedule contactNumber status organizerId media cardInfo categoryId subcategoryId templateId format location description');
     if (!invitee || !event) return { state: 'FAILED', reason: 'The guest or event no longer exists' };
     const when = event.schedule?.start ? formatCardDate(new Date(event.schedule.start)) : '';
@@ -91,7 +93,9 @@ export const passNoticeService = {
         if (!raw) return { state: 'FAILED', reason: 'The new pass could not be prepared' };
         const { invitationService } = await import('./invitation.service');
         card = await invitationService.renderPassCard(event, invitee, raw);
-        link = invitationUrlFor(raw);
+        // the guest's own (unchanged) invitation link: the pass itself is in the card above
+        const invitation = readInvitationToken(invitee);
+        link = invitation ? invitationUrlFor(invitation) : '';
       }
       if (key === 'email') {
         if (!invitee.email) return { state: 'UNAVAILABLE', reason: 'No email address on record' };

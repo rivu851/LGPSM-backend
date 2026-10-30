@@ -61,6 +61,9 @@ function withCredential(invitees, event) {
     return invitees.map((i) => {
         const plain = typeof i.toObject === 'function' ? i.toObject() : { ...i };
         const c = (0, credentialPolicy_1.credentialStatus)(plain, event, now);
+        // the secrets' hashes and ciphers never leave the server: the client gets the derived status only
+        for (const k of ['qrTokenHash', 'qrTokenCipher', 'invitationTokenHash', 'invitationTokenCipher', 'mobileKey'])
+            delete plain[k];
         return { ...plain, credentialStatus: c.status, credentialStatusReason: c.reason, credentialRevocation: plain.credentialRevocation ? { category: plain.credentialRevocation.category, at: plain.credentialRevocation.at } : null };
     });
 }

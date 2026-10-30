@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.publicInvitationService = void 0;
 const alert_service_1 = require("./alert.service");
+const credentialTokens_1 = require("../utils/credentialTokens");
 const Invitee_1 = require("../models/Invitee");
 const Event_1 = require("../models/Event");
 const Session_1 = require("../models/Session");
@@ -58,7 +59,7 @@ exports.publicInvitationService = {
             throw new Error('INVALID_TOKEN');
         }
         const tokenHash = (0, invitation_util_1.hashToken)(rawToken);
-        const invitee = await Invitee_1.Invitee.findOne({ qrTokenHash: tokenHash });
+        const invitee = await Invitee_1.Invitee.findOne((0, credentialTokens_1.invitationLookup)(tokenHash));
         if (!invitee) {
             // A link whose pass was replaced: explain it (and name the event) without revealing the new pass
             const old = await CredentialEvent_1.CredentialEvent.findOne({ tokenHash }).select('+tokenHash eventId inviteeId createdAt').lean();
@@ -137,7 +138,7 @@ exports.publicInvitationService = {
             throw new Error('INVALID_TOKEN');
         }
         const tokenHash = (0, invitation_util_1.hashToken)(rawToken);
-        const invitee = await Invitee_1.Invitee.findOne({ qrTokenHash: tokenHash });
+        const invitee = await Invitee_1.Invitee.findOne((0, credentialTokens_1.invitationLookup)(tokenHash));
         if (!invitee) {
             throw new Error('INVITATION_NOT_FOUND');
         }

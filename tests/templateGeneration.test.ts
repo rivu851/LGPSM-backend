@@ -20,7 +20,7 @@ import { setStitchProvider, StitchProvider, StitchProviderError, StitchScreenArt
 import { drain, failExpiredJobs, buildStitchPrompt, recoverOnStartup } from '../src/services/stitch/templateGeneration.service';
 import { loadCardContext } from '../src/services/cardTemplates/context';
 import { invitationService } from '../src/services/invitation.service';
-import { invitationUrlFor } from '../src/utils/qrPayload';
+import { admissionPayloadFor } from '../src/utils/qrPayload';
 import { decodeQr } from './helpers/qr';
 
 jest.mock('../src/utils/email.provider', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
@@ -653,22 +653,22 @@ describe('real events: rendering, QR codes and exports', () => {
       const meta = await sharp(card).metadata();
       expect([meta.width, meta.height]).toEqual([1080, 1920]); // the custom design, not a Figma card (786 x 1364) or the classic one (1536 x 2048)
       const url = await decodeQr(card);
-      expect(url).toMatch(/\/invitation\/[a-f0-9]{64}$/);
+      expect(url).toMatch(/^lgpsm-pass:[a-f0-9]{64}$/); // the QR carries the admission credential, not the invitation link
       decoded.push(url!);
       byGuest[to] = url!;
       expect(to).toMatch(/@example\.com/);
     }
     expect(decoded[0]).not.toBe(decoded[1]);
-    // each decoded QR is that guest's real, check-in-valid invitation link (its hash is what was stored)
+    // each decoded QR is that guest's real, check-in-valid admission credential (its hash is what was stored)
     const crypto = await import('crypto');
     const stored = (await Invitee.find({ eventId: event._id })).map((i) => i.qrTokenHash).sort();
-    expect(decoded.map((u) => crypto.createHash('sha256').update(u.split('/').pop()!).digest('hex')).sort()).toEqual(stored);
+    expect(decoded.map((u) => crypto.createHash('sha256').update(u.slice('lgpsm-pass:'.length)).digest('hex')).sort()).toEqual(stored);
 
     // the organizer's preview of an invited guest is the same design with that guest's current code
     const preview = await invitationService.previewInvitationCard(String(event._id), String(orgA._id), String(invitees[0]._id));
     expect(preview.qr).toBe('ISSUED');
     expect((await sharp(preview.png).metadata()).width).toBe(1080);
-    expect(await decodeQr(preview.png)).toBe(invitationUrlFor(byGuest['asha@example.com'].split('/').pop()!));
+    expect(await decodeQr(preview.png)).toBe(admissionPayloadFor(byGuest['asha@example.com'].slice('lgpsm-pass:'.length)));
   });
 
   it('keeps the existing workflow untouched for events without a custom template', async () => {

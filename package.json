@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
     "check:deployed-layout": "node scripts/check-deployed-layout.js",
-    "migrate:invitee-uniqueness": "node scripts/migrate-invitee-uniqueness.js"
+    "migrate:invitee-uniqueness": "node scripts/migrate-invitee-uniqueness.js",
+    "inventory:credentials": "node scripts/credential-inventory.js"
   },
   "keywords": [],
   "author": "",
