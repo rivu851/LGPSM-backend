@@ -19,6 +19,7 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const eventAccess_1 = require("../utils/eventAccess");
 const platformSettings_service_1 = require("./platformSettings.service");
 const alert_service_1 = require("./alert.service");
+const cancellationNotice_service_1 = require("./cancellationNotice.service");
 const admissionWindow_1 = require("../utils/admissionWindow");
 const eventLifecycle_1 = require("../utils/eventLifecycle");
 const invitationContent_1 = require("../utils/invitationContent");
@@ -236,19 +237,63 @@ class EventService {
             throw new Error('EVENT_CLOSED');
         return updated;
     }
-    async deactivateEvent(eventId, organizerId, role) {
-        const existing = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId, role);
+    /**
+     * Cancels an event. Terminal: nothing in the app can bring a cancelled event back (a replacement event must be
+     * created instead). History is untouched; only the status changes and the guests who were invited are queued to be told.
+     *
+     * Idempotent: cancelling a cancelled event changes nothing and creates no second set of notices (enqueueing is
+     * keyed on guest, so repeating it can only add notices that are genuinely missing).
+     */
+    async cancelEvent(eventId, actor, reason) {
+        if (actor.role !== User_1.Role.ADMIN && actor.role !== User_1.Role.ORGANIZER)
+            throw new Error('FORBIDDEN');
+        const existing = await (0, eventAccess_1.findManageableEvent)(eventId, actor.userId, actor.role);
         if (!existing)
             throw new Error('EVENT_NOT_FOUND');
-        if (existing.status === Event_1.EventStatus.CANCELLED)
-            return existing; // already cancelled: nothing to change
-        if (!(0, eventLifecycle_1.canTransition)(existing.status, Event_1.EventStatus.CANCELLED))
+        if (existing.status === Event_1.EventStatus.COMPLETED)
             throw new Error('INVALID_TRANSITION');
-        const deletedEvent = await event_repository_1.eventRepository.softDeleteByIdAndOrganizer(eventId, String(existing.organizerId));
-        if (!deletedEvent) {
-            throw new Error('DELETION_FAILED');
+        const cleanReason = typeof reason === 'string' ? reason.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 500) || undefined : undefined;
+        let alreadyCancelled = existing.status === Event_1.EventStatus.CANCELLED;
+        let event = existing;
+        if (!alreadyCancelled) {
+            // Conditional + atomic: the status, its metadata and the admission counter freeze change together, so a check-in
+            // is either entirely before the cancellation or refused after it.
+            const cancelled = await Event_1.Event.findOneAndUpdate({ _id: existing._id, status: { $in: [Event_1.EventStatus.PUBLISHED, Event_1.EventStatus.DRAFT] } }, [{ $set: {
+                        status: Event_1.EventStatus.CANCELLED,
+                        cancelledAt: new Date(),
+                        cancelledBy: new mongoose_1.default.Types.ObjectId(actor.userId),
+                        cancelledByRole: actor.role,
+                        ...(cleanReason ? { cancellationReason: cleanReason } : {}),
+                        finalAdmissionSeq: { $ifNull: ['$admissionSeq', 0] }
+                    } }], { new: true, updatePipeline: true, timestamps: false });
+            if (cancelled)
+                event = cancelled;
+            else {
+                // lost a race with another cancel (fine) or with a close (not fine)
+                const now = await Event_1.Event.findById(existing._id);
+                if (!now)
+                    throw new Error('EVENT_NOT_FOUND');
+                if (now.status !== Event_1.EventStatus.CANCELLED)
+                    throw new Error('INVALID_TRANSITION');
+                alreadyCancelled = true;
+                event = now;
+            }
         }
-        return deletedEvent;
+        // Stored first, sent afterwards: a provider outage can never undo or block the cancellation
+        const queued = await cancellationNotice_service_1.cancellationNoticeService.enqueueForEvent(event);
+        if (queued.eligible > 0) {
+            cancellationNotice_service_1.cancellationNoticeService.processEvent(event._id).catch((e) => console.error('Cancellation notice dispatch failed:', e?.message));
+        }
+        return { event, alreadyCancelled, notices: queued };
+    }
+    /** The event, for reading or retrying its cancellation notices: admin or the owning organizer only (never staff). */
+    async findForNotices(eventId, actor) {
+        if (actor.role !== User_1.Role.ADMIN && actor.role !== User_1.Role.ORGANIZER)
+            throw new Error('FORBIDDEN');
+        const event = await (0, eventAccess_1.findManageableEvent)(eventId, actor.userId, actor.role);
+        if (!event)
+            throw new Error('EVENT_NOT_FOUND');
+        return event;
     }
     /**
      * Non-destructive close: PUBLISHED -> COMPLETED. Nothing is deleted; sessions, invitees, invitations, RSVPs,
@@ -264,7 +309,9 @@ class EventService {
         if (!(0, eventLifecycle_1.canTransition)(event.status, Event_1.EventStatus.COMPLETED))
             throw new Error('INVALID_TRANSITION');
         // Conditional update so two concurrent closes (or a close racing a cancel) cannot both win
-        const closed = await Event_1.Event.findOneAndUpdate({ _id: event._id, status: Event_1.EventStatus.PUBLISHED }, { $set: { status: Event_1.EventStatus.COMPLETED, closedAt: new Date(), closedBy: new mongoose_1.default.Types.ObjectId(actor.userId) } }, { new: true });
+        // One atomic update that also freezes the admission counter: every admission writes the same document inside its
+        // own transaction, so a check-in and this close are strictly ordered (see checkIn.service `commitAdmission`).
+        const closed = await Event_1.Event.findOneAndUpdate({ _id: event._id, status: Event_1.EventStatus.PUBLISHED }, [{ $set: { status: Event_1.EventStatus.COMPLETED, closedAt: new Date(), closedBy: new mongoose_1.default.Types.ObjectId(actor.userId), finalAdmissionSeq: { $ifNull: ['$admissionSeq', 0] } } }], { new: true, updatePipeline: true, timestamps: false });
         if (!closed)
             throw new Error('INVALID_TRANSITION');
         return closed;

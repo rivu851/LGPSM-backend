@@ -62,6 +62,16 @@ export interface IEvent extends Document {
   operationalDataCleared?: boolean;
   // Set by the non-destructive close operation; the event and all its history are kept
   closedAt?: Date;
+  // Cancellation is terminal (no reinstate). Who/when/why is kept for history and for the guest notices.
+  cancelledAt?: Date;
+  cancelledBy?: mongoose.Types.ObjectId;
+  cancelledByRole?: string;
+  cancellationReason?: string;
+  // Every admission write bumps `admissionSeq` in the same transaction as the attendance record; close/cancel copy it to
+  // `finalAdmissionSeq` in the same atomic update that ends the event. The two must equal the number of attendance
+  // records ever admitted, which proves nothing was admitted after the event ended.
+  admissionSeq?: number;
+  finalAdmissionSeq?: number;
   closedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -123,6 +133,12 @@ const EventSchema: Schema = new Schema(
     },
     operationalDataCleared: { type: Boolean, default: false },
     closedAt: { type: Date },
+    cancelledAt: { type: Date },
+    cancelledBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    cancelledByRole: { type: String },
+    cancellationReason: { type: String, maxlength: 500 },
+    admissionSeq: { type: Number, default: 0 },
+    finalAdmissionSeq: { type: Number },
     closedBy: { type: Schema.Types.ObjectId, ref: 'User' }
   },
   {

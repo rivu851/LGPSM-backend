@@ -2,6 +2,7 @@ import dns from 'dns';
 import app from './app';
 import connectDatabase from './config/database';
 import { env } from './config/env';
+import { cancellationNoticeService } from './services/cancellationNotice.service';
 import { recoverOnStartup } from './services/stitch/templateGeneration.service';
 
 // Render containers have no outbound IPv6 route. Node's default DNS ordering can still return an
@@ -15,6 +16,9 @@ async function startServer() {
     await connectDatabase();
     // generation jobs a restart interrupted are failed (not left "running"), and queued ones resume
     await recoverOnStartup().catch((e) => console.error('Template generation recovery failed:', e?.message));
+
+    // cancellation notices that were still waiting when the process stopped are sent now (they are stored, not held in memory)
+    cancellationNoticeService.resumeAll().catch((e) => console.error('Cancellation notice resume failed:', e?.message));
 
     app.listen(env.PORT, () => {
       console.log(`Server is running on port ${env.PORT}`);

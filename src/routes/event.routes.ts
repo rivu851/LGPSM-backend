@@ -37,6 +37,14 @@ router.get('/', authorizeRoles(Role.ADMIN, Role.ORGANIZER), eventController.getE
 // SYSTEM_USER may read details of events they are assigned to (for check-in)
 router.get('/:eventId', authorizeRoles(Role.ADMIN, Role.ORGANIZER, Role.SYSTEM_USER), eventController.getEventById);
 router.patch('/:eventId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(updateEventSchema), auditAction({ action: 'EVENT_UPDATE', entityType: 'Event', entityParam: 'eventId' }), eventController.updateEvent);
-router.delete('/:eventId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), auditAction({ action: 'EVENT_CANCEL', entityType: 'Event', entityParam: 'eventId', critical: true, describe: 'Event cancelled' }), eventController.deleteEvent);
+// Cancel (terminal, notifies invited guests). DELETE is the same operation for older clients; nothing is ever deleted by it.
+const cancelAudit = auditAction({ action: 'EVENT_CANCEL', entityType: 'Event', entityParam: 'eventId', critical: true, describe: 'Event cancelled', meta: (req, body) => ({ reason: (req.body as any)?.reason, notices: body?.data?.notices, alreadyCancelled: body?.data?.alreadyCancelled }) });
+router.post('/:eventId/cancel', authorizeRoles(Role.ADMIN, Role.ORGANIZER), cancelAudit, eventController.cancelEvent);
+router.delete('/:eventId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), cancelAudit, eventController.cancelEvent);
+
+// What cancelling would do, and what happened afterwards (organizer / admin only)
+router.get('/:eventId/cancellation/preview', authorizeRoles(Role.ADMIN, Role.ORGANIZER), eventController.getCancellationPreview);
+router.get('/:eventId/cancellation/notices', authorizeRoles(Role.ADMIN, Role.ORGANIZER), eventController.getCancellationNotices);
+router.post('/:eventId/cancellation/notices/retry', authorizeRoles(Role.ADMIN, Role.ORGANIZER), auditAction({ action: 'EVENT_CANCEL_NOTICES_RETRY', entityType: 'Event', entityParam: 'eventId', describe: 'Cancellation notices retried' }), eventController.retryCancellationNotices);
 
 export default router;

@@ -33,5 +33,12 @@ router.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.R
 // SYSTEM_USER may read details of events they are assigned to (for check-in)
 router.get('/:eventId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER), event_controller_1.eventController.getEventById);
 router.patch('/:eventId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(event_validator_1.updateEventSchema), (0, auditAction_1.auditAction)({ action: 'EVENT_UPDATE', entityType: 'Event', entityParam: 'eventId' }), event_controller_1.eventController.updateEvent);
-router.delete('/:eventId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), (0, auditAction_1.auditAction)({ action: 'EVENT_CANCEL', entityType: 'Event', entityParam: 'eventId', critical: true, describe: 'Event cancelled' }), event_controller_1.eventController.deleteEvent);
+// Cancel (terminal, notifies invited guests). DELETE is the same operation for older clients; nothing is ever deleted by it.
+const cancelAudit = (0, auditAction_1.auditAction)({ action: 'EVENT_CANCEL', entityType: 'Event', entityParam: 'eventId', critical: true, describe: 'Event cancelled', meta: (req, body) => ({ reason: req.body?.reason, notices: body?.data?.notices, alreadyCancelled: body?.data?.alreadyCancelled }) });
+router.post('/:eventId/cancel', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), cancelAudit, event_controller_1.eventController.cancelEvent);
+router.delete('/:eventId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), cancelAudit, event_controller_1.eventController.cancelEvent);
+// What cancelling would do, and what happened afterwards (organizer / admin only)
+router.get('/:eventId/cancellation/preview', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), event_controller_1.eventController.getCancellationPreview);
+router.get('/:eventId/cancellation/notices', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), event_controller_1.eventController.getCancellationNotices);
+router.post('/:eventId/cancellation/notices/retry', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), (0, auditAction_1.auditAction)({ action: 'EVENT_CANCEL_NOTICES_RETRY', entityType: 'Event', entityParam: 'eventId', describe: 'Cancellation notices retried' }), event_controller_1.eventController.retryCancellationNotices);
 exports.default = router;

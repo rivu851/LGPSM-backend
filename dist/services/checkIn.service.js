@@ -44,6 +44,20 @@ const QR_REJECTIONS = {
     UNTRUSTED_URL: 'QR_URL_UNTRUSTED',
     PREVIEW_SAMPLE: 'QR_PREVIEW_SAMPLE',
 };
+let transactionSupport;
+/** Transactions need a replica set / sharded cluster; a standalone mongod rejects them. Asked once per process. */
+function supportsTransactions() {
+    transactionSupport ??= (async () => {
+        try {
+            const hello = await mongoose_1.default.connection.db.admin().command({ hello: 1 });
+            return !!(hello.setName || hello.msg === 'isdbgrid');
+        }
+        catch {
+            return false;
+        }
+    })();
+    return transactionSupport;
+}
 /** A time-based refusal that carries the window so the response can say when check-in opens or closed. */
 class AdmissionError extends Error {
     code;
@@ -155,15 +169,64 @@ exports.checkInService = {
             }
         }
         // A duplicate key (11000) from a concurrent scan surfaces as "already checked in" in the controller
-        const checkIn = await checkIn_repository_1.checkInRepository.create({
+        const checkIn = await this.commitAdmission(event, {
             eventId: new mongoose_1.default.Types.ObjectId(eventId),
             inviteeId: invitee._id,
             sessionId: sessionId ? new mongoose_1.default.Types.ObjectId(sessionId) : null,
             checkInMethod: method,
             checkedInBy: new mongoose_1.default.Types.ObjectId(actor.userId),
             checkInAt: now
-        });
+        }, now, method === CheckIn_1.CheckInMethod.QR);
         return this.formatCheckInResponse(checkIn, invitee, session);
+    },
+    /**
+     * The one place an attendance record is written. Reading the event's status earlier and inserting later would leave a gap
+     * in which a cancel/close could commit in between, so the insert is tied to the event document itself:
+     *
+     *  - Where MongoDB supports transactions (Atlas, any replica set) the insert runs in a transaction that FIRST updates the
+     *    event (`admissionSeq`+1, only while it is PUBLISHED). Cancel and close update that same document, so MongoDB makes the
+     *    two conflict and serialises them: either the check-in commits first and is legitimate attendance, or the cancel/close
+     *    commits first and the check-in's conditional update matches nothing, so it is refused and nothing is written.
+     *  - Where it does not (a standalone mongod used in local development), the event is claimed the same way, the record is
+     *    inserted, and the event is read again; if it is no longer open the just-written record is removed and the scan refused.
+     *    That removes an attendance row that was never acknowledged to anyone, but it is not crash-safe like a transaction.
+     */
+    async commitAdmission(event, data, now, qr) {
+        const eventId = event._id;
+        const refuseClosed = async (session) => {
+            const fresh = await Event_1.Event.findById(eventId).session(session ?? null);
+            this.assertEventAdmitting(fresh ?? event, now, qr);
+            throw new Error('EVENT_NOT_PUBLISHED');
+        };
+        if (await supportsTransactions()) {
+            const session = await mongoose_1.default.startSession();
+            try {
+                let created;
+                await session.withTransaction(async () => {
+                    const gate = await Event_1.Event.findOneAndUpdate({ _id: eventId, status: Event_1.EventStatus.PUBLISHED }, { $inc: { admissionSeq: 1 } }, { new: true, session, timestamps: false });
+                    if (!gate)
+                        await refuseClosed(session);
+                    // the window is judged on the event exactly as this transaction sees it (it may have just been changed)
+                    this.assertEventAdmitting(gate, now, qr);
+                    const [doc] = await CheckIn_1.CheckIn.create([data], { session });
+                    created = doc;
+                });
+                return created;
+            }
+            finally {
+                await session.endSession();
+            }
+        }
+        const claimed = await Event_1.Event.updateOne({ _id: eventId, status: Event_1.EventStatus.PUBLISHED }, { $inc: { admissionSeq: 1 } }, { timestamps: false });
+        if (!claimed.matchedCount)
+            await refuseClosed();
+        const created = await checkIn_repository_1.checkInRepository.create(data);
+        const stillOpen = await Event_1.Event.exists({ _id: eventId, status: Event_1.EventStatus.PUBLISHED });
+        if (!stillOpen) {
+            await CheckIn_1.CheckIn.deleteOne({ _id: created._id });
+            await refuseClosed();
+        }
+        return created;
     },
     /**
      * Event status and admission window. `qr` only changes which word is used once the window has ended: a pass is

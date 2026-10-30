@@ -1,7 +1,8 @@
 import { buildInvitationContent } from '../utils/invitationContent';
 import { alertService } from './alert.service';
 import mongoose from 'mongoose';
-import { Event } from '../models/Event';
+import { Event, EventStatus } from '../models/Event';
+import { cancellationNoticeService } from './cancellationNotice.service';
 import { Invitee, InvitationStatus } from '../models/Invitee';
 import { Invitation, DeliveryChannel, InvitationDeliveryStatus } from '../models/Invitation';
 import { Session } from '../models/Session';
@@ -157,6 +158,10 @@ const sendConcurrency = () => Math.min(Math.max(parseInt(process.env.INVITATION_
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const SKIPPED_NO_CONTACT = 'No email address or WhatsApp number';
 export const SKIPPED_ALREADY_INVITED = 'Already invited';
+export const SKIPPED_EVENT_CANCELLED = 'The event was cancelled';
+
+/** Read fresh on every use: a cancellation can land while a long send is running. */
+const eventIsCancelled = async (eventId: unknown) => !!(await Event.exists({ _id: eventId as any, status: EventStatus.CANCELLED }));
 
 // Guests whose invitation is being prepared right now (this process). A double click or two tabs sending the same
 // guest at the same moment would otherwise both pass the "not invited yet" check and deliver twice.
@@ -184,6 +189,8 @@ export const invitationService = {
     if (!invitee) throw new Error('INVITATION_NOT_FOUND');
     const event = await Event.findById(invitee.eventId);
     if (!event) throw new Error('INVITATION_NOT_FOUND');
+    // The page shows a notice instead; a cancelled event's pass is never drawn (and would be refused at the door anyway)
+    if (event.status === EventStatus.CANCELLED) throw new Error('EVENT_CANCELLED');
 
     const cardContext = await loadCardContext(event);
     const eventPhotoBase64 = await resolveImageKeyBase64((event as any).media?.logoKey);
@@ -233,6 +240,8 @@ export const invitationService = {
       event = await Event.findOne({ _id: eventId, organizerId });
     }
     if (!event) throw new Error('EVENT_NOT_FOUND');
+    // A cancelled event never issues, sends or re-sends an invitation (and so never mints a pass that could be scanned)
+    if (event.status === EventStatus.CANCELLED) throw new Error('EVENT_CANCELLED');
 
     // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
     const cardContext = await loadCardContext(event);
@@ -266,6 +275,10 @@ export const invitationService = {
     );
 
     const deliverToInvitee = async (invitee: any): Promise<any> => {
+      // A send that was already running when the event was cancelled stops here, before any token or provider call
+      if (await eventIsCancelled(eventId)) {
+        return { inviteeId: invitee._id, inviteeName: invitee.name, inviteeMobile: invitee.mobile, status: 'SKIPPED', failureReason: SKIPPED_EVENT_CANCELLED } as any;
+      }
       const use = channelsForInvitee(channel, invitee);
       if (!use.email && !use.whatsapp) {
         return { inviteeId: invitee._id, inviteeName: invitee.name, inviteeMobile: invitee.mobile, status: 'SKIPPED', failureReason: SKIPPED_NO_CONTACT } as any;
@@ -343,7 +356,7 @@ export const invitationService = {
       }
 
       // 1. Process EMAIL if selected
-      if (shouldSendEmail) {
+      if (shouldSendEmail && !(await eventIsCancelled(eventId))) {
         try {
           if (!invitee.email) throw new Error('MISSING_EMAIL');
 
@@ -391,7 +404,7 @@ export const invitationService = {
       }
 
       // 2. Process WHATSAPP if selected
-      if (shouldSendWhatsApp) {
+      if (shouldSendWhatsApp && !(await eventIsCancelled(eventId))) {
         try {
           if (!invitee.mobile) throw new Error('MISSING_MOBILE');
 
@@ -449,6 +462,9 @@ export const invitationService = {
 
       await invitation.save();
       await invitee.save();
+      if (invitation.status === InvitationDeliveryStatus.SENT && (await eventIsCancelled(eventId))) {
+        await cancellationNoticeService.enqueueLateInvitee(eventId, invitee._id).catch((e) => console.error('Late cancellation notice failed:', e?.message));
+      }
 
       const cleanMobile = invitee.mobile ? whatsappService.normalizePhoneNumber(invitee.mobile) : '';
       const waText = `Dear ${invitee.name},\n\nYou are cordially invited to ${event.title}!\n\n📅 Date: ${eventDate}\n⏰ Time: ${eventTime}\n📍 Venue: ${venue}\n\nView your official Invitation Pass & QR Code here:\n${invitationUrl}\n\nWe look forward to seeing you!`;
@@ -508,6 +524,8 @@ export const invitationService = {
       event = await Event.findOne({ _id: eventId, organizerId });
     }
     if (!event) throw new Error('EVENT_NOT_FOUND');
+    // A cancelled event never issues, sends or re-sends an invitation (and so never mints a pass that could be scanned)
+    if (event.status === EventStatus.CANCELLED) throw new Error('EVENT_CANCELLED');
     // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
     const cardContext = await loadCardContext(event);
     const cardDesign = cardContext.cardDesign;
@@ -537,6 +555,9 @@ export const invitationService = {
         return { invitationId: invitation._id, status: 'FAILED', failureReason: 'INVITEE_DELETED' } as any;
       }
 
+      if (await eventIsCancelled(eventId)) {
+        return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: SKIPPED_EVENT_CANCELLED } as any;
+      }
       const activeChannel = (channelOverride || invitation.channel) as DeliveryChannel;
       const use = channelsForInvitee(activeChannel, invitee);
       if (!use.email && !use.whatsapp) {
@@ -608,7 +629,7 @@ export const invitationService = {
         cardBuffer = qrBuffer;
       }
 
-      if (shouldSendEmail) {
+      if (shouldSendEmail && !(await eventIsCancelled(eventId))) {
         try {
           if (!invitee.email) throw new Error('MISSING_EMAIL');
 
@@ -655,7 +676,7 @@ export const invitationService = {
         }
       }
 
-      if (shouldSendWhatsApp) {
+      if (shouldSendWhatsApp && !(await eventIsCancelled(eventId))) {
         try {
           if (!invitee.mobile) throw new Error('MISSING_MOBILE');
 
@@ -701,6 +722,9 @@ export const invitationService = {
 
       await resendInvitation.save();
       await invitee.save();
+      if (resendInvitation.status === InvitationDeliveryStatus.SENT && (await eventIsCancelled(eventId))) {
+        await cancellationNoticeService.enqueueLateInvitee(eventId, invitee._id).catch((e) => console.error('Late cancellation notice failed:', e?.message));
+      }
       const cleanMobile = invitee.mobile ? whatsappService.normalizePhoneNumber(invitee.mobile) : '';
       const waText = `Dear ${invitee.name},\n\nYou are cordially invited to ${event.title}!\n\n📅 Date: ${eventDate}\n⏰ Time: ${eventTime}\n📍 Venue: ${venue}\n\nView your official Invitation Pass & QR Code here:\n${invitationUrl}\n\nWe look forward to seeing you!`;
       const whatsappWebUrl = cleanMobile ? `https://api.whatsapp.com/send?phone=${cleanMobile}&text=${encodeURIComponent(waText)}` : undefined;

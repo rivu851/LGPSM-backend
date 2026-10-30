@@ -50,13 +50,4 @@ describe('Event Service', () => {
       .toThrow('CATEGORY_NOT_FOUND');
   });
 
-  it('should deactivate an event (soft delete)', async () => {
-    (eventRepository.findByIdAndOrganizer as jest.Mock).mockResolvedValue({ _id: 'event123' });
-    (eventRepository.softDeleteByIdAndOrganizer as jest.Mock).mockResolvedValue({ _id: 'event123', status: 'CANCELLED' });
-
-    const result = await eventService.deactivateEvent('event123', mockOrganizerId);
-    
-    expect(eventRepository.softDeleteByIdAndOrganizer).toHaveBeenCalledWith('event123', 'owner-id');
-    expect(result.status).toBe('CANCELLED');
-  });
 });

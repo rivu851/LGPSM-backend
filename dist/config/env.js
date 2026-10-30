@@ -31,6 +31,9 @@ const envSchema = zod_1.z.object({
     WHATSAPP_BUSINESS_ACCOUNT_ID: zod_1.z.string().default('1366427858610266'),
     WHATSAPP_API_VERSION: zod_1.z.string().default('v25.0'),
     WHATSAPP_INVITATION_TEMPLATE: zod_1.z.string().default('lgpsm_event_invitation'),
+    // Name of an approved WhatsApp template (3 text body parameters: guest name, event title, event date) used to tell
+    // guests an event was cancelled. Deliberately has no default: without it cancellation notices report WhatsApp as unavailable.
+    WHATSAPP_CANCELLATION_TEMPLATE: zod_1.z.string().optional(),
     WHATSAPP_TEMPLATE_LANGUAGE: zod_1.z.string().default('en_US'),
     // Google Stitch (AI template generation). Server-side only; generation reports "unavailable" when the key is absent.
     STITCH_API_KEY: zod_1.z.string().optional(),

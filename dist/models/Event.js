@@ -103,6 +103,12 @@ const EventSchema = new mongoose_1.Schema({
     },
     operationalDataCleared: { type: Boolean, default: false },
     closedAt: { type: Date },
+    cancelledAt: { type: Date },
+    cancelledBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    cancelledByRole: { type: String },
+    cancellationReason: { type: String, maxlength: 500 },
+    admissionSeq: { type: Number, default: 0 },
+    finalAdmissionSeq: { type: Number },
     closedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }
 }, {
     timestamps: true

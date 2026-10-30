@@ -18,6 +18,9 @@ export const publicInvitationController = {
       if (error.message === 'INVITATION_NOT_FOUND' || error.message === 'INVALID_TOKEN') {
         return res.status(404).json({ success: false, message: 'Invitation not found or token is invalid' });
       }
+      if (error.message === 'EVENT_CANCELLED') {
+        return res.status(410).json({ success: false, code: 'EVENT_CANCELLED', message: 'This event has been cancelled. This access pass is no longer valid.' });
+      }
       console.error('Request failed:', error?.message);
       return res.status(500).json({ success: false, message: 'Could not render the digital pass.' });
     }
@@ -49,7 +52,7 @@ export const publicInvitationController = {
         return res.status(404).json({ success: false, error: 'Not Found', message: 'Invitation not found or token is invalid' });
       }
       if (error.message === 'EVENT_CANCELLED') {
-        return res.status(410).json({ success: false, message: 'This event has been cancelled.' });
+        return res.status(410).json({ success: false, code: 'EVENT_CANCELLED', message: 'This event has been cancelled. Your response was not saved.' });
       }
       if (error.message === 'RSVP_DISABLED') {
         return res.status(400).json({ success: false, message: 'RSVP is not open for this event.' });

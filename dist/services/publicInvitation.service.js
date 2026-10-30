@@ -60,7 +60,7 @@ exports.publicInvitationService = {
         if (!invitee) {
             throw new Error('INVITATION_NOT_FOUND');
         }
-        const event = await Event_1.Event.findById(invitee.eventId).select('title description format location contactNumber schedule admission status rsvp dietaryPreference organizerId templateId categoryId subcategoryId');
+        const event = await Event_1.Event.findById(invitee.eventId).select('title description format location contactNumber schedule admission status cancelledAt cancellationReason rsvp dietaryPreference organizerId templateId categoryId subcategoryId');
         if (!event)
             throw new Error('INVITATION_NOT_FOUND');
         const [sessions, organizer] = await Promise.all([
@@ -104,6 +104,8 @@ exports.publicInvitationService = {
                 admission: (() => { const w = (0, admissionWindow_1.effectiveAdmission)(event); return w ? { opensAt: w.opensAt, closesAt: w.closesAt } : null; })(),
                 sessions: attendeeSessions,
                 status: event.status,
+                // Only for a cancelled event: when, and the organizer's own note if they wrote one
+                cancellation: event.status === 'CANCELLED' ? { cancelledAt: event.cancelledAt ?? null, reason: event.cancellationReason ?? null } : null,
                 // Whether guests can answer at all; when off, the page shows no RSVP control (submitRsvp refuses it anyway)
                 rsvp: { enabled: !!event.rsvp?.enabled, closesAt: event.rsvp?.enabled ? event.rsvp.acceptanceLastDate || event.schedule?.end || null : null },
                 dietaryPreference: event.dietaryPreference

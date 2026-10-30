@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { cancellationNoticeService } from '../services/cancellationNotice.service';
 import { eventService } from '../services/event.service';
 import { EventStatus } from '../models/Event';
 import { Role } from '../models/User';
@@ -124,23 +125,58 @@ export const eventController = {
     }
   },
 
-  async deleteEvent(req: Request, res: Response, next: NextFunction) {
+  /**
+   * Cancels the event (terminal). `DELETE /events/:id` is kept for older clients and means exactly the same as
+   * `POST /events/:id/cancel`: an event is never deleted by it.
+   */
+  async cancelEvent(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizerId = (req as any).user.userId;
-      const eventId = req.params.eventId as string;
-      
-      const event = await eventService.deactivateEvent(eventId, organizerId, (req as any).user.role);
-      
-      res.status(200).json({ success: true, data: { eventId: (event as any)._id, status: event.status } });
+      const { event, alreadyCancelled, notices } = await eventService.cancelEvent(
+        req.params.eventId as string,
+        { userId: (req as any).user.userId, role: (req as any).user.role },
+        typeof req.body?.reason === 'string' ? req.body.reason : undefined
+      );
+      res.status(200).json({
+        success: true,
+        data: { eventId: (event as any)._id, status: event.status, cancelledAt: (event as any).cancelledAt, alreadyCancelled, notices }
+      });
     } catch (error) {
-       if ((error as Error).message === 'EVENT_NOT_FOUND') {
+      const message = (error as Error).message;
+      if (message === 'EVENT_NOT_FOUND') {
         res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
-      } else if ((error as Error).message === 'INVALID_TRANSITION') {
-        res.status(409).json({ success: false, error: 'Conflict', code: 'INVALID_TRANSITION', message: 'A completed event cannot be cancelled.' });
+      } else if (message === 'INVALID_TRANSITION') {
+        res.status(409).json({ success: false, error: 'Conflict', code: 'INVALID_TRANSITION', message: 'A completed or closed event cannot be cancelled.' });
+      } else if (message === 'FORBIDDEN') {
+        res.status(403).json({ success: false, error: 'Forbidden', message: 'You are not authorized to cancel this event' });
       } else {
         next(error);
       }
     }
+  },
+
+  async getCancellationPreview(req: Request, res: Response, next: NextFunction) {
+    try {
+      const event = await eventService.findForNotices(req.params.eventId as string, (req as any).user);
+      res.status(200).json({ success: true, data: await cancellationNoticeService.preview(event._id) });
+    } catch (error) { sendNoticeError(res, next, error); }
+  },
+
+  async getCancellationNotices(req: Request, res: Response, next: NextFunction) {
+    try {
+      const event = await eventService.findForNotices(req.params.eventId as string, (req as any).user);
+      res.status(200).json({ success: true, data: { cancelledAt: (event as any).cancelledAt, reason: (event as any).cancellationReason, ...(await cancellationNoticeService.summary(event._id)) } });
+    } catch (error) { sendNoticeError(res, next, error); }
+  },
+
+  async retryCancellationNotices(req: Request, res: Response, next: NextFunction) {
+    try {
+      const event = await eventService.findForNotices(req.params.eventId as string, (req as any).user);
+      if (event.status !== 'CANCELLED') return res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_NOT_CANCELLED', message: 'Only a cancelled event has cancellation notices.' });
+      // fill in anything missing (idempotent), then retry failed/unavailable channels; the response reports what was attempted
+      await cancellationNoticeService.enqueueForEvent(event);
+      const attempted = await cancellationNoticeService.processEvent(event._id, { retry: true });
+      res.status(200).json({ success: true, data: { attempted, ...(await cancellationNoticeService.summary(event._id)) } });
+    } catch (error) { sendNoticeError(res, next, error); }
   },
 
   async updateAdmission(req: Request, res: Response, next: NextFunction) {
@@ -207,3 +243,13 @@ export const eventController = {
     }
   }
 };
+
+function sendNoticeError(res: Response, next: NextFunction, error: unknown) {
+  if ((error as Error).message === 'EVENT_NOT_FOUND') {
+    res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
+  } else if ((error as Error).message === 'FORBIDDEN') {
+    res.status(403).json({ success: false, error: 'Forbidden', message: 'You are not authorized for this event' });
+  } else {
+    next(error);
+  }
+}
