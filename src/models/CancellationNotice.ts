@@ -10,10 +10,12 @@ import mongoose, { Document, Schema } from 'mongoose';
 //   SENT         the provider ACCEPTED the message. This is not delivery: neither SMTP/Brevo nor the WhatsApp API is
 //                asked for, or reports, delivery confirmation in this app.
 //   FAILED       attempted and refused / errored; may be retried
+//   UNKNOWN      the worker died while SENDING: the provider may or may not have accepted the message. It is never retried
+//                automatically, and a manual retry may send a duplicate, so it needs the organizer's explicit go-ahead
 //   UNAVAILABLE  the provider is not configured (or the channel has no template / the guest has no address); may be
 //                retried once that changes
 
-export const NOTICE_CHANNEL_STATUSES = ['NOT_USED', 'PENDING', 'SENDING', 'SENT', 'FAILED', 'UNAVAILABLE'] as const;
+export const NOTICE_CHANNEL_STATUSES = ['NOT_USED', 'PENDING', 'SENDING', 'SENT', 'FAILED', 'UNAVAILABLE', 'UNKNOWN'] as const;
 export type NoticeChannelStatus = (typeof NOTICE_CHANNEL_STATUSES)[number];
 
 export interface INoticeChannel {

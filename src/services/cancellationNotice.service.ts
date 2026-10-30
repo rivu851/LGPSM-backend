@@ -132,7 +132,7 @@ const noticeService = {
     for (const key of ['email', 'whatsapp'] as ChannelKey[]) {
       await CancellationNotice.updateMany(
         { ...(eventId ? { eventId } : {}), [`${key}.status`]: 'SENDING', [`${key}.lastAttemptAt`]: { $lt: cutoff } },
-        { $set: { [`${key}.status`]: 'FAILED', [`${key}.failureReason`]: 'Interrupted: it is not known whether this message was sent. Retry only if you are sure it was not.' } }
+        { $set: { [`${key}.status`]: 'UNKNOWN', [`${key}.failureReason`]: 'Interrupted while sending: it is not known whether this message was sent. Retrying may send a duplicate.' } }
       );
     }
   },
@@ -142,13 +142,14 @@ const noticeService = {
    * Each channel is claimed with a conditional update before anything is sent, so two workers (or a worker and a retry)
    * cannot send the same message twice.
    */
-  async processEvent(eventId: any, opts: { retry?: boolean } = {}) {
+  async processEvent(eventId: any, opts: { retry?: boolean; includeUnknown?: boolean } = {}) {
     const event: any = await Event.findById(eventId).select('title status schedule contactNumber organizerId cancellationReason').lean();
     // eligibility is re-checked at dispatch time: only a cancelled event sends cancellation notices
     if (!event || event.status !== EventStatus.CANCELLED) return { attempted: 0, sent: 0, failed: 0, unavailable: 0 };
     await this.settleStaleSending(eventId);
 
-    const sendable = opts.retry ? ['PENDING', 'FAILED', 'UNAVAILABLE'] : ['PENDING'];
+    // UNKNOWN (possibly already sent) is only retried when the caller explicitly accepts the risk of a duplicate
+    const sendable = opts.retry ? ['PENDING', 'FAILED', 'UNAVAILABLE', ...(opts.includeUnknown ? ['UNKNOWN'] : [])] : ['PENDING'];
     const notices = await CancellationNotice.find({
       eventId,
       $or: [{ 'email.status': { $in: sendable } }, { 'whatsapp.status': { $in: sendable } }]
@@ -226,7 +227,7 @@ const noticeService = {
     const notices: any[] = await CancellationNotice.find({ eventId }).lean();
     const invitees: any[] = await Invitee.find({ _id: { $in: notices.map((n) => n.inviteeId) } }).select('name email mobile rsvpStatus').lean();
     const byId = new Map(invitees.map((i) => [String(i._id), i]));
-    const blank = () => ({ PENDING: 0, SENDING: 0, SENT: 0, FAILED: 0, UNAVAILABLE: 0 } as Record<string, number>);
+    const blank = () => ({ PENDING: 0, SENDING: 0, SENT: 0, FAILED: 0, UNAVAILABLE: 0, UNKNOWN: 0 } as Record<string, number>);
     const channels = { email: blank(), whatsapp: blank() };
     const problems: any[] = [];
     for (const n of notices) {
@@ -234,7 +235,7 @@ const noticeService = {
         const c = n[key];
         if (!c || c.status === 'NOT_USED') continue;
         channels[key][c.status] = (channels[key][c.status] || 0) + 1;
-        if (['FAILED', 'UNAVAILABLE'].includes(c.status)) {
+        if (['FAILED', 'UNAVAILABLE', 'UNKNOWN'].includes(c.status)) {
           const inv = byId.get(String(n.inviteeId));
           problems.push({ inviteeId: n.inviteeId, name: inv?.name, channel: key, status: c.status, reason: c.failureReason, attempts: c.attempts, lastAttemptAt: c.lastAttemptAt });
         }

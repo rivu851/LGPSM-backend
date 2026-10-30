@@ -14,6 +14,9 @@ exports.systemUserAssignmentController = {
             if (error.message === 'EVENT_NOT_FOUND') {
                 res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
             }
+            else if (error.message === 'EVENT_CANCELLED') {
+                res.status(409).json({ error: 'Conflict', code: 'EVENT_CANCELLED', message: 'This event has been cancelled. Staff can no longer be assigned to it.', details: [] });
+            }
             else if (error.message === 'INVALID_USER') {
                 res.status(400).json({ error: 'Bad Request', message: 'Invalid or inactive system user', details: [] });
             }

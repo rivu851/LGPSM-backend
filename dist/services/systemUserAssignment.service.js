@@ -35,6 +35,10 @@ exports.systemUserAssignmentService = {
         if (!event) {
             throw new Error('EVENT_NOT_FOUND');
         }
+        // Staff are not assigned to an event that no longer takes place: it would look like live work on their phone
+        if (event.status === 'CANCELLED') {
+            throw new Error('EVENT_CANCELLED');
+        }
         const targetUser = await User_1.User.findById(data.userId);
         if (!targetUser || !targetUser.isActive || targetUser.role !== User_1.Role.SYSTEM_USER) {
             throw new Error('INVALID_USER');

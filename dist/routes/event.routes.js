@@ -40,5 +40,5 @@ router.delete('/:eventId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMI
 // What cancelling would do, and what happened afterwards (organizer / admin only)
 router.get('/:eventId/cancellation/preview', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), event_controller_1.eventController.getCancellationPreview);
 router.get('/:eventId/cancellation/notices', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), event_controller_1.eventController.getCancellationNotices);
-router.post('/:eventId/cancellation/notices/retry', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), (0, auditAction_1.auditAction)({ action: 'EVENT_CANCEL_NOTICES_RETRY', entityType: 'Event', entityParam: 'eventId', describe: 'Cancellation notices retried' }), event_controller_1.eventController.retryCancellationNotices);
+router.post('/:eventId/cancellation/notices/retry', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), (0, auditAction_1.auditAction)({ action: 'EVENT_CANCEL_NOTICES_RETRY', entityType: 'Event', entityParam: 'eventId', describe: 'Cancellation notices retried', meta: (req) => ({ includeUnknown: req.body?.includeUnknown === true }) }), event_controller_1.eventController.retryCancellationNotices);
 exports.default = router;

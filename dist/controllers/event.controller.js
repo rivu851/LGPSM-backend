@@ -173,7 +173,8 @@ exports.eventController = {
                 return res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_NOT_CANCELLED', message: 'Only a cancelled event has cancellation notices.' });
             // fill in anything missing (idempotent), then retry failed/unavailable channels; the response reports what was attempted
             await cancellationNotice_service_1.cancellationNoticeService.enqueueForEvent(event);
-            const attempted = await cancellationNotice_service_1.cancellationNoticeService.processEvent(event._id, { retry: true });
+            // guests whose earlier message may already have gone out are only retried when the organizer explicitly accepts a possible duplicate
+            const attempted = await cancellationNotice_service_1.cancellationNoticeService.processEvent(event._id, { retry: true, includeUnknown: req.body?.includeUnknown === true });
             res.status(200).json({ success: true, data: { attempted, ...(await cancellationNotice_service_1.cancellationNoticeService.summary(event._id)) } });
         }
         catch (error) {

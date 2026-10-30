@@ -264,7 +264,7 @@ describe('P0.3 — event cancellation lifecycle', () => {
       expect(waSpy).toHaveBeenCalledTimes(3);
     });
 
-    it('a notice whose worker died mid-send is not resent automatically (the outcome is unknown)', async () => {
+    it('a notice whose worker died mid-send is UNKNOWN: never resent automatically, and a retry needs an explicit go-ahead', async () => {
       await cancel();
       await settle(event._id);
       await CancellationNotice.updateOne({ inviteeId: guests.accepted.inv._id }, { $set: { 'email.status': 'SENDING', 'email.lastAttemptAt': new Date(Date.now() - 3600e3) } });
@@ -272,8 +272,28 @@ describe('P0.3 — event cancellation lifecycle', () => {
       await cancellationNoticeService.processEvent(event._id);
       expect(emailSpy).not.toHaveBeenCalled();
       const n: any = await CancellationNotice.findOne({ inviteeId: guests.accepted.inv._id }).lean();
-      expect(n.email.status).toBe('FAILED');
+      expect(n.email.status).toBe('UNKNOWN'); // not converted into a definite failure
       expect(n.email.failureReason).toMatch(/not known whether/i);
+      expect(n.email.failureReason).toMatch(/duplicate/i);
+
+      const summary = await request(app).get(`/api/v1/events/${event._id}/cancellation/notices`).set(auth(tOrg));
+      expect(summary.body.data.channels.email.UNKNOWN).toBe(1);
+      expect(summary.body.data.problems.find((p: any) => p.status === 'UNKNOWN')).toMatchObject({ name: 'Alice', channel: 'email' });
+
+      // an ordinary retry leaves it alone
+      await request(app).post(`/api/v1/events/${event._id}/cancellation/notices/retry`).set(auth(tOrg)).send({});
+      expect(emailSpy).not.toHaveBeenCalled();
+      expect(((await CancellationNotice.findOne({ inviteeId: guests.accepted.inv._id }).lean()) as any).email.status).toBe('UNKNOWN');
+
+      // only an explicit acknowledgement retries it, once
+      await request(app).post(`/api/v1/events/${event._id}/cancellation/notices/retry`).set(auth(tOrg)).send({ includeUnknown: true });
+      expect(emailSpy).toHaveBeenCalledTimes(1);
+      expect(emailSpy.mock.calls[0][0]).toBe('accepted@x.com');
+      expect(((await CancellationNotice.findOne({ inviteeId: guests.accepted.inv._id }).lean()) as any).email.status).toBe('SENT');
+      await request(app).post(`/api/v1/events/${event._id}/cancellation/notices/retry`).set(auth(tOrg)).send({ includeUnknown: true });
+      expect(emailSpy).toHaveBeenCalledTimes(1);
+      const row: any = await AuditLog.findOne({ action: 'EVENT_CANCEL_NOTICES_RETRY', 'metadata.includeUnknown': true });
+      expect(row).toBeTruthy();
     });
 
     it('the sender re-checks the event: nothing is sent for an event that is not cancelled', async () => {
