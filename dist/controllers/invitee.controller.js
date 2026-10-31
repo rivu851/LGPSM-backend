@@ -80,7 +80,7 @@ exports.inviteeController = {
     },
     async getSetMembers(req, res, next) {
         try {
-            const data = await inviteeSet_service_1.inviteeSetService.members(req.user, req.params.eventId, req.params.setId, parseInt(req.query.page) || 1, parseInt(req.query.limit) || 50);
+            const data = await inviteeSet_service_1.inviteeSetService.members(req.user, req.params.eventId, req.params.setId, parseInt(req.query.page) || 1, parseInt(req.query.limit) || 50, typeof req.query.q === 'string' ? req.query.q : '');
             res.status(200).json({ success: true, data });
         }
         catch (error) {

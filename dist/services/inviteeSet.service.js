@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.inviteeSetService = exports.lockedSetKeys = exports.neverAttempted = exports.deliveryStateOf = exports.setKeyOf = exports.LEGACY_SET = void 0;
+exports.inviteeSetService = exports.lockedSetKeys = exports.neverAttempted = exports.deliveryStateOf = exports.setKeyOf = exports.ALL_SETS = exports.LEGACY_SET = void 0;
 exports.loadActivity = loadActivity;
 exports.lockReasonsBySet = lockReasonsBySet;
 exports.withEventLock = withEventLock;
@@ -20,6 +20,7 @@ const auditLog_service_1 = require("./auditLog.service");
 const whatsapp_service_1 = require("./whatsapp.service");
 // Guests without a tracked list (added by hand, or before lists were tracked) are treated as one "earlier" list.
 exports.LEGACY_SET = 'legacy';
+exports.ALL_SETS = 'all';
 const setKeyOf = (inv) => (inv.inviteeSetId ? String(inv.inviteeSetId) : exports.LEGACY_SET);
 exports.setKeyOf = setKeyOf;
 const deliveryStateOf = (a) => (a.sent ? 'SENT' : a.unknown ? 'UNKNOWN' : a.failed ? 'FAILED' : 'NOT_SENT');
@@ -114,11 +115,23 @@ exports.inviteeSetService = {
         await manageableEvent(actor, eventId);
         const eid = new mongoose_1.default.Types.ObjectId(eventId);
         const [invitees, sets] = await Promise.all([
-            Invitee_1.Invitee.find({ eventId: eid }).select('inviteeSetId invitationStatus rsvpStatus qrTokenHash').lean(),
+            Invitee_1.Invitee.find({ eventId: eid }).select('inviteeSetId invitationStatus rsvpStatus qrTokenHash createdAt').lean(),
             InviteeSet_1.InviteeSet.find({ eventId: eid }).sort({ createdAt: 1 }).lean()
         ]);
         const activity = await loadActivity(eid, invitees);
         const reasons = lockReasonsBySet(invitees, activity);
+        // when invitations from each list went out: the first and the latest successful hand-off
+        const setOf = new Map(invitees.map((i) => [String(i._id), (0, exports.setKeyOf)(i)]));
+        const sentRows = await Invitation_1.Invitation.find({ eventId: eid, status: Invitation_1.InvitationDeliveryStatus.SENT }).select('inviteeId sentAt createdAt').lean();
+        const sentSpan = new Map();
+        for (const row of sentRows) {
+            const k = setOf.get(String(row.inviteeId));
+            const at = row.sentAt || row.createdAt;
+            if (!k || !at)
+                continue;
+            const cur = sentSpan.get(k);
+            sentSpan.set(k, cur ? { first: at < cur.first ? at : cur.first, last: at > cur.last ? at : cur.last } : { first: at, last: at });
+        }
         const aside = await Invitee_1.Invitee.aggregate([{ $match: { eventId: eid, archivedAt: { $ne: null } } }, { $group: { _id: { $ifNull: ['$inviteeSetId', exports.LEGACY_SET] }, n: { $sum: 1 } } }]).option({ includeArchived: true });
         const asideBySet = new Map(aside.map((r) => [String(r._id), r.n]));
         const rows = new Map();
@@ -152,29 +165,41 @@ exports.inviteeSetService = {
                 // why the list is in this state (empty when Open)
                 lockReasons: why ? { sentGuests: why.sent, answeredRsvp: why.rsvp, checkedIn: why.checkedIn } : null,
                 // guests a Replace could still set aside: never attempted, and only in an Open list
-                replaceableGuests: locked ? 0 : r.notSent
+                replaceableGuests: locked ? 0 : r.notSent,
+                firstSentAt: sentSpan.get(id)?.first ?? null,
+                lastSentAt: sentSpan.get(id)?.last ?? null
             };
         };
         const out = sets.map((s) => shape(String(s._id), {
             name: s.name, source: 'EXCEL', mode: s.mode, sessionId: s.sessionId ? String(s.sessionId) : null, createdAt: s.createdAt,
             uploadedBy: s.createdBy ? people.get(String(s.createdBy)) || null : null, importedCount: s.importedCount ?? null
         }));
+        // guests added by hand have no file: show when the first of them was added
+        const legacyTimes = invitees.filter((i) => (0, exports.setKeyOf)(i) === exports.LEGACY_SET && i.createdAt).map((i) => new Date(i.createdAt).getTime());
+        const legacyAddedAt = legacyTimes.length ? new Date(Math.min(...legacyTimes)) : null;
         if (rows.has(exports.LEGACY_SET) || asideBySet.has(exports.LEGACY_SET)) {
-            out.unshift(shape(exports.LEGACY_SET, { name: 'Earlier invitees', source: 'MANUAL', mode: 'APPEND', sessionId: null, createdAt: null, uploadedBy: null, importedCount: null }));
+            out.unshift(shape(exports.LEGACY_SET, { name: 'Earlier invitees', source: 'MANUAL', mode: 'APPEND', sessionId: null, createdAt: legacyAddedAt, uploadedBy: null, importedCount: null }));
         }
         const archivedCount = [...asideBySet.values()].reduce((a, b) => a + b, 0);
         return { sets: out, archivedCount, hasSent: out.some((s) => s.locked) };
     },
     /** The guests currently in one list, with each guest's delivery state. No tokens, no credentials. */
-    async members(actor, eventId, setId, page = 1, limit = 50) {
+    async members(actor, eventId, setId, page = 1, limit = 50, q = '') {
         await manageableEvent(actor, eventId);
-        if (setId !== exports.LEGACY_SET && !mongoose_1.default.Types.ObjectId.isValid(setId))
+        if (setId !== exports.LEGACY_SET && setId !== exports.ALL_SETS && !mongoose_1.default.Types.ObjectId.isValid(setId))
             throw fail(400, 'Invalid list id');
         const eid = new mongoose_1.default.Types.ObjectId(eventId);
-        const filter = { eventId: eid, inviteeSetId: setId === exports.LEGACY_SET ? null : new mongoose_1.default.Types.ObjectId(setId) };
+        const filter = { eventId: eid };
+        if (setId !== exports.ALL_SETS)
+            filter.inviteeSetId = setId === exports.LEGACY_SET ? null : new mongoose_1.default.Types.ObjectId(setId);
+        const term = q.trim().slice(0, 100);
+        if (term) {
+            const rx = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            filter.$or = [{ name: rx }, { email: rx }, { mobile: rx }, { companyName: rx }, { company: rx }];
+        }
         const lim = Math.min(Math.max(limit, 1), 100);
         const [guests, total] = await Promise.all([
-            Invitee_1.Invitee.find(filter).select('name email mobile invitationStatus rsvpStatus qrTokenHash inviteeSetId').sort({ name: 1 }).skip((Math.max(page, 1) - 1) * lim).limit(lim).lean(),
+            Invitee_1.Invitee.find(filter).select('name email mobile companyName company invitationStatus rsvpStatus qrTokenHash inviteeSetId').sort({ name: 1 }).skip((Math.max(page, 1) - 1) * lim).limit(lim).lean(),
             Invitee_1.Invitee.countDocuments(filter)
         ]);
         const activity = await loadActivity(eid, guests);
@@ -182,7 +207,7 @@ exports.inviteeSetService = {
             total, page, limit: lim,
             members: guests.map((g) => {
                 const a = activity.get(String(g._id));
-                return { id: String(g._id), name: g.name, email: g.email || null, mobile: g.mobile || null, delivery: (0, exports.deliveryStateOf)(a), rsvpStatus: g.rsvpStatus, checkedIn: a.checkedIn };
+                return { id: String(g._id), name: g.name, email: g.email || null, mobile: g.mobile || null, company: g.companyName || g.company || null, delivery: (0, exports.deliveryStateOf)(a), rsvpStatus: g.rsvpStatus, checkedIn: a.checkedIn };
             })
         };
     },

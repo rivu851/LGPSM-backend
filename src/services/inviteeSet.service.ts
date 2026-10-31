@@ -11,6 +11,7 @@ import { whatsappService } from './whatsapp.service';
 
 // Guests without a tracked list (added by hand, or before lists were tracked) are treated as one "earlier" list.
 export const LEGACY_SET = 'legacy';
+export const ALL_SETS = 'all';
 export const setKeyOf = (inv: Pick<IInvitee, 'inviteeSetId'>): string => (inv.inviteeSetId ? String(inv.inviteeSetId) : LEGACY_SET);
 
 export type DeliveryState = 'NOT_SENT' | 'SENT' | 'FAILED' | 'UNKNOWN';
@@ -122,11 +123,22 @@ export const inviteeSetService = {
     await manageableEvent(actor, eventId);
     const eid = new mongoose.Types.ObjectId(eventId);
     const [invitees, sets] = await Promise.all([
-      Invitee.find({ eventId: eid }).select('inviteeSetId invitationStatus rsvpStatus qrTokenHash').lean<IInvitee[]>(),
+      Invitee.find({ eventId: eid }).select('inviteeSetId invitationStatus rsvpStatus qrTokenHash createdAt').lean<IInvitee[]>(),
       InviteeSet.find({ eventId: eid }).sort({ createdAt: 1 }).lean()
     ]);
     const activity = await loadActivity(eid, invitees);
     const reasons = lockReasonsBySet(invitees, activity);
+    // when invitations from each list went out: the first and the latest successful hand-off
+    const setOf = new Map(invitees.map((i) => [String(i._id), setKeyOf(i)]));
+    const sentRows = await Invitation.find({ eventId: eid, status: InvitationDeliveryStatus.SENT }).select('inviteeId sentAt createdAt').lean();
+    const sentSpan = new Map<string, { first: Date; last: Date }>();
+    for (const row of sentRows as any[]) {
+      const k = setOf.get(String(row.inviteeId));
+      const at: Date | undefined = row.sentAt || row.createdAt;
+      if (!k || !at) continue;
+      const cur = sentSpan.get(k);
+      sentSpan.set(k, cur ? { first: at < cur.first ? at : cur.first, last: at > cur.last ? at : cur.last } : { first: at, last: at });
+    }
     const aside = await Invitee.aggregate([{ $match: { eventId: eid, archivedAt: { $ne: null } } }, { $group: { _id: { $ifNull: ['$inviteeSetId', LEGACY_SET] }, n: { $sum: 1 } } }]).option({ includeArchived: true } as any);
     const asideBySet = new Map<string, number>(aside.map((r: any) => [String(r._id), r.n]));
     const rows = new Map<string, { total: number; sent: number; notSent: number; failed: number; unknown: number; rsvp: number; checkedIn: number }>();
@@ -151,29 +163,40 @@ export const inviteeSetService = {
         // why the list is in this state (empty when Open)
         lockReasons: why ? { sentGuests: why.sent, answeredRsvp: why.rsvp, checkedIn: why.checkedIn } : null,
         // guests a Replace could still set aside: never attempted, and only in an Open list
-        replaceableGuests: locked ? 0 : r.notSent
+        replaceableGuests: locked ? 0 : r.notSent,
+        firstSentAt: sentSpan.get(id)?.first ?? null,
+        lastSentAt: sentSpan.get(id)?.last ?? null
       };
     };
     const out: any[] = (sets as any[]).map((s) => shape(String(s._id), {
       name: s.name, source: 'EXCEL', mode: s.mode, sessionId: s.sessionId ? String(s.sessionId) : null, createdAt: s.createdAt,
       uploadedBy: s.createdBy ? people.get(String(s.createdBy)) || null : null, importedCount: s.importedCount ?? null
     }));
+    // guests added by hand have no file: show when the first of them was added
+    const legacyTimes = invitees.filter((i) => setKeyOf(i) === LEGACY_SET && (i as any).createdAt).map((i) => new Date((i as any).createdAt).getTime());
+    const legacyAddedAt = legacyTimes.length ? new Date(Math.min(...legacyTimes)) : null;
     if (rows.has(LEGACY_SET) || asideBySet.has(LEGACY_SET)) {
-      out.unshift(shape(LEGACY_SET, { name: 'Earlier invitees', source: 'MANUAL', mode: 'APPEND', sessionId: null, createdAt: null, uploadedBy: null, importedCount: null }));
+      out.unshift(shape(LEGACY_SET, { name: 'Earlier invitees', source: 'MANUAL', mode: 'APPEND', sessionId: null, createdAt: legacyAddedAt, uploadedBy: null, importedCount: null }));
     }
     const archivedCount = [...asideBySet.values()].reduce((a, b) => a + b, 0);
     return { sets: out, archivedCount, hasSent: out.some((s) => s.locked) };
   },
 
   /** The guests currently in one list, with each guest's delivery state. No tokens, no credentials. */
-  async members(actor: Actor, eventId: string, setId: string, page = 1, limit = 50) {
+  async members(actor: Actor, eventId: string, setId: string, page = 1, limit = 50, q = '') {
     await manageableEvent(actor, eventId);
-    if (setId !== LEGACY_SET && !mongoose.Types.ObjectId.isValid(setId)) throw fail(400, 'Invalid list id');
+    if (setId !== LEGACY_SET && setId !== ALL_SETS && !mongoose.Types.ObjectId.isValid(setId)) throw fail(400, 'Invalid list id');
     const eid = new mongoose.Types.ObjectId(eventId);
-    const filter: any = { eventId: eid, inviteeSetId: setId === LEGACY_SET ? null : new mongoose.Types.ObjectId(setId) };
+    const filter: any = { eventId: eid };
+    if (setId !== ALL_SETS) filter.inviteeSetId = setId === LEGACY_SET ? null : new mongoose.Types.ObjectId(setId);
+    const term = q.trim().slice(0, 100);
+    if (term) {
+      const rx = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [{ name: rx }, { email: rx }, { mobile: rx }, { companyName: rx }, { company: rx }];
+    }
     const lim = Math.min(Math.max(limit, 1), 100);
     const [guests, total] = await Promise.all([
-      Invitee.find(filter).select('name email mobile invitationStatus rsvpStatus qrTokenHash inviteeSetId').sort({ name: 1 }).skip((Math.max(page, 1) - 1) * lim).limit(lim).lean<IInvitee[]>(),
+      Invitee.find(filter).select('name email mobile companyName company invitationStatus rsvpStatus qrTokenHash inviteeSetId').sort({ name: 1 }).skip((Math.max(page, 1) - 1) * lim).limit(lim).lean<IInvitee[]>(),
       Invitee.countDocuments(filter)
     ]);
     const activity = await loadActivity(eid, guests);
@@ -181,7 +204,7 @@ export const inviteeSetService = {
       total, page, limit: lim,
       members: guests.map((g) => {
         const a = activity.get(String(g._id))!;
-        return { id: String(g._id), name: g.name, email: g.email || null, mobile: g.mobile || null, delivery: deliveryStateOf(a), rsvpStatus: g.rsvpStatus, checkedIn: a.checkedIn };
+        return { id: String(g._id), name: g.name, email: g.email || null, mobile: g.mobile || null, company: g.companyName || g.company || null, delivery: deliveryStateOf(a), rsvpStatus: g.rsvpStatus, checkedIn: a.checkedIn };
       })
     };
   },

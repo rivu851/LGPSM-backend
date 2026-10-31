@@ -157,6 +157,38 @@ describe('invitee lists: Replace and Append', () => {
     expect(byName['two.xlsx']).toMatchObject({ total: 1, sent: 0, locked: false });
   });
 
+  it('reports when each list was uploaded and when its invitations went out', async () => {
+    await upload([HEAD, ['Alice A', 'a@x.com', ''], ['Bobby B', 'b@x.com', '']], 'REPLACE', 'one.xlsx');
+    await upload([HEAD, ['Carol C', 'c@x.com', '']], 'APPEND', 'two.xlsx');
+    const alice = await Invitee.findOne({ email: 'a@x.com' });
+    const bobby = await Invitee.findOne({ email: 'b@x.com' });
+    const t1 = new Date('2030-01-01T10:00:00Z'); const t2 = new Date('2030-01-02T11:30:00Z');
+    for (const [inv, at] of [[alice, t1], [bobby, t2]] as const) {
+      await Invitation.create({ eventId: event._id, inviteeId: inv!._id, channel: DeliveryChannel.EMAIL, status: InvitationDeliveryStatus.SENT, tokenHash: `th-${inv!.email}`, sentAt: at } as any);
+    }
+    const res = await request(app).get(`/api/v1/events/${event._id}/invitees/sets`).set(bearer(tok));
+    const byName = Object.fromEntries(res.body.data.sets.map((x: any) => [x.name, x]));
+    expect(new Date(byName['one.xlsx'].firstSentAt).getTime()).toBe(t1.getTime());
+    expect(new Date(byName['one.xlsx'].lastSentAt).getTime()).toBe(t2.getTime());
+    expect(byName['one.xlsx'].createdAt).toBeTruthy();
+    expect(byName['two.xlsx']).toMatchObject({ firstSentAt: null, lastSentAt: null });
+  });
+
+  it('previews one list, or all of them, a page at a time and with a search', async () => {
+    await upload([HEAD, ['Alice A', 'a@x.com', ''], ['Bobby B', 'b@x.com', '']], 'REPLACE', 'one.xlsx');
+    await upload([HEAD, ['Carol C', 'c@x.com', '']], 'APPEND', 'two.xlsx');
+    const sets = (await request(app).get(`/api/v1/events/${event._id}/invitees/sets`).set(bearer(tok))).body.data.sets;
+    const one = sets.find((x: any) => x.name === 'one.xlsx');
+    const get = (id: string, qs = '') => request(app).get(`/api/v1/events/${event._id}/invitees/sets/${id}/members${qs}`).set(bearer(tok));
+    expect((await get(one.id)).body.data.members.map((m: any) => m.name)).toEqual(['Alice A', 'Bobby B']);
+    const all = await get('all', '?limit=2');
+    expect(all.body.data).toMatchObject({ total: 3 });
+    expect(all.body.data.members).toHaveLength(2);
+    expect((await get('all', '?limit=2&page=2')).body.data.members.map((m: any) => m.name)).toEqual(['Carol C']);
+    expect((await get('all', '?q=carol')).body.data.members.map((m: any) => m.name)).toEqual(['Carol C']);
+    expect((await get('all', '?q=.*')).body.data.total).toBe(0); // typed text is not a pattern
+  });
+
   it('rejects an unknown mode and other organizers cannot read the lists', async () => {
     expect((await upload([HEAD, ['Alice A', 'a@x.com', '']], 'WIPE' as any)).status).toBe(400);
     const other = await User.create({ fullName: 'Other', email: 'other.sets@example.com', role: Role.ORGANIZER });

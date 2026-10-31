@@ -670,7 +670,7 @@ exports.inviteeService = {
             const lockedKept = existingInvitees.filter((inv) => lockedSets.has((0, inviteeSet_service_1.setKeyOf)(inv))).length;
             results.dryRun = true;
             results.preview = {
-                totalRows: results.totalRows, validNew: results.imported, duplicateRows: results.duplicateCount, matchedExistingGuests: matchedIds.size,
+                totalRows: results.totalRows, validNew: results.imported, duplicateRows: results.duplicateCount, matchedExistingGuests: matchedIds.size, alreadyInvited: results.alreadyInvited,
                 existingActive: existingInvitees.length, lockedGuestsKept: lockedKept, failedKept: results.failedKept, unknownKept: results.unknownKept,
                 wouldSetAside: results.archived, preservedSets: results.preservedSets, rejectedRows: results.rejected, errors: results.errors.slice(0, 20)
             };

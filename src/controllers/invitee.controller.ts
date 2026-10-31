@@ -74,7 +74,7 @@ export const inviteeController = {
 
   async getSetMembers(req: Request, res: Response, next: NextFunction) {
     try {
-      const data = await inviteeSetService.members((req as any).user, req.params.eventId as string, req.params.setId as string, parseInt(req.query.page as string) || 1, parseInt(req.query.limit as string) || 50);
+      const data = await inviteeSetService.members((req as any).user, req.params.eventId as string, req.params.setId as string, parseInt(req.query.page as string) || 1, parseInt(req.query.limit as string) || 50, typeof req.query.q === 'string' ? req.query.q : '');
       res.status(200).json({ success: true, data });
     } catch (error) { sendSetError(res, next, error); }
   },

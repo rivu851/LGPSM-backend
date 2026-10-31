@@ -1,6 +1,6 @@
 import { isAcceptedImageKey } from '../utils/mediaKey';
 import { z } from 'zod';
-import { EVENT_TITLE_MAX_LENGTH, EVENT_DESCRIPTION_MAX_LENGTH } from '../constants/eventLimits';
+import { EVENT_TITLE_MAX_LENGTH, EVENT_DESCRIPTION_MAX_LENGTH, EVENT_LOCATION_MAX_LENGTH } from '../constants/eventLimits';
 import { CARD_INFO_FIELDS } from '../utils/cardInfo';
 import { EventFormat, EventStatus } from '../models/Event';
 
@@ -46,7 +46,7 @@ export const updateAdmissionSchema = z.object({ body: admissionSchema });
 
 // Event Location (the venue named on the invitation card) and the optional Address (extra directions) are separate fields
 const locationFieldsSchema = z.object({
-  address: z.string().trim().min(1, 'Event location is required').max(300, 'Event location cannot exceed 300 characters').optional(),
+  address: z.string().trim().min(1, 'Event location is required').max(EVENT_LOCATION_MAX_LENGTH, `Event location cannot exceed ${EVENT_LOCATION_MAX_LENGTH} characters`).optional(),
   addressDetails: z.string().trim().max(500, 'Address cannot exceed 500 characters').optional(),
   coordinates: z.any().optional()
 }).passthrough();
@@ -59,7 +59,7 @@ export const createEventSchema = z.object({
     categoryId: objectIdSchema.optional(),
     subcategoryId: objectIdSchema.optional(),
     format: z.nativeEnum(EventFormat).optional().default(EventFormat.PHYSICAL),
-    location: z.union([z.string().max(300), locationFieldsSchema]).optional(),
+    location: z.union([z.string().max(EVENT_LOCATION_MAX_LENGTH), locationFieldsSchema]).optional(),
     contactNumber: z.string().optional(),
     schedule: z.object({
       start: z.string().optional(),
@@ -99,7 +99,7 @@ export const updateEventSchema = z.object({
     subcategoryId: objectIdSchema.optional(),
     format: z.nativeEnum(EventFormat).optional(),
     location: z.object({
-      address: z.string().trim().min(1, 'Event location is required').max(300, 'Event location cannot exceed 300 characters').optional(),
+      address: z.string().trim().min(1, 'Event location is required').max(EVENT_LOCATION_MAX_LENGTH, `Event location cannot exceed ${EVENT_LOCATION_MAX_LENGTH} characters`).optional(),
       addressDetails: z.string().trim().max(500, 'Address cannot exceed 500 characters').optional(),
       coordinates: z.tuple([
         z.number().min(-180).max(180),

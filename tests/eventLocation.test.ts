@@ -109,3 +109,12 @@ describe('Event Location (required) and Address (optional) are separate fields',
     expect(patch.status).toBe(400);
   });
 });
+
+describe('Event Location length', () => {
+  it('rejects a location longer than the invitation card can show, accepts one at the limit', async () => {
+    const tooLong = await request(app).post('/api/v1/events').set(bearer()).send(body({ address: 'x'.repeat(51) }));
+    expect(tooLong.status).toBe(400);
+    const atLimit = await request(app).post('/api/v1/events').set(bearer()).send(body({ address: 'x'.repeat(50) }));
+    expect(atLimit.status).toBe(201);
+  });
+});
