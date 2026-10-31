@@ -3,7 +3,7 @@ import path from 'path';
 import QRCode from 'qrcode';
 import sharp from 'sharp';
 import { CANVAS_PRESETS, CanvasPresetId, parseDesignSpec, safeParseDesignSpec, DesignSpec } from '../src/services/cardTemplates/designSpec';
-import { renderDesignSpec } from '../src/services/cardTemplates/specRenderer';
+import { renderDesignSpec, adjustForEmptyGuestLines } from '../src/services/cardTemplates/specRenderer';
 import { buildSpecTexts } from '../src/services/cardTemplates/content';
 import { convertStitchDesign } from '../src/services/stitch/stitch.converter';
 import { SAMPLE_TEXTS } from '../src/services/stitch/sampleData';
@@ -184,5 +184,35 @@ describe('card host name', () => {
     expect(cardHostName({ fullName: 'Jane Doe', profile: { organizationName: '  ' } })).toBeUndefined();
     expect(cardHostName({ fullName: 'Jane Doe' })).toBeUndefined();
     expect(cardHostName(null)).toBeUndefined();
+  });
+});
+
+describe('a card whose guest lines are empty', () => {
+  const text = (role: any, y: number, h = 40): any => ({ type: 'text', role, x: 40, y, w: 400, h, align: 'center', valign: 'top', fontFamily: 'Inter', fontWeight: 400, size: 24, lineHeight: 1.2, letterSpacing: 0, uppercase: false, maxLines: 1, color: '#000000', opacity: 1 });
+  const spec: any = {
+    canvas: { width: 480, height: 800, kind: 'INVITATION' },
+    elements: [
+      text('title', 100, 80),
+      text('inviteeName', 200), text('inviteeMeta', 250),
+      { type: 'qr', purpose: 'INVITATION', x: 140, y: 330, size: 200, padding: 0.08, radius: 0 },
+      { type: 'rect', x: 0, y: 640, w: 480, h: 160, radius: 0, strokeWidth: 0, opacity: 1, fill: '#112233' }
+    ]
+  };
+  const qrY = (els: any[]) => els.find((e) => e.type === 'qr').y;
+
+  it('has the QR re-centred between the title and the footer band instead of leaving a gap', () => {
+    const els = adjustForEmptyGuestLines(spec, { title: 'Gala' });
+    // free space = 640 - 180 - 200 = 260, so the QR sits 130 below the title's bottom
+    expect(qrY(els)).toBe(310);
+  });
+
+  it('is drawn exactly as designed when the guest has a name', () => {
+    expect(qrY(adjustForEmptyGuestLines(spec, { title: 'Gala', inviteeName: 'Asha' }))).toBe(330);
+    expect(adjustForEmptyGuestLines(spec, { title: 'Gala', inviteeName: 'Asha' })).toBe(spec.elements);
+  });
+
+  it('is left alone when the design has no guest lines at all', () => {
+    const noSlots = { ...spec, elements: spec.elements.filter((e: any) => e.role !== 'inviteeName' && e.role !== 'inviteeMeta') };
+    expect(adjustForEmptyGuestLines(noSlots, { title: 'Gala' })).toBe(noSlots.elements);
   });
 });

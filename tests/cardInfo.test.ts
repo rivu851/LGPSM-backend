@@ -23,3 +23,10 @@ describe('card guest lines', () => {
     expect(cardGuestLines(null, { primary: 'INVITEE_NAME', secondary: 'PROFESSIONAL_IDENTITY' })).toEqual({ name: 'Invitee Name', companyName: 'Employee ID' });
   });
 });
+
+describe('custom detail title', () => {
+  it('previews print the organizer\'s own title instead of "Employee ID"', () => {
+    expect(cardGuestLines(null, { primary: 'INVITEE_NAME', secondary: 'PROFESSIONAL_IDENTITY', identityLabel: 'Designation' }).companyName).toBe('Designation');
+    expect(cardGuestLines(null, { primary: 'INVITEE_NAME', secondary: 'PROFESSIONAL_IDENTITY' }).companyName).toBe('Employee ID');
+  });
+});

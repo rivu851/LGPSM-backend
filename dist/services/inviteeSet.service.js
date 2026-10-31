@@ -11,6 +11,7 @@ exports.restoreBlock = restoreBlock;
 const mongoose_1 = __importDefault(require("mongoose"));
 const Invitee_1 = require("../models/Invitee");
 const InviteeSet_1 = require("../models/InviteeSet");
+const eventLifecycle_1 = require("../utils/eventLifecycle");
 const Invitation_1 = require("../models/Invitation");
 const CheckIn_1 = require("../models/CheckIn");
 const CredentialEvent_1 = require("../models/CredentialEvent");
@@ -322,7 +323,7 @@ exports.inviteeSetService = {
 function restoreBlock(event) {
     if (event.status === Event_1.EventStatus.CANCELLED)
         return 'Guests cannot be restored for a cancelled event.';
-    if (event.status === Event_1.EventStatus.COMPLETED || event.closedAt)
-        return 'Guests cannot be restored for a completed or closed event.';
+    if (event.status === Event_1.EventStatus.COMPLETED || event.closedAt || (0, eventLifecycle_1.eventHasEnded)(event))
+        return 'Guests cannot be restored for a completed event.';
     return null;
 }

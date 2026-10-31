@@ -318,7 +318,7 @@ class EventService {
     }
     /**
      * PERMANENT deletion of an event's operational data (admin only, irreversible). It is a separate operation from
-     * closing: the event must already have been closed (COMPLETED), the caller must retype the event title, and the
+     * closing: the event must already be over (end time passed, or closed), the caller must retype the event title, and the
      * event record itself is kept so reports of what existed remain attributable.
      */
     async cleanupEventOperationalData(eventId, actor, confirmTitle) {
@@ -339,8 +339,8 @@ class EventService {
                 cleanedCounts: { sessions: 0, invitees: 0, invitations: 0, checkIns: 0, assignments: 0 }
             };
         }
-        // 4. Only an event that was explicitly closed can be purged; being past its end date is not enough
-        if (event.status !== Event_1.EventStatus.COMPLETED) {
+        // 4. Only an event that is over (its end time has passed, or it was closed) can be purged
+        if (!(0, eventLifecycle_1.eventHasEnded)(event)) {
             throw new Error('EVENT_NOT_CLOSED');
         }
         if (!confirmTitle || confirmTitle.trim() !== String(event.title).trim()) {

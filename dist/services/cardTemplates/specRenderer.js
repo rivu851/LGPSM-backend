@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.adjustForEmptyGuestLines = adjustForEmptyGuestLines;
 exports.outputSize = outputSize;
 exports.renderDesignSpec = renderDesignSpec;
 const sharp_1 = __importDefault(require("sharp"));
@@ -159,6 +160,36 @@ function textFor(el, texts) {
         return el.label ? designSpec_1.STATIC_LABELS[el.label] : '';
     return texts[el.role] || '';
 }
+/**
+ * A guest with no name or detail leaves the lines for them empty, and the space they would fill used to show as a gap. When
+ * both guest lines are blank, the invitation QR is re-centred in the free space between the content above it (text or
+ * images) and the content below it (text, images or a full-width band), so the card still looks balanced. Nothing else
+ * moves, and a card whose guest lines have text is drawn exactly as designed.
+ */
+function adjustForEmptyGuestLines(spec, texts) {
+    const elements = spec.elements;
+    const blank = (role) => !cleanText(texts[role] || '');
+    const hasSlots = elements.some((e) => e.type === 'text' && (e.role === 'inviteeName' || e.role === 'inviteeMeta'));
+    const qr = elements.find((e) => e.type === 'qr' && e.purpose === 'INVITATION');
+    if (!hasSlots || !qr || !blank('inviteeName') || !blank('inviteeMeta'))
+        return elements;
+    const visible = elements.filter((e) => (e.type === 'text' && !!cleanText(textFor(e, texts))) || e.type === 'image' || (e.type === 'rect' && e.w >= spec.canvas.width * 0.9));
+    const top = (e) => (e.type === 'qr' ? e.y : e.type === 'line' ? Math.min(e.y1, e.y2) : e.y);
+    const bottom = (e) => (e.type === 'qr' ? e.y + e.size : e.type === 'line' ? Math.max(e.y1, e.y2) : e.y + e.h);
+    const above = visible.filter((e) => e.type !== 'rect' && bottom(e) <= qr.y + 1).map(bottom);
+    const below = visible.filter((e) => top(e) >= qr.y + qr.size - 1).map(top);
+    if (!above.length)
+        return elements;
+    const aboveBottom = Math.max(...above);
+    const belowTop = below.length ? Math.min(...below) : spec.canvas.height;
+    const free = belowTop - aboveBottom - qr.size;
+    if (free <= 0)
+        return elements;
+    const y = Math.round(aboveBottom + free / 2);
+    if (Math.abs(y - qr.y) < 1)
+        return elements;
+    return elements.map((e) => (e === qr ? { ...qr, y } : e));
+}
 function outputSize(spec, scale = 1) {
     const s = Math.min(scale > 0 ? scale : 1, MAX_OUTPUT_EDGE / Math.max(spec.canvas.width, spec.canvas.height));
     return { width: Math.round(spec.canvas.width * s), height: Math.round(spec.canvas.height * s), scale: s };
@@ -175,7 +206,7 @@ async function renderDesignSpec(input) {
             layers.push({ input: chunk.toSvg(width, height), left: 0, top: 0 });
         chunk = new SvgChunk(s);
     };
-    for (const el of spec.elements) {
+    for (const el of adjustForEmptyGuestLines(spec, input.texts)) {
         switch (el.type) {
             case 'rect': {
                 const box = { x: el.x, y: el.y, w: el.w, h: el.h };

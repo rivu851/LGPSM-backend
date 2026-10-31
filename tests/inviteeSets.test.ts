@@ -197,6 +197,12 @@ describe('invitee lists: Replace and Append', () => {
     expect((await Invitee.findOne({ email: 'han@x.com' }))!.dietaryPreference).toBeUndefined();
   });
 
+  it('reads the organizer\'s own title for the custom detail as that guest detail', async () => {
+    await Event.updateOne({ _id: event._id }, { cardInfo: { primary: 'INVITEE_NAME', secondary: 'PROFESSIONAL_IDENTITY', identityLabel: 'Badge Code' } });
+    await upload([['Name', 'Email', 'Badge Code'], ['Bea B', 'bea@x.com', 'BC-77']], 'REPLACE', 'badge.xlsx');
+    expect((await Invitee.findOne({ email: 'bea@x.com' }))!.professionalIdentity).toBe('BC-77');
+  });
+
   it('rejects an unknown mode and other organizers cannot read the lists', async () => {
     expect((await upload([HEAD, ['Alice A', 'a@x.com', '']], 'WIPE' as any)).status).toBe(400);
     const other = await User.create({ fullName: 'Other', email: 'other.sets@example.com', role: Role.ORGANIZER });

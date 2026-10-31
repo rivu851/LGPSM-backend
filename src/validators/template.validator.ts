@@ -91,6 +91,6 @@ export const previewTemplateCardSchema = z
     logoKey: z.string().regex(/^media:[0-9a-fA-F]{24}$/, 'Only an uploaded image can be previewed').optional(),
     guestName: z.string().max(100).optional(),
     companyName: z.string().max(100).optional(),
-    cardInfo: z.object({ primary: z.enum(CARD_INFO_FIELDS).nullable(), secondary: z.enum(CARD_INFO_FIELDS).nullable() }).strict().optional()
+    cardInfo: z.object({ primary: z.enum(CARD_INFO_FIELDS).nullable(), secondary: z.enum(CARD_INFO_FIELDS).nullable(), identityLabel: z.string().trim().max(40).nullable().optional() }).strict().optional()
   })
   .strict();

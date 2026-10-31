@@ -28,7 +28,7 @@ function cardGuestLines(guest, cardInfo) {
         if (!field)
             return '';
         if (!guest)
-            return SAMPLE[field];
+            return field === 'PROFESSIONAL_IDENTITY' && cardInfo?.identityLabel?.trim() ? cardInfo.identityLabel.trim() : SAMPLE[field];
         if (field === 'INVITEE_NAME')
             return (guest.name || '').trim();
         if (field === 'COMPANY_NAME')

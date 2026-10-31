@@ -6,6 +6,8 @@ export type CardInfoField = (typeof CARD_INFO_FIELDS)[number];
 export interface CardInfo {
   primary?: CardInfoField | null;
   secondary?: CardInfoField | null;
+  /** The organizer's own title for the custom detail, shown on previews instead of "Employee ID" */
+  identityLabel?: string | null;
 }
 
 // What the previews print before there is a real guest (the labels the design shows)
@@ -36,7 +38,7 @@ export function cardGuestLines(guest: GuestDetails | null, cardInfo?: CardInfo |
   }
   const value = (field?: CardInfoField | null): string => {
     if (!field) return '';
-    if (!guest) return SAMPLE[field];
+    if (!guest) return field === 'PROFESSIONAL_IDENTITY' && cardInfo?.identityLabel?.trim() ? cardInfo.identityLabel.trim() : SAMPLE[field];
     if (field === 'INVITEE_NAME') return (guest.name || '').trim();
     if (field === 'COMPANY_NAME') return (guest.companyName || guest.company || '').trim();
     return (guest.professionalIdentity || '').trim();

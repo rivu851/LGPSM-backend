@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Invitee, IInvitee, InvitationStatus, RsvpStatus } from '../models/Invitee';
 import { InviteeSet } from '../models/InviteeSet';
+import { eventHasEnded } from '../utils/eventLifecycle';
 import { Invitation, InvitationDeliveryStatus } from '../models/Invitation';
 import { CheckIn } from '../models/CheckIn';
 import { CredentialEvent } from '../models/CredentialEvent';
@@ -309,8 +310,8 @@ export const inviteeSetService = {
 };
 
 /** Why guests cannot be restored for this event right now, or null. */
-export function restoreBlock(event: { status?: string; closedAt?: Date | null }): string | null {
+export function restoreBlock(event: { status?: string; closedAt?: Date | null; schedule?: { end?: Date | string | null } | null }): string | null {
   if (event.status === EventStatus.CANCELLED) return 'Guests cannot be restored for a cancelled event.';
-  if (event.status === EventStatus.COMPLETED || event.closedAt) return 'Guests cannot be restored for a completed or closed event.';
+  if (event.status === EventStatus.COMPLETED || event.closedAt || eventHasEnded(event)) return 'Guests cannot be restored for a completed event.';
   return null;
 }

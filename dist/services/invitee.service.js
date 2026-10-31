@@ -363,7 +363,8 @@ exports.inviteeService = {
             firstRowCols.forEach((colStr, colIdx) => {
                 if (!colStr)
                     return;
-                if (colStr.includes('identity') || colStr.includes('designation'))
+                const customIdentity = String(event.cardInfo?.identityLabel || '').trim().toLowerCase();
+                if (colStr.includes('identity') || colStr.includes('designation') || (customIdentity && colStr === customIdentity))
                     identityColIdx = colIdx;
                 else if (colStr.includes('company') || colStr.includes('organization') || colStr.includes('organisation'))
                     companyColIdx = colIdx;

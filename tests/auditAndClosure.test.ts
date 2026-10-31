@@ -308,13 +308,20 @@ describe('P0.1 — audit logging and non-destructive event closure', () => {
 
   // ───────────────────────── permanent deletion ─────────────────────────
   describe('permanent deletion is a separate, guarded operation', () => {
-    it('is not reachable through close, and needs a closed event', async () => {
+    it('is not reachable through close, and needs an event that is over', async () => {
       const before = await Invitee.countDocuments({ eventId: eventA._id });
       const open = await request(app).post(`/api/v1/events/${eventA._id}/cleanup`).set(auth(tAdmin)).send({ confirmTitle: 'Alpha Summit' });
       expect(open.status).toBe(409);
       expect(open.body.code).toBe('EVENT_NOT_CLOSED');
       await request(app).post(`/api/v1/events/${eventA._id}/close`).set(auth(tA));
       expect(await Invitee.countDocuments({ eventId: eventA._id })).toBe(before);
+    });
+
+    it('is available once the event\'s end time has passed, without anyone closing it', async () => {
+      await Event.updateOne({ _id: eventA._id }, { 'schedule.end': new Date(Date.now() - 60_000) });
+      const ok = await request(app).post(`/api/v1/events/${eventA._id}/cleanup`).set(auth(tAdmin)).send({ confirmTitle: 'Alpha Summit' });
+      expect(ok.status).toBe(200);
+      expect(await Invitee.countDocuments({ eventId: eventA._id })).toBe(0);
     });
 
     it('is admin-only, needs the exact event title, and leaves an audit record', async () => {

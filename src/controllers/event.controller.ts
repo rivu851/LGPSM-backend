@@ -235,7 +235,7 @@ export const eventController = {
       } else if (error.message === 'FORBIDDEN_CLEANUP') {
         res.status(403).json({ success: false, error: 'Forbidden', message: 'Only authorized ADMIN can perform event operational data cleanup' });
       } else if (error.message === 'EVENT_NOT_CLOSED') {
-        res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_NOT_CLOSED', message: 'Close the event first. Permanent deletion is only available for closed events.' });
+        res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_NOT_CLOSED', message: 'This event has not ended yet. Permanent deletion is only available once an event is over.' });
       } else if (error.message === 'CONFIRMATION_REQUIRED') {
         res.status(400).json({ success: false, error: 'Bad Request', code: 'CONFIRMATION_REQUIRED', message: 'Type the event title exactly to confirm permanent deletion.' });
       } else {

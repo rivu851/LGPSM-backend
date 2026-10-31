@@ -159,6 +159,16 @@ exports.userService = {
         if (existingUser) {
             throw { statusCode: 400, message: 'Email already in use' };
         }
+        // An admin adding staff for a particular organizer: the account belongs to that organizer, exactly as if they had added it
+        let ownerId = actor.userId;
+        if (data.organizerId) {
+            if (actor.role !== 'ADMIN' || data.role !== 'SYSTEM_USER')
+                throw { statusCode: 403, message: 'Only an administrator can add staff on behalf of an organizer' };
+            const owner = await user_repository_1.userRepository.findById(String(data.organizerId));
+            if (!owner || owner.role !== User_1.Role.ORGANIZER || owner.isActive === false)
+                throw { statusCode: 404, message: 'Organizer not found' };
+            ownerId = String(owner._id);
+        }
         const { hashPassword } = await Promise.resolve().then(() => __importStar(require('../utils/password')));
         const { AuthProvider } = await Promise.resolve().then(() => __importStar(require('../models/User')));
         // No password given: generate one and email it with the login email (the person adding the account never sees it)
@@ -172,7 +182,7 @@ exports.userService = {
             passwordHash: hashedPassword,
             authProvider: AuthProvider.LOCAL,
             role: data.role,
-            createdBy: new mongoose_1.default.Types.ObjectId(actor.userId)
+            createdBy: new mongoose_1.default.Types.ObjectId(ownerId)
         });
         if (generatedPassword) {
             try {
@@ -195,6 +205,11 @@ exports.userService = {
         if (actor.role === User_1.Role.ORGANIZER) {
             query.role = User_1.Role.SYSTEM_USER;
             query._id = { $in: await staffVisibleToOrganizer(actor.userId) };
+        }
+        // An admin looking at one organizer's staff: the same list that organizer sees
+        if (actor.role === User_1.Role.ADMIN && options.organizerId && mongoose_1.default.Types.ObjectId.isValid(options.organizerId)) {
+            query.role = User_1.Role.SYSTEM_USER;
+            query._id = { $in: await staffVisibleToOrganizer(options.organizerId) };
         }
         if (options.search) {
             const normalizedPhone = (0, whatsapp_service_1.normalizePhoneNumber)(options.search);

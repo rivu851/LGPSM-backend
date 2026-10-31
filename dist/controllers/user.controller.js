@@ -57,7 +57,7 @@ exports.userController = {
             const page = req.query.page ? parseInt(req.query.page, 10) : undefined;
             const limit = req.query.limit ? parseInt(req.query.limit, 10) : undefined;
             const search = req.query.search?.trim() || undefined;
-            const result = await user_service_1.userService.getUsers(req.user, roleFilter, includeInactive, { page, limit, search });
+            const result = await user_service_1.userService.getUsers(req.user, roleFilter, includeInactive, { page, limit, search, organizerId: req.query.organizerId || undefined });
             res.status(200).json({
                 success: true,
                 data: result.users,

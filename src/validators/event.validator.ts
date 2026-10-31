@@ -8,7 +8,9 @@ const objectIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ObjectId f
 // "Additional Info": a ticked line names the guest detail it prints; null leaves that line empty
 const cardInfoSchema = z.object({
   primary: z.enum(CARD_INFO_FIELDS).nullable(),
-  secondary: z.enum(CARD_INFO_FIELDS).nullable()
+  secondary: z.enum(CARD_INFO_FIELDS).nullable(),
+  // The organizer's own title for the custom detail (PROFESSIONAL_IDENTITY): the Excel column and form label, e.g. "Designation"
+  identityLabel: z.string().trim().max(40).nullable().optional()
 }).strict();
 
 const validateDietaryOptions = (preference: { enabled?: boolean; options?: any[] }, ctx: z.RefinementCtx) => {

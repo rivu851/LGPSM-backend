@@ -134,6 +134,15 @@ export const userService = {
       throw { statusCode: 400, message: 'Email already in use' };
     }
 
+    // An admin adding staff for a particular organizer: the account belongs to that organizer, exactly as if they had added it
+    let ownerId = actor.userId;
+    if (data.organizerId) {
+      if (actor.role !== 'ADMIN' || data.role !== 'SYSTEM_USER') throw { statusCode: 403, message: 'Only an administrator can add staff on behalf of an organizer' };
+      const owner = await userRepository.findById(String(data.organizerId));
+      if (!owner || owner.role !== Role.ORGANIZER || owner.isActive === false) throw { statusCode: 404, message: 'Organizer not found' };
+      ownerId = String(owner._id);
+    }
+
     const { hashPassword } = await import('../utils/password');
     const { AuthProvider } = await import('../models/User');
 
@@ -148,7 +157,7 @@ export const userService = {
       passwordHash: hashedPassword,
       authProvider: AuthProvider.LOCAL,
       role: data.role,
-      createdBy: new mongoose.Types.ObjectId(actor.userId)
+      createdBy: new mongoose.Types.ObjectId(ownerId)
     });
 
     if (generatedPassword) {
@@ -168,7 +177,7 @@ export const userService = {
     actor: Actor,
     role?: string,
     includeInactive = false,
-    options: { page?: number; limit?: number; search?: string } = {}
+    options: { page?: number; limit?: number; search?: string; organizerId?: string } = {}
   ) {
     const query: any = includeInactive && actor.role === Role.ADMIN ? {} : { isActive: true };
     if (role) {
@@ -178,6 +187,12 @@ export const userService = {
     if (actor.role === Role.ORGANIZER) {
       query.role = Role.SYSTEM_USER;
       query._id = { $in: await staffVisibleToOrganizer(actor.userId) };
+    }
+
+    // An admin looking at one organizer's staff: the same list that organizer sees
+    if (actor.role === Role.ADMIN && options.organizerId && mongoose.Types.ObjectId.isValid(options.organizerId)) {
+      query.role = Role.SYSTEM_USER;
+      query._id = { $in: await staffVisibleToOrganizer(options.organizerId) };
     }
 
     if (options.search) {

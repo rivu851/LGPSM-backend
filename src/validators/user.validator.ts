@@ -23,6 +23,8 @@ export const createUserSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters').optional(),
   phone: z.string().optional(),
   role: z.enum([Role.ADMIN, Role.ORGANIZER, Role.SYSTEM_USER]),
+  // Admin only: the organizer a new staff account is added for
+  organizerId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
   profile: z.object({
     organizationName: z.string().max(150).optional(),
     logoKey: z.string().max(200).optional()

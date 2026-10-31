@@ -14,7 +14,7 @@ import { platformSettingsService } from './platformSettings.service';
 import { alertService } from './alert.service';
 import { cancellationNoticeService } from './cancellationNotice.service';
 import { validateAdmissionInput } from '../utils/admissionWindow';
-import { canTransition } from '../utils/eventLifecycle';
+import { canTransition, eventHasEnded } from '../utils/eventLifecycle';
 import { formatCardDate, formatCardTime } from '../utils/invitationContent';
 
 // Client-writable event fields. Anything else in a request body (organizerId, status flags,
@@ -331,7 +331,7 @@ export class EventService {
 
   /**
    * PERMANENT deletion of an event's operational data (admin only, irreversible). It is a separate operation from
-   * closing: the event must already have been closed (COMPLETED), the caller must retype the event title, and the
+   * closing: the event must already be over (end time passed, or closed), the caller must retype the event title, and the
    * event record itself is kept so reports of what existed remain attributable.
    */
   async cleanupEventOperationalData(eventId: string, actor: { userId: string; role: Role }, confirmTitle?: string): Promise<any> {
@@ -355,8 +355,8 @@ export class EventService {
       };
     }
 
-    // 4. Only an event that was explicitly closed can be purged; being past its end date is not enough
-    if (event.status !== EventStatus.COMPLETED) {
+    // 4. Only an event that is over (its end time has passed, or it was closed) can be purged
+    if (!eventHasEnded(event)) {
       throw new Error('EVENT_NOT_CLOSED');
     }
     if (!confirmTitle || confirmTitle.trim() !== String(event.title).trim()) {

@@ -19,4 +19,15 @@ const TRANSITIONS: Record<EventStatus, readonly EventStatus[]> = {
   [EventStatus.CANCELLED]: []
 };
 
+/**
+ * An event is over once it was closed, or once its end time has passed: nobody has to press anything. Entry and QR passes
+ * already stop at that moment (the admission window); this is the same test for the rules that wait until an event is over.
+ */
+export const eventHasEnded = (event: { status?: string; schedule?: { end?: Date | string | null } | null }, now: Date = new Date()): boolean => {
+  if (event.status === EventStatus.COMPLETED) return true;
+  if (event.status !== EventStatus.PUBLISHED) return false;
+  const end = event.schedule?.end ? new Date(event.schedule.end) : null;
+  return !!end && !Number.isNaN(end.getTime()) && end.getTime() <= now.getTime();
+};
+
 export const canTransition = (from: EventStatus, to: EventStatus): boolean => TRANSITIONS[from]?.includes(to) ?? false;

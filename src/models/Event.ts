@@ -122,7 +122,8 @@ const EventSchema: Schema = new Schema(
     templateId: { type: Schema.Types.ObjectId, ref: 'Template' },
     cardInfo: {
       primary: { type: String, enum: [...CARD_INFO_FIELDS, null] },
-      secondary: { type: String, enum: [...CARD_INFO_FIELDS, null] }
+      secondary: { type: String, enum: [...CARD_INFO_FIELDS, null] },
+      identityLabel: { type: String, trim: true, maxlength: 40 }
     },
     media: {
       logoKey: { type: String },

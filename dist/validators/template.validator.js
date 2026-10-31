@@ -85,6 +85,6 @@ exports.previewTemplateCardSchema = zod_1.z
     logoKey: zod_1.z.string().regex(/^media:[0-9a-fA-F]{24}$/, 'Only an uploaded image can be previewed').optional(),
     guestName: zod_1.z.string().max(100).optional(),
     companyName: zod_1.z.string().max(100).optional(),
-    cardInfo: zod_1.z.object({ primary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(), secondary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable() }).strict().optional()
+    cardInfo: zod_1.z.object({ primary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(), secondary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(), identityLabel: zod_1.z.string().trim().max(40).nullable().optional() }).strict().optional()
 })
     .strict();

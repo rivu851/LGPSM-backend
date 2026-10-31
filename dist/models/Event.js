@@ -90,7 +90,8 @@ const EventSchema = new mongoose_1.Schema({
     templateId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Template' },
     cardInfo: {
         primary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] },
-        secondary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] }
+        secondary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] },
+        identityLabel: { type: String, trim: true, maxlength: 40 }
     },
     media: {
         logoKey: { type: String },

@@ -383,7 +383,8 @@ export const inviteeService = {
     if (isHeaderPresent) {
       firstRowCols.forEach((colStr: string, colIdx: number) => {
         if (!colStr) return;
-        if (colStr.includes('identity') || colStr.includes('designation')) identityColIdx = colIdx;
+        const customIdentity = String((event as any).cardInfo?.identityLabel || '').trim().toLowerCase();
+        if (colStr.includes('identity') || colStr.includes('designation') || (customIdentity && colStr === customIdentity)) identityColIdx = colIdx;
         else if (colStr.includes('company') || colStr.includes('organization') || colStr.includes('organisation')) companyColIdx = colIdx;
         else if (colStr.includes('name')) nameColIdx = colIdx;
         else if (colStr.includes('email') || colStr.includes('mail')) emailColIdx = colIdx;
