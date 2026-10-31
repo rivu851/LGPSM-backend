@@ -196,4 +196,50 @@ describe('Public Invitation & RSVP Endpoints', () => {
       expect(res.body.success).toBe(false);
     });
   });
+
+  describe('required food preference', () => {
+    const rsvp = (body: object) => request(app).post(`/api/v1/public/invitations/${rawToken}/rsvp`).send(body);
+    const food = (body: object) => request(app).post(`/api/v1/public/invitations/${rawToken}/food`).send(body);
+
+    it('a guest who accepts must answer the food question', async () => {
+      const res = await rsvp({ rsvpStatus: 'ACCEPTED' });
+      expect(res.statusCode).toBe(400);
+      expect(res.body.code).toBe('DIETARY_REQUIRED');
+      expect((await Invitee.findById(inviteeId))!.rsvpStatus).toBe(RsvpStatus.PENDING);
+    });
+
+    it('an event without RSVP still collects the food choice on the access card, and it is required and checked', async () => {
+      await Event.updateOne({ _id: eventId }, { 'rsvp.enabled': false });
+      expect((await rsvp({ rsvpStatus: 'ACCEPTED', dietaryPreference: 'Veg' })).statusCode).toBe(400);
+      expect((await food({ dietarySelections: [{ title: 'Dietary Preference', value: 'Pizza' }] })).statusCode).toBe(400);
+      expect((await food({})).statusCode).toBe(400);
+      const ok = await food({ dietarySelections: [{ title: 'Dietary Preference', value: 'Veg' }] });
+      expect(ok.statusCode).toBe(200);
+      const stored = await Invitee.findById(inviteeId);
+      expect(stored!.dietaryPreference).toBe('Veg');
+      expect(stored!.rsvpStatus).toBe(RsvpStatus.PENDING);
+      // the guest may change their mind later
+      expect((await food({ dietarySelections: [{ title: 'Dietary Preference', value: 'Vegan' }] })).statusCode).toBe(200);
+      expect((await Invitee.findById(inviteeId))!.dietaryPreference).toBe('Vegan');
+    });
+
+    it('every question the organizer added is asked, each under its own title, and all must be answered', async () => {
+      await Event.updateOne({ _id: eventId }, { 'rsvp.enabled': false, dietaryPreference: { enabled: true, title: 'Meal', options: [{ title: 'Meal', options: ['Veg', 'Non-Veg'] }, { title: 'T-shirt size', options: ['S', 'M', 'L'] }] } });
+      const page = await request(app).get(`/api/v1/public/invitations/${rawToken}`);
+      expect(page.body.data.event.dietaryPreference.options.map((g: any) => g.title)).toEqual(['Meal', 'T-shirt size']);
+      expect((await food({ dietarySelections: [{ title: 'Meal', value: 'Veg' }] })).body.code).toBe('DIETARY_REQUIRED');
+      const ok = await food({ dietarySelections: [{ title: 'Meal', value: 'Veg' }, { title: 'T-shirt size', value: 'M' }] });
+      expect(ok.statusCode).toBe(200);
+      expect((await Invitee.findById(inviteeId))!.dietarySelections!.map((x: any) => `${x.title}=${x.value}`)).toEqual(['Meal=Veg', 'T-shirt size=M']);
+    });
+
+    it('the food route is only for events without RSVP, with food enabled, and not cancelled', async () => {
+      const body = { dietarySelections: [{ title: 'Dietary Preference', value: 'Veg' }] };
+      expect((await food(body)).body.code).toBe('RSVP_ENABLED');
+      await Event.updateOne({ _id: eventId }, { 'rsvp.enabled': false, 'dietaryPreference.enabled': false });
+      expect((await food(body)).body.code).toBe('DIETARY_DISABLED');
+      await Event.updateOne({ _id: eventId }, { 'dietaryPreference.enabled': true, status: 'CANCELLED' });
+      expect((await food(body)).statusCode).toBe(410);
+    });
+  });
 });

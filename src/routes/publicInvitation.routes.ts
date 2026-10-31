@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { publicInvitationController } from '../controllers/publicInvitation.controller';
-import { submitRsvpSchema } from '../validators/publicInvitation.validator';
+import { submitRsvpSchema, submitFoodSchema } from '../validators/publicInvitation.validator';
 import { ZodSchema } from 'zod';
 import { publicInvitationLimiter } from '../middlewares/rateLimiter';
 
@@ -24,5 +24,8 @@ router.get('/:token', publicInvitationController.getPublicInvitation);
 
 // POST /api/v1/public/invitations/:token/rsvp
 router.post('/:token/rsvp', validate(submitRsvpSchema), publicInvitationController.submitRsvp);
+
+// POST /api/v1/public/invitations/:token/food  (events without RSVP: the guest's required food choice)
+router.post('/:token/food', validate(submitFoodSchema), publicInvitationController.submitFoodPreference);
 
 export default router;

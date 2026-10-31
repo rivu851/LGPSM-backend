@@ -47,6 +47,31 @@ exports.publicInvitationController = {
             return res.status(500).json({ success: false, error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
     },
+    async submitFoodPreference(req, res) {
+        try {
+            const data = await publicInvitation_service_1.publicInvitationService.submitFoodPreference(req.params.token, req.body.dietarySelections);
+            return res.status(200).json({ success: true, data });
+        }
+        catch (error) {
+            const m = error.message;
+            if (m === 'INVITATION_NOT_FOUND' || m === 'INVALID_TOKEN')
+                return res.status(404).json({ success: false, error: 'Not Found', message: 'Invitation not found or token is invalid' });
+            if (m === 'EVENT_CANCELLED')
+                return res.status(410).json({ success: false, code: 'EVENT_CANCELLED', message: 'This event has been cancelled. Your response was not saved.' });
+            if (m === 'RSVP_ENABLED')
+                return res.status(400).json({ success: false, code: 'RSVP_ENABLED', message: 'Choose your answers when you accept the invitation.' });
+            if (m === 'DIETARY_DISABLED')
+                return res.status(400).json({ success: false, code: 'DIETARY_DISABLED', message: 'This event does not ask any questions.' });
+            if (m === 'RSVP_CLOSED')
+                return res.status(400).json({ success: false, message: 'This event has already ended.' });
+            if (m === 'DIETARY_REQUIRED')
+                return res.status(400).json({ success: false, code: 'DIETARY_REQUIRED', message: 'Please choose an option for every question.' });
+            if (m === 'INVALID_DIETARY_PREFERENCE')
+                return res.status(400).json({ success: false, message: 'Choose only from the dietary options provided for this event.' });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ success: false, error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
+        }
+    },
     async submitRsvp(req, res) {
         try {
             const token = req.params.token;
@@ -69,6 +94,9 @@ exports.publicInvitationController = {
             }
             if (error.message === 'DIETARY_NOT_ALLOWED_WHEN_DECLINED') {
                 return res.status(400).json({ success: false, code: 'DIETARY_NOT_ALLOWED_WHEN_DECLINED', message: 'A food preference can only be given when you accept.' });
+            }
+            if (error.message === 'DIETARY_REQUIRED') {
+                return res.status(400).json({ success: false, code: 'DIETARY_REQUIRED', message: 'Please choose an option for every question.' });
             }
             if (error.message === 'INVALID_DIETARY_PREFERENCE') {
                 return res.status(400).json({ success: false, message: 'Choose only from the dietary options provided for this event.' });

@@ -431,11 +431,12 @@ describe('a Locked list is not rewritten', () => {
     expect((await Invitee.findById(ida._id))!.name).toBe('Idle Ida');
   });
 
-  it('still lets the organizer change what is not a detail (dietary choice) and add a brand new list', async () => {
+  it('never lets the organizer set the guest\'s food choice (the guest makes it on the invitation page) and still adds a brand new list', async () => {
     await upload([HEAD, ['Sent Sam', 'sam@x.com', '']], 'REPLACE', 'a.xlsx');
     await Invitee.updateOne({ email: 'sam@x.com' }, { invitationStatus: InvitationStatus.SENT });
     const sam: any = await Invitee.findOne({ email: 'sam@x.com' });
     expect((await request(app).patch(`/api/v1/invitees/${sam._id}`).set(bearer(tA)).send({ dietaryPreference: 'Veg' })).status).toBe(200);
+    expect((await Invitee.findById(sam._id))!.dietaryPreference).toBeUndefined();
     expect((await upload([HEAD, ['New Nat', 'nat@x.com', '']], 'APPEND', 'b.xlsx')).body.data.imported).toBe(1);
   });
 

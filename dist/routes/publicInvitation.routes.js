@@ -21,4 +21,6 @@ router.get('/:token/card', publicInvitation_controller_1.publicInvitationControl
 router.get('/:token', publicInvitation_controller_1.publicInvitationController.getPublicInvitation);
 // POST /api/v1/public/invitations/:token/rsvp
 router.post('/:token/rsvp', validate(publicInvitation_validator_1.submitRsvpSchema), publicInvitation_controller_1.publicInvitationController.submitRsvp);
+// POST /api/v1/public/invitations/:token/food  (events without RSVP: the guest's required food choice)
+router.post('/:token/food', validate(publicInvitation_validator_1.submitFoodSchema), publicInvitation_controller_1.publicInvitationController.submitFoodPreference);
 exports.default = router;

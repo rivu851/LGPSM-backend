@@ -79,8 +79,10 @@ exports.inviteeService = {
             throw new Error('DUPLICATE_INVITEE');
         }
         const companyVal = data.companyName || data.company;
+        // The food choice is the guest's own, made on the invitation page; nothing typed in by an organizer can pre-empt or contradict it
+        const { dietaryPreference: _ignoredDiet, dietarySelections: _ignoredSelections, ...details } = data;
         const inviteeData = {
-            ...data,
+            ...details,
             companyName: companyVal,
             company: companyVal,
             eventId: new mongoose_1.default.Types.ObjectId(eventId)
@@ -166,9 +168,11 @@ exports.inviteeService = {
         const members = await Invitee_1.Invitee.find({ eventId: invitee.eventId, inviteeSetId: invitee.inviteeSetId }).select('invitationStatus rsvpStatus qrTokenHash inviteeSetId');
         return (0, inviteeSet_service_1.lockedSetKeys)(members, await (0, inviteeSet_service_1.loadActivity)(invitee.eventId, members)).size > 0;
     },
-    async updateInvitee(inviteeId, organizerId, data) {
+    async updateInvitee(inviteeId, organizerId, input) {
+        // The food choice belongs to the guest (invitation page): an organizer's edit cannot set or change it
+        const { dietaryPreference: _ignoredDiet, dietarySelections: _ignoredSelections, ...data } = input;
         const invitee = await this.getInviteeById(inviteeId, organizerId); // Ensures ownership
-        // A Locked list keeps who was on it: its guests' details are not rewritten (dietary choice and session access have their own routes)
+        // A Locked list keeps who was on it: its guests' details are not rewritten (session access has its own route)
         const DETAIL_FIELDS = ['name', 'email', 'mobile', 'companyName', 'company', 'professionalIdentity'];
         const changes = DETAIL_FIELDS.some((f) => data[f] !== undefined && String(data[f] ?? '') !== String(invitee[f] ?? ''));
         if (changes && (await this.inLockedUploadedSet(invitee)))
@@ -351,7 +355,7 @@ exports.inviteeService = {
             throw { statusCode: 400, message: 'The sheet has no invitee rows' };
         }
         // Header matching (same rules as the frontend preview in utils/inviteeSheet.ts)
-        let nameColIdx = -1, emailColIdx = -1, mobileColIdx = -1, companyColIdx = -1, dietaryColIdx = -1, identityColIdx = -1;
+        let nameColIdx = -1, emailColIdx = -1, mobileColIdx = -1, companyColIdx = -1, identityColIdx = -1;
         const sessionColMap = new Map();
         const firstRowCols = nonBlankRows[0].map((c) => cleanCellValue(c).toLowerCase());
         const isHeaderPresent = firstRowCols.some((col) => col.includes('name') || col.includes('email') || col.includes('mobile') || col.includes('phone') || col.includes('company'));
@@ -369,8 +373,6 @@ exports.inviteeService = {
                     emailColIdx = colIdx;
                 else if (colStr.includes('mobile') || colStr.includes('phone') || colStr.includes('contact') || colStr.includes('whatsapp'))
                     mobileColIdx = colIdx;
-                else if (colStr.includes('diet') || colStr.includes('food') || colStr.includes('meal'))
-                    dietaryColIdx = colIdx;
                 // Per-session Y/N columns only apply to event-wide uploads
                 if (!targetSession) {
                     for (const session of eventSessions) {
@@ -386,7 +388,6 @@ exports.inviteeService = {
             emailColIdx = 1;
             mobileColIdx = 2;
             companyColIdx = 3;
-            dietaryColIdx = 4;
         }
         const dataRows = isHeaderPresent ? nonBlankRows.slice(1) : nonBlankRows;
         results.totalRows = dataRows.length;
@@ -418,7 +419,6 @@ exports.inviteeService = {
             const email = cell(row, emailColIdx).toLowerCase();
             const mobile = cell(row, mobileColIdx);
             const company = cell(row, companyColIdx);
-            const dietary = cell(row, dietaryColIdx);
             const professionalIdentity = cell(row, identityColIdx).slice(0, 100);
             if (!name) {
                 results.rejected++;
@@ -535,12 +535,6 @@ exports.inviteeService = {
                 }
                 if (professionalIdentity && !existing.professionalIdentity)
                     existing.professionalIdentity = professionalIdentity;
-                if (dietary) {
-                    if (!existing.dietaryPreference)
-                        existing.dietaryPreference = dietary;
-                    else if (existing.dietaryPreference !== dietary)
-                        kept.push(`dietary preference '${existing.dietaryPreference}'`);
-                }
                 if (kept.length)
                     results.notices.push({ row: rowNum, message: `Matches ${existing.name}; kept the existing ${kept.join(', ')}` });
                 existing.sessionAccess = [...access.entries()].map(([sessionId, allowed]) => ({ sessionId: new mongoose_1.default.Types.ObjectId(sessionId), allowed }));
@@ -556,7 +550,6 @@ exports.inviteeService = {
                     mobile: mobile || undefined,
                     companyName: company || undefined,
                     company: company || undefined,
-                    dietaryPreference: dietary || undefined,
                     professionalIdentity: professionalIdentity || undefined,
                     sessionAccess: rowAccess.map((a) => ({ sessionId: new mongoose_1.default.Types.ObjectId(a.sessionId), allowed: a.allowed })),
                     invitationStatus: Invitee_2.InvitationStatus.PENDING,

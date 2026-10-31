@@ -48,8 +48,10 @@ export const inviteeService = {
 
     const companyVal = (data as any).companyName || (data as any).company;
 
+    // The food choice is the guest's own, made on the invitation page; nothing typed in by an organizer can pre-empt or contradict it
+    const { dietaryPreference: _ignoredDiet, dietarySelections: _ignoredSelections, ...details } = data as any;
     const inviteeData = {
-      ...data,
+      ...details,
       companyName: companyVal,
       company: companyVal,
       eventId: new mongoose.Types.ObjectId(eventId)
@@ -163,10 +165,12 @@ export const inviteeService = {
     return lockedSetKeys(members, await loadActivity(invitee.eventId, members)).size > 0;
   },
 
-  async updateInvitee(inviteeId: string, organizerId: string, data: Partial<IInvitee>): Promise<IInvitee> {
+  async updateInvitee(inviteeId: string, organizerId: string, input: Partial<IInvitee>): Promise<IInvitee> {
+    // The food choice belongs to the guest (invitation page): an organizer's edit cannot set or change it
+    const { dietaryPreference: _ignoredDiet, dietarySelections: _ignoredSelections, ...data } = input as any;
     const invitee = await this.getInviteeById(inviteeId, organizerId); // Ensures ownership
 
-    // A Locked list keeps who was on it: its guests' details are not rewritten (dietary choice and session access have their own routes)
+    // A Locked list keeps who was on it: its guests' details are not rewritten (session access has its own route)
     const DETAIL_FIELDS = ['name', 'email', 'mobile', 'companyName', 'company', 'professionalIdentity'] as const;
     const changes = DETAIL_FIELDS.some((f) => (data as any)[f] !== undefined && String((data as any)[f] ?? '') !== String((invitee as any)[f] ?? ''));
     if (changes && (await this.inLockedUploadedSet(invitee))) throw new Error('SET_LOCKED');
@@ -370,7 +374,7 @@ export const inviteeService = {
     }
 
     // Header matching (same rules as the frontend preview in utils/inviteeSheet.ts)
-    let nameColIdx = -1, emailColIdx = -1, mobileColIdx = -1, companyColIdx = -1, dietaryColIdx = -1, identityColIdx = -1;
+    let nameColIdx = -1, emailColIdx = -1, mobileColIdx = -1, companyColIdx = -1, identityColIdx = -1;
     const sessionColMap = new Map<number, string>();
     const firstRowCols = nonBlankRows[0].map((c: any) => cleanCellValue(c).toLowerCase());
     const isHeaderPresent = firstRowCols.some(
@@ -384,7 +388,6 @@ export const inviteeService = {
         else if (colStr.includes('name')) nameColIdx = colIdx;
         else if (colStr.includes('email') || colStr.includes('mail')) emailColIdx = colIdx;
         else if (colStr.includes('mobile') || colStr.includes('phone') || colStr.includes('contact') || colStr.includes('whatsapp')) mobileColIdx = colIdx;
-        else if (colStr.includes('diet') || colStr.includes('food') || colStr.includes('meal')) dietaryColIdx = colIdx;
         // Per-session Y/N columns only apply to event-wide uploads
         if (!targetSession) {
           for (const session of eventSessions) {
@@ -395,7 +398,7 @@ export const inviteeService = {
         }
       });
     } else {
-      nameColIdx = 0; emailColIdx = 1; mobileColIdx = 2; companyColIdx = 3; dietaryColIdx = 4;
+      nameColIdx = 0; emailColIdx = 1; mobileColIdx = 2; companyColIdx = 3;
     }
 
     const dataRows = isHeaderPresent ? nonBlankRows.slice(1) : nonBlankRows;
@@ -430,7 +433,6 @@ export const inviteeService = {
       const email = cell(row, emailColIdx).toLowerCase();
       const mobile = cell(row, mobileColIdx);
       const company = cell(row, companyColIdx);
-      const dietary = cell(row, dietaryColIdx);
       const professionalIdentity = cell(row, identityColIdx).slice(0, 100);
 
       if (!name) { results.rejected++; results.errors.push({ row: rowNum, error: 'Name is required' }); continue; }
@@ -507,10 +509,6 @@ export const inviteeService = {
           else if (existingCompany !== company) kept.push(`company '${existingCompany}'`);
         }
         if (professionalIdentity && !existing.professionalIdentity) existing.professionalIdentity = professionalIdentity;
-        if (dietary) {
-          if (!existing.dietaryPreference) existing.dietaryPreference = dietary;
-          else if (existing.dietaryPreference !== dietary) kept.push(`dietary preference '${existing.dietaryPreference}'`);
-        }
         if (kept.length) results.notices.push({ row: rowNum, message: `Matches ${existing.name}; kept the existing ${kept.join(', ')}` });
         existing.sessionAccess = [...access.entries()].map(([sessionId, allowed]) => ({ sessionId: new mongoose.Types.ObjectId(sessionId), allowed })) as any;
         if (!dryRun) await existing.save();
@@ -523,7 +521,6 @@ export const inviteeService = {
           mobile: mobile || undefined,
           companyName: company || undefined,
           company: company || undefined,
-          dietaryPreference: dietary || undefined,
           professionalIdentity: professionalIdentity || undefined,
           sessionAccess: rowAccess.map((a) => ({ sessionId: new mongoose.Types.ObjectId(a.sessionId), allowed: a.allowed })),
           invitationStatus: InvitationStatus.PENDING,

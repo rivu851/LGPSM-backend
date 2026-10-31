@@ -189,6 +189,14 @@ describe('invitee lists: Replace and Append', () => {
     expect((await get('all', '?q=.*')).body.data.total).toBe(0); // typed text is not a pattern
   });
 
+  it('keeps the food choice the guest\'s own: neither an Excel column nor a hand-added guest can set it', async () => {
+    await upload([['Name', 'Email', 'Dietary Preference'], ['Dina D', 'dina@x.com', 'Vegan']], 'REPLACE', 'diet.xlsx');
+    expect((await Invitee.findOne({ email: 'dina@x.com' }))!.dietaryPreference).toBeUndefined();
+    const made = await request(app).post(`/api/v1/events/${event._id}/invitees`).set(bearer(tok)).send({ name: 'Hand Han', email: 'han@x.com', dietaryPreference: 'Veg' });
+    expect(made.status).toBe(201);
+    expect((await Invitee.findOne({ email: 'han@x.com' }))!.dietaryPreference).toBeUndefined();
+  });
+
   it('rejects an unknown mode and other organizers cannot read the lists', async () => {
     expect((await upload([HEAD, ['Alice A', 'a@x.com', '']], 'WIPE' as any)).status).toBe(400);
     const other = await User.create({ fullName: 'Other', email: 'other.sets@example.com', role: Role.ORGANIZER });

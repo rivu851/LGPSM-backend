@@ -48,6 +48,12 @@ function validateDietarySelections(preference: any, selections: DietarySelection
   return accepted;
 }
 
+/** Every question must be answered: a guest who is coming (or who is only choosing food) cannot leave one blank */
+function requireAllAnswered(preference: any, selections: DietarySelection[]) {
+  const groups = dietaryGroups(preference);
+  if (groups.length && !groups.every((g) => selections.some((s) => s.title === g.title))) throw new Error('DIETARY_REQUIRED');
+}
+
 function dietarySummary(selections: DietarySelection[], groupCount: number): string | undefined {
   if (!selections.length) return undefined;
   if (groupCount === 1 && selections.length === 1) return selections[0].value;
@@ -55,6 +61,24 @@ function dietarySummary(selections: DietarySelection[], groupCount: number): str
 }
 
 export const publicInvitationService = {
+  /** Answers to the event's questions (food preference etc.) for an event that does not ask for RSVP: the guest picks on the access card, and every question is required */
+  async submitFoodPreference(rawToken: string, dietarySelections: DietarySelection[]) {
+    if (!rawToken || typeof rawToken !== 'string') throw new Error('INVALID_TOKEN');
+    const invitee = await Invitee.findOne(invitationLookup(hashToken(rawToken)));
+    if (!invitee) throw new Error('INVITATION_NOT_FOUND');
+    const event = await Event.findById(invitee.eventId).select('status schedule rsvp dietaryPreference');
+    if (!event || event.status === 'CANCELLED') throw new Error('EVENT_CANCELLED');
+    if (event.rsvp?.enabled) throw new Error('RSVP_ENABLED');
+    if (!dietaryGroups(event.dietaryPreference).length) throw new Error('DIETARY_DISABLED');
+    if (event.schedule?.end && new Date(event.schedule.end) < new Date()) throw new Error('RSVP_CLOSED');
+    const validated = validateDietarySelections(event.dietaryPreference, dietarySelections);
+    requireAllAnswered(event.dietaryPreference, validated);
+    invitee.dietarySelections = validated;
+    invitee.dietaryPreference = dietarySummary(validated, dietaryGroups(event.dietaryPreference).length);
+    await invitee.save();
+    return { message: 'Answers saved', name: invitee.name, dietaryPreference: invitee.dietaryPreference, dietarySelections: invitee.dietarySelections || [] };
+  },
+
   async getPublicInvitation(rawToken: string) {
     if (!rawToken || typeof rawToken !== 'string') {
       throw new Error('INVALID_TOKEN');
@@ -185,6 +209,7 @@ export const publicInvitationService = {
       }
     }
 
+    if (rsvpStatus === RsvpStatus.ACCEPTED) requireAllAnswered(event.dietaryPreference, (invitee.dietarySelections || []) as DietarySelection[]);
     await invitee.save();
 
     if (previous !== rsvpStatus && rsvpStatus !== RsvpStatus.PENDING) {

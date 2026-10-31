@@ -1,6 +1,15 @@
 import { z } from 'zod';
 import { RsvpStatus } from '../models/Invitee';
 
+export const submitFoodSchema = z.object({
+  body: z.object({
+    dietarySelections: z.array(z.object({
+      title: z.string().trim().min(1).max(100),
+      value: z.string().trim().min(1).max(60)
+    })).min(1).max(50)
+  })
+});
+
 export const submitRsvpSchema = z.object({
   body: z.object({
     rsvpStatus: z.nativeEnum(RsvpStatus, {
