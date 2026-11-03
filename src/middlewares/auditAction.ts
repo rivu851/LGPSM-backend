@@ -61,9 +61,11 @@ export function auditAction(opts: AuditActionOptions) {
       entityType: opts.entityType, entityId, status, description: opts.describe, requestId: rid, metadata: baseMeta()
     });
 
-    let organizerId: any = await auditLogService.organizerOfEvent(eventId).catch(() => undefined);
+    // Only a critical action needs the owner before the handler runs (its PENDING record is written first). For every other
+    // action the owner is worked out after the response has gone out, so the request does not wait for this lookup.
+    let organizerId: any = opts.critical ? await auditLogService.organizerOfEvent(eventId).catch(() => undefined) : undefined;
     // An organizer's own activity (e.g. managing their staff accounts) belongs to their tenant even without an event
-    if (!organizerId && user?.role === 'ORGANIZER') organizerId = user.userId;
+    if (!organizerId && user?.role === 'ORGANIZER' && (opts.critical || !eventId)) organizerId = user.userId;
     let pendingId: unknown;
 
     if (opts.critical) {

@@ -36,6 +36,8 @@ router.post('/', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(createEven
 router.get('/', authorizeRoles(Role.ADMIN, Role.ORGANIZER), eventController.getEvents);
 // SYSTEM_USER may read details of events they are assigned to (for check-in)
 router.get('/:eventId', authorizeRoles(Role.ADMIN, Role.ORGANIZER, Role.SYSTEM_USER), eventController.getEventById);
+// Tab-strip totals for an event page (sessions / invitees / assigned staff) in a single call
+router.get('/:eventId/counts', authorizeRoles(Role.ADMIN, Role.ORGANIZER), eventController.getEventCounts);
 router.patch('/:eventId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(updateEventSchema), auditAction({ action: 'EVENT_UPDATE', entityType: 'Event', entityParam: 'eventId' }), eventController.updateEvent);
 // Cancel (terminal, notifies invited guests). DELETE is the same operation for older clients; nothing is ever deleted by it.
 const cancelAudit = auditAction({ action: 'EVENT_CANCEL', entityType: 'Event', entityParam: 'eventId', critical: true, describe: 'Event cancelled', meta: (req, body) => ({ reason: (req.body as any)?.reason, notices: body?.data?.notices, alreadyCancelled: body?.data?.alreadyCancelled }) });

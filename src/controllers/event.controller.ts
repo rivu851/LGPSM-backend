@@ -102,6 +102,19 @@ export const eventController = {
     }
   },
 
+  async getEventCounts(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await eventService.getEventCounts(req.params.eventId as string, (req as any).user.userId, (req as any).user.role);
+      res.status(200).json({ success: true, data });
+    } catch (error) {
+      if ((error as Error).message === 'EVENT_NOT_FOUND') {
+        res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
+      } else {
+        next(error);
+      }
+    }
+  },
+
   async updateEvent(req: Request, res: Response, next: NextFunction) {
     try {
       const organizerId = (req as any).user.userId;

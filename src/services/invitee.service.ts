@@ -132,14 +132,16 @@ export const inviteeService = {
       return { invitees: withCredential(invitees, event), total };
     }
 
-    const invitees = await inviteeRepository.findByEventId(eventId, {
-      filter,
-      sort: { createdAt: -1, _id: -1 },
-      skip,
-      limit
-    });
-
-    const total = await inviteeRepository.countByEventId(eventId, filter);
+    // The page and the total are independent reads: run them together instead of one after the other
+    const [invitees, total] = await Promise.all([
+      inviteeRepository.findByEventId(eventId, {
+        filter,
+        sort: { createdAt: -1, _id: -1 },
+        skip,
+        limit
+      }),
+      inviteeRepository.countByEventId(eventId, filter),
+    ]);
 
     return { invitees: withCredential(invitees, event), total };
   },

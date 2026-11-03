@@ -86,25 +86,29 @@ export const systemUserAssignmentService = {
   /**
    * Staff of this event's organizer who are already assigned to another of that organizer's events running at the same time
    * (the two time ranges overlap). Used to warn before the same person is put on two events at once; nothing is blocked.
+   *
+   * With `includeAll` it returns every assignment those staff hold on the organizer's OTHER (non-cancelled) events, each marked
+   * with whether it overlaps this event in time, so a screen can show a person's real workload and the clash warning from one
+   * dataset. `sessionIds` empty means all sessions of that event.
    */
-  async overlapsForEvent(eventId: string, actorId: string) {
+  async overlapsForEvent(eventId: string, actorId: string, includeAll = false) {
     const event: any = await findAccessibleEvent(eventId, actorId);
     if (!event) throw new Error('EVENT_NOT_FOUND');
     const start = event.schedule?.start, end = event.schedule?.end;
-    if (!start || !end) return [];
-    const others: any[] = await Event.find({
-      organizerId: event.organizerId,
-      _id: { $ne: event._id },
-      status: { $ne: 'CANCELLED' },
-      'schedule.start': { $lt: end },
-      'schedule.end': { $gt: start }
-    }).select('title schedule').lean();
+    if (!includeAll && (!start || !end)) return [];
+    const query: any = { organizerId: event.organizerId, _id: { $ne: event._id }, status: { $ne: 'CANCELLED' } };
+    if (!includeAll) { query['schedule.start'] = { $lt: end }; query['schedule.end'] = { $gt: start }; }
+    const others: any[] = await Event.find(query).select('title schedule').lean();
     if (!others.length) return [];
     const byId = new Map(others.map((e) => [String(e._id), e]));
-    const assignments: any[] = await SystemUserAssignment.find({ eventId: { $in: others.map((e) => e._id) } }).select('userId eventId').lean();
+    const assignments: any[] = await SystemUserAssignment.find({ eventId: { $in: others.map((e) => e._id) } }).select('userId eventId sessionIds').lean();
     return assignments.map((a) => {
       const e = byId.get(String(a.eventId))!;
-      return { userId: String(a.userId), eventId: String(e._id), title: e.title, start: e.schedule.start, end: e.schedule.end };
+      const overlaps = !!start && !!end && !!e.schedule?.start && !!e.schedule?.end && e.schedule.start < end && e.schedule.end > start;
+      return {
+        userId: String(a.userId), eventId: String(e._id), title: e.title, start: e.schedule?.start, end: e.schedule?.end,
+        sessionIds: (a.sessionIds || []).map((id: any) => String(id)), overlaps
+      };
     });
   },
 

@@ -90,6 +90,19 @@ describe('Public Invitation & RSVP Endpoints', () => {
       await Event.updateMany({}, { $set: { 'rsvp.enabled': true } });
     });
 
+    // Organizer feedback (screenshot 13): the guest page must show the last date and time to respond
+    it('gives the page the RSVP last date the organizer set, or the event end when none was set', async () => {
+      const lastDate = new Date(Date.now() + 3 * 864e5);
+      await Event.updateMany({}, { $set: { 'rsvp.enabled': true, 'rsvp.acceptanceLastDate': lastDate } });
+      const chosen = await request(app).get(`/api/v1/public/invitations/${rawToken}`);
+      expect(new Date(chosen.body.data.event.rsvp.closesAt).getTime()).toBe(lastDate.getTime());
+
+      await Event.updateMany({}, { $unset: { 'rsvp.acceptanceLastDate': '' } });
+      const fallback = await request(app).get(`/api/v1/public/invitations/${rawToken}`);
+      const event: any = await Event.findOne({}).lean();
+      expect(new Date(fallback.body.data.event.rsvp.closesAt).getTime()).toBe(new Date(event.schedule.end).getTime());
+    });
+
     it('themes the page after the event\'s invitation design, with safe colour values only', async () => {
       const res = await request(app).get(`/api/v1/public/invitations/${rawToken}`);
       const theme = res.body.data.theme;

@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import { userAuthCache } from '../utils/userAuthCache';
 
 export enum Role {
   ADMIN = 'ADMIN',
@@ -62,6 +63,12 @@ const UserSchema: Schema = new Schema(
       }
     }
   }
+);
+
+// A change to any account (role, active flag, removal) must show up on the next request, not after the auth cache expires
+UserSchema.post(
+  ['save', 'findOneAndUpdate', 'findOneAndReplace', 'findOneAndDelete', 'updateOne', 'updateMany', 'deleteOne', 'deleteMany'] as any,
+  () => userAuthCache.clear()
 );
 
 export const User = mongoose.model<IUser>('User', UserSchema);

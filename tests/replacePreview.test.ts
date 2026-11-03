@@ -86,6 +86,24 @@ describe('Replace preview', () => {
   // audit rows of the seeding imports are written just after each response: wait until the count stops moving before comparing
   const quiet = async () => { let last = -1, same = 0; for (let i = 0; i < 100 && same < 4; i++) { const n = await AuditLog.countDocuments({}); same = n === last ? same + 1 : 0; last = n; await new Promise((r) => setTimeout(r, 25)); } };
 
+  // Organizer feedback (screenshot 11): the list header said "4 invitees · 1 invited · 3 not yet invited" while the dialog said
+  // "1 set aside" and "3 stay". Those must be the same people described the same way.
+  it('the dialog\x27s numbers add up to the list header: 1 invited, 3 not yet invited', async () => {
+    await send([HEAD, ['Sayan G', 'sayan@x.com', ''], ['Chanchal', 'chanchal@x.com', ''], ['Souvik', 'souvik@x.com', '']], 'REPLACE', false, 'sent.xlsx');
+    await send([HEAD, ['John Smith', 'john@x.com', '']], 'APPEND', false, 'draft.xlsx');
+    await Invitee.updateOne({ email: 'sayan@x.com' }, { invitationStatus: InvitationStatus.SENT });
+    const header = { total: await Invitee.countDocuments({}), invited: await Invitee.countDocuments({ invitationStatus: { $ne: InvitationStatus.PENDING } }) };
+    expect(header).toEqual({ total: 4, invited: 1 }); // "4 invitees · 1 invited · 3 not yet invited"
+
+    const p = (await send([HEAD, ['New Nia', 'nia@x.com', ''], ['New Ned', 'ned@x.com', '9876500021']], 'REPLACE', true)).body.data.preview;
+    expect(p).toMatchObject({ validNew: 2, wouldSetAside: 1, lockedInvitedKept: 1, lockedNotInvitedKept: 2 });
+    // the invited guest stays: the header's "1 invited"
+    expect(p.lockedInvitedKept).toBe(header.invited);
+    // the header's "3 not yet invited" are exactly the two kept in the sent list plus the one set aside
+    expect(p.lockedNotInvitedKept + p.wouldSetAside).toBe(header.total - header.invited);
+    expect(p.lockedInvitedKept + p.lockedNotInvitedKept + p.wouldSetAside).toBe(header.total);
+  });
+
   it('changes nothing: no guest, list, delivery record or audit entry is written', async () => {
     await seed();
     await quiet();

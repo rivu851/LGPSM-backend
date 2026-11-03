@@ -155,6 +155,19 @@ export class EventService {
     return event;
   }
 
+  // The three numbers on an event's tab strip (sessions, invitees, assigned staff) in one request, instead of three list calls.
+  // Each count matches what the corresponding list reports: the Invitee model already leaves set-aside guests out of counts.
+  async getEventCounts(eventId: string, organizerId: string, role?: Role): Promise<{ sessions: number; invitees: number; assignments: number }> {
+    const event = await findManageableEvent(eventId, organizerId, role);
+    if (!event) throw new Error('EVENT_NOT_FOUND');
+    const [sessions, invitees, assignments] = await Promise.all([
+      Session.countDocuments({ eventId }),
+      Invitee.countDocuments({ eventId }),
+      SystemUserAssignment.countDocuments({ eventId }),
+    ]);
+    return { sessions, invitees, assignments };
+  }
+
   // Read model for detail screens: resolves the related category, subcategory and template for display
   async getEventDetails(eventId: string, organizerId: string, role?: Role) {
     const event = await this.getEventById(eventId, organizerId, role);
