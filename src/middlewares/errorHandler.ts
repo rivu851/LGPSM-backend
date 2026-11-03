@@ -19,7 +19,14 @@ type ErrorLike = {
   issues?: Array<{ path?: PropertyKey[]; message?: string }>;
 };
 
+const DATABASE_OUTAGE_ERRORS = new Set(['MongoServerSelectionError', 'MongooseServerSelectionError', 'MongoNetworkError', 'MongoNetworkTimeoutError', 'MongoNotConnectedError', 'MongoTopologyClosedError', 'MongoWaitQueueTimeoutError']);
+export const isDatabaseOutage = (err: ErrorLike) => DATABASE_OUTAGE_ERRORS.has(String(err.name)) || /buffering timed out/.test(String(err.message));
+
 function resolveStatus(err: ErrorLike): { statusCode: number; message: string; code?: string } {
+  // Nothing was done and the request is safe to repeat: say so, instead of a generic server error
+  if (isDatabaseOutage(err)) {
+    return { statusCode: 503, message: 'The service is temporarily unavailable. Please try again in a moment.', code: 'SERVICE_UNAVAILABLE' };
+  }
   if (err.name === 'CastError') {
     return { statusCode: 400, message: `Invalid ${err.path || 'identifier'} format` };
   }
@@ -63,6 +70,7 @@ function resolveStatus(err: ErrorLike): { statusCode: number; message: string; c
     return {
       statusCode: status,
       message: status < 500 || err.exposeMessage ? err.message || 'Request failed' : 'Internal Server Error',
+      ...(typeof err.code === 'string' && /^[A-Z][A-Z0-9_]*$/.test(err.code) ? { code: err.code } : {}),
     };
   }
 

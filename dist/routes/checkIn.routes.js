@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.eventCheckInRoutes = exports.checkInRoutes = void 0;
 const auditAction_1 = require("../middlewares/auditAction");
+const rateLimiter_1 = require("../middlewares/rateLimiter");
 const express_1 = require("express");
 const checkIn_controller_1 = require("../controllers/checkIn.controller");
 const authenticate_1 = require("../middlewares/authenticate");
@@ -20,8 +21,8 @@ const validate = (schema) => (req, res, next) => {
 };
 exports.checkInRoutes = (0, express_1.Router)();
 exports.checkInRoutes.use(authenticate_1.authenticate);
-exports.checkInRoutes.post('/scan', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER, User_1.Role.ADMIN), validate(checkIn_validator_1.scanCheckInSchema), (0, auditAction_1.auditAction)({ action: 'CHECKIN_SCAN', entityType: 'CheckIn' }), checkIn_controller_1.checkInController.scanCheckIn);
-exports.checkInRoutes.post('/manual', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER, User_1.Role.ADMIN), validate(checkIn_validator_1.manualCheckInSchema), (0, auditAction_1.auditAction)({ action: 'CHECKIN_MANUAL', entityType: 'CheckIn' }), checkIn_controller_1.checkInController.manualCheckIn);
+exports.checkInRoutes.post('/scan', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER, User_1.Role.ADMIN), rateLimiter_1.checkInLimiter, validate(checkIn_validator_1.scanCheckInSchema), (0, auditAction_1.auditAction)({ action: 'CHECKIN_SCAN', entityType: 'CheckIn' }), checkIn_controller_1.checkInController.scanCheckIn);
+exports.checkInRoutes.post('/manual', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER, User_1.Role.ADMIN), rateLimiter_1.checkInLimiter, validate(checkIn_validator_1.manualCheckInSchema), (0, auditAction_1.auditAction)({ action: 'CHECKIN_MANUAL', entityType: 'CheckIn' }), checkIn_controller_1.checkInController.manualCheckIn);
 exports.eventCheckInRoutes = (0, express_1.Router)({ mergeParams: true });
 exports.eventCheckInRoutes.use(authenticate_1.authenticate);
 exports.eventCheckInRoutes.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER, User_1.Role.ADMIN), checkIn_controller_1.checkInController.getCheckIns);

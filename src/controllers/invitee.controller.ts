@@ -4,6 +4,7 @@ import { passNoticeService } from '../services/passNotice.service';
 import { inviteeService } from '../services/invitee.service';
 import { inviteeSetService } from '../services/inviteeSet.service';
 import { ImportMode } from '../models/InviteeSet';
+import { queryObjectId, queryString } from '../utils/query';
 
 const CREDENTIAL_REFUSALS: Record<string, { status: number; message: string }> = {
   INVITEE_NOT_FOUND: { status: 404, message: 'Guest not found or inaccessible' },
@@ -130,19 +131,19 @@ export const inviteeController = {
       const page = Math.max(parseInt(req.query.page as string) || 1, 1);
       const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 100);
 
-      const checkInStatusParam = req.query.checkInStatus as string | undefined;
+      const checkInStatusParam = queryString(req.query.checkInStatus);
       const checkInStatus: 'CHECKED_IN' | 'PENDING' | undefined =
         checkInStatusParam === 'CHECKED_IN' || checkInStatusParam === 'PENDING' ? checkInStatusParam : undefined;
 
       const options = {
         page,
         limit,
-        rsvpStatus: req.query.rsvpStatus as string,
-        invitationStatus: req.query.invitationStatus as string,
-        search: req.query.search as string,
-        sessionId: req.query.sessionId as string | undefined,
+        rsvpStatus: queryString(req.query.rsvpStatus),
+        invitationStatus: queryString(req.query.invitationStatus),
+        search: queryString(req.query.search)?.slice(0, 100),
+        sessionId: queryObjectId(req.query.sessionId, 'sessionId'),
         checkInStatus,
-        sessionAccessId: req.query.sessionAccessId as string | undefined,
+        sessionAccessId: queryObjectId(req.query.sessionAccessId, 'sessionAccessId'),
         invitation: req.query.invitation === 'SENT' || req.query.invitation === 'NOT_SENT' ? (req.query.invitation as 'SENT' | 'NOT_SENT') : undefined,
       };
 
@@ -271,7 +272,7 @@ export const inviteeController = {
         return;
       }
 
-      const rawSessionId = (req.body?.sessionId || req.query.sessionId || '') as string;
+      const rawSessionId = String(req.body?.sessionId || queryString(req.query.sessionId) || '');
       if (rawSessionId && !/^[0-9a-fA-F]{24}$/.test(rawSessionId)) {
         res.status(400).json({ success: false, message: 'Invalid sessionId format' });
         return;

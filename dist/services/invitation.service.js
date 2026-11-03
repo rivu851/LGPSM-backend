@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.invitationService = exports.SKIPPED_PASS_REVOKED = exports.SKIPPED_EVENT_CANCELLED = exports.SKIPPED_ALREADY_INVITED = exports.SKIPPED_NO_CONTACT = void 0;
+exports.invitationService = exports.SKIPPED_IN_PROGRESS = exports.SKIPPED_PASS_REVOKED = exports.SKIPPED_EVENT_CANCELLED = exports.SKIPPED_ALREADY_INVITED = exports.SKIPPED_NO_CONTACT = void 0;
 exports.channelsForInvitee = channelsForInvitee;
 const invitationContent_1 = require("../utils/invitationContent");
 const alert_service_1 = require("./alert.service");
@@ -27,8 +27,19 @@ const concurrency_1 = require("../utils/concurrency");
 const context_1 = require("./cardTemplates/context");
 const cardInfo_1 = require("../utils/cardInfo");
 const resolveImageBase64_1 = require("../utils/resolveImageBase64");
+const html_1 = require("../utils/html");
+const inviteeClaim_1 = require("../utils/inviteeClaim");
+const admissionWindow_1 = require("../utils/admissionWindow");
 function buildFormalInvitationEmailHTML(params) {
-    const { eventTitle, inviteeName, eventDate, eventTime, venue, dietaryPreference, invitationUrl, cid, cardCid, isReminder } = params;
+    const { cid, cardCid, isReminder } = params;
+    // Every value below was typed by someone (an organizer, a spreadsheet, a guest); none of it may reach the guest's mail client as markup
+    const eventTitle = (0, html_1.escapeHtml)(params.eventTitle);
+    const inviteeName = (0, html_1.escapeHtml)(params.inviteeName);
+    const eventDate = (0, html_1.escapeHtml)(params.eventDate);
+    const eventTime = (0, html_1.escapeHtml)(params.eventTime);
+    const venue = (0, html_1.escapeHtml)(params.venue);
+    const dietaryPreference = params.dietaryPreference ? (0, html_1.escapeHtml)(params.dietaryPreference) : undefined;
+    const invitationUrl = (0, html_1.escapeHtml)(params.invitationUrl);
     return `
     <!DOCTYPE html>
     <html>
@@ -154,11 +165,17 @@ exports.SKIPPED_NO_CONTACT = 'No email address or WhatsApp number';
 exports.SKIPPED_ALREADY_INVITED = 'Already invited';
 exports.SKIPPED_EVENT_CANCELLED = 'The event was cancelled';
 exports.SKIPPED_PASS_REVOKED = 'Pass revoked: use Replace Access Pass';
+exports.SKIPPED_IN_PROGRESS = 'A delivery to this guest is already in progress';
+/** No pass is issued for an event that is over: it could not be used, and it is a message about the past. */
+function assertEventCanIssue(event) {
+    if (event.status === Event_1.EventStatus.CANCELLED)
+        throw new Error('EVENT_CANCELLED');
+    const window = (0, admissionWindow_1.effectiveAdmission)(event);
+    if (event.status === Event_1.EventStatus.COMPLETED || (window && (0, admissionWindow_1.admissionState)(window, new Date()) === 'CLOSED'))
+        throw new Error('EVENT_ENDED');
+}
 /** Read fresh on every use: a cancellation can land while a long send is running. */
 const eventIsCancelled = async (eventId) => !!(await Event_1.Event.exists({ _id: eventId, status: Event_1.EventStatus.CANCELLED }));
-// Guests whose invitation is being prepared right now (this process). A double click or two tabs sending the same
-// guest at the same moment would otherwise both pass the "not invited yet" check and deliver twice.
-const sendingNow = new Set();
 /**
  * Channels to attempt for one guest. EMAIL or WHATSAPP is an explicit request, so a missing contact is a real
  * failure. BOTH ("All") uses whichever of the guest's contacts are usable; a guest with neither is skipped before
@@ -248,9 +265,8 @@ exports.invitationService = {
         }
         if (!event)
             throw new Error('EVENT_NOT_FOUND');
-        // A cancelled event never issues, sends or re-sends an invitation (and so never mints a pass that could be scanned)
-        if (event.status === Event_1.EventStatus.CANCELLED)
-            throw new Error('EVENT_CANCELLED');
+        // A cancelled or finished event never issues, sends or re-sends an invitation (and so never mints a pass that could be scanned)
+        assertEventCanIssue(event);
         // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
         const cardContext = await (0, context_1.loadCardContext)(event);
         const cardDesign = cardContext.cardDesign;
@@ -480,16 +496,23 @@ exports.invitationService = {
             };
         };
         const outcomes = await (0, concurrency_1.mapLimit)(invitees, sendConcurrency(), async (invitee) => {
-            const claimKey = `${eventId}:${invitee._id}`;
-            if (alreadySent.has(String(invitee._id)) || invitee.invitationStatus === Invitee_1.InvitationStatus.SENT || sendingNow.has(claimKey)) {
-                return { inviteeId: invitee._id, inviteeName: invitee.name, inviteeMobile: invitee.mobile, status: 'SKIPPED', failureReason: exports.SKIPPED_ALREADY_INVITED };
-            }
-            sendingNow.add(claimKey);
+            const skipped = (failureReason) => ({ inviteeId: invitee._id, inviteeName: invitee.name, inviteeMobile: invitee.mobile, status: 'SKIPPED', failureReason });
+            if (alreadySent.has(String(invitee._id)) || invitee.invitationStatus === Invitee_1.InvitationStatus.SENT)
+                return skipped(exports.SKIPPED_ALREADY_INVITED);
+            // A double click or two tabs sending the same guest: the claim is on the guest's record, so it holds across backend instances
+            if (!(await (0, inviteeClaim_1.claimInviteeForIssue)(invitee._id)))
+                return skipped(exports.SKIPPED_ALREADY_INVITED);
             try {
-                return await deliverToInvitee(invitee);
+                // What was read before the claim may be out of date: another request may have finished delivering in between
+                const current = await Invitee_1.Invitee.findById(invitee._id).select('+qrTokenCipher +invitationTokenCipher');
+                if (!current)
+                    return skipped(exports.SKIPPED_NO_CONTACT);
+                if (current.invitationStatus === Invitee_1.InvitationStatus.SENT)
+                    return skipped(exports.SKIPPED_ALREADY_INVITED);
+                return await deliverToInvitee(current);
             }
             finally {
-                sendingNow.delete(claimKey);
+                await (0, inviteeClaim_1.releaseInviteeClaim)(invitee._id).catch((e) => console.error('Delivery claim release failed:', e?.message));
             }
         });
         results.push(...outcomes);
@@ -520,9 +543,8 @@ exports.invitationService = {
         }
         if (!event)
             throw new Error('EVENT_NOT_FOUND');
-        // A cancelled event never issues, sends or re-sends an invitation (and so never mints a pass that could be scanned)
-        if (event.status === Event_1.EventStatus.CANCELLED)
-            throw new Error('EVENT_CANCELLED');
+        // A cancelled or finished event never issues, sends or re-sends an invitation (and so never mints a pass that could be scanned)
+        assertEventCanIssue(event);
         // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
         const cardContext = await (0, context_1.loadCardContext)(event);
         const cardDesign = cardContext.cardDesign;
@@ -542,196 +564,205 @@ exports.invitationService = {
         const results = [];
         const outcomes = await (0, concurrency_1.mapLimit)(invitations, sendConcurrency(), async (invitation) => {
             const invitee = invitation.inviteeId;
-            if (!invitee) {
-                invitation.status = Invitation_1.InvitationDeliveryStatus.FAILED;
-                invitation.failureReason = 'INVITEE_DELETED';
-                await invitation.save();
-                return { invitationId: invitation._id, status: 'FAILED', failureReason: 'INVITEE_DELETED' };
+            if (invitee && !(await (0, inviteeClaim_1.claimInviteeForIssue)(invitee._id))) {
+                return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: exports.SKIPPED_IN_PROGRESS };
             }
-            if (await eventIsCancelled(eventId)) {
-                return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: exports.SKIPPED_EVENT_CANCELLED };
-            }
-            // A revoked pass is not re-sent: that would deliver a pass that does not work. Replacing it is a deliberate, recorded action.
-            if (invitee.credentialRevokedAt) {
-                return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: exports.SKIPPED_PASS_REVOKED };
-            }
-            const activeChannel = (channelOverride || invitation.channel);
-            const use = channelsForInvitee(activeChannel, invitee);
-            if (!use.email && !use.whatsapp) {
-                // Nothing usable: the guest's current pass and delivery record stay as they are
-                return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: exports.SKIPPED_NO_CONTACT };
-            }
-            // A re-send mints a new ADMISSION credential (the QR already delivered stops working); the invitation link is unchanged
-            const rawToken = (0, invitation_util_1.generateSecureToken)();
-            const tokenHash = (0, invitation_util_1.hashToken)(rawToken);
-            const invitationToken = (0, credentialTokens_1.planInvitationToken)(invitee);
-            const invitationUrl = (0, qrPayload_1.invitationUrlFor)(invitationToken.raw);
-            const qrDataUrl = await (0, qr_util_1.generateQRCodeDataURL)((0, qrPayload_1.admissionPayloadFor)(rawToken));
-            const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '');
-            const qrBuffer = Buffer.from(base64Data, 'base64');
-            const resendInvitation = new Invitation_1.Invitation({
-                eventId,
-                inviteeId: invitee._id,
-                channel: activeChannel,
-                status: Invitation_1.InvitationDeliveryStatus.PENDING,
-                tokenHash
-            });
-            const shouldSendEmail = use.email;
-            const shouldSendWhatsApp = use.whatsapp;
-            let emailSuccess = false;
-            let whatsappSuccess = false;
-            let emailErrReason = '';
-            let whatsappErrReason = '';
-            // Event/session details for this invitee, rendered in the platform time zone
-            const { eventDate, dayOfWeek, eventTime, venue, locationSub, sessions: assignedSessions } = (0, invitationContent_1.buildInvitationContent)(event, allSessions, invitee);
-            // Render canonical personalized invitation card PNG
-            let cardBuffer;
             try {
-                cardBuffer = await invitationCard_service_1.invitationCardService.generateInvitationCardPNG({
-                    invitee: { id: invitee._id.toString(), ...(0, cardInfo_1.cardGuestLines)(invitee, event.cardInfo) },
-                    event: {
-                        id: event._id.toString(),
-                        title: event.title,
-                        date: eventDate,
-                        dayOfWeek,
-                        startTime: eventTime,
-                        timeSub: 'ONWARDS',
-                        venue,
-                        locationSub,
-                        photoBase64: eventPhotoBase64,
-                        startIso: event.schedule?.start,
-                        endIso: event.schedule?.end,
-                        categoryName: cardContext.categoryName,
-                        subcategoryName: cardContext.subcategoryName,
-                        isVirtual: event.format === 'VIRTUAL',
-                        description: event.description,
-                        organizerName: cardContext.organizerName
-                    },
-                    sessions: assignedSessions,
-                    qrDataUrl,
-                    invitationUrl: (0, qrPayload_1.admissionPayloadFor)(rawToken), // the card's QR (fallback) is always the admission credential
-                    cardDesign,
-                    designSpec: cardContext.designSpec
+                if (!invitee) {
+                    invitation.status = Invitation_1.InvitationDeliveryStatus.FAILED;
+                    invitation.failureReason = 'INVITEE_DELETED';
+                    await invitation.save();
+                    return { invitationId: invitation._id, status: 'FAILED', failureReason: 'INVITEE_DELETED' };
+                }
+                if (await eventIsCancelled(eventId)) {
+                    return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: exports.SKIPPED_EVENT_CANCELLED };
+                }
+                // A revoked pass is not re-sent: that would deliver a pass that does not work. Replacing it is a deliberate, recorded action.
+                if (invitee.credentialRevokedAt) {
+                    return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: exports.SKIPPED_PASS_REVOKED };
+                }
+                const activeChannel = (channelOverride || invitation.channel);
+                const use = channelsForInvitee(activeChannel, invitee);
+                if (!use.email && !use.whatsapp) {
+                    // Nothing usable: the guest's current pass and delivery record stay as they are
+                    return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: exports.SKIPPED_NO_CONTACT };
+                }
+                // A re-send mints a new ADMISSION credential (the QR already delivered stops working); the invitation link is unchanged
+                const rawToken = (0, invitation_util_1.generateSecureToken)();
+                const tokenHash = (0, invitation_util_1.hashToken)(rawToken);
+                const invitationToken = (0, credentialTokens_1.planInvitationToken)(invitee);
+                const invitationUrl = (0, qrPayload_1.invitationUrlFor)(invitationToken.raw);
+                const qrDataUrl = await (0, qr_util_1.generateQRCodeDataURL)((0, qrPayload_1.admissionPayloadFor)(rawToken));
+                const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '');
+                const qrBuffer = Buffer.from(base64Data, 'base64');
+                const resendInvitation = new Invitation_1.Invitation({
+                    eventId,
+                    inviteeId: invitee._id,
+                    channel: activeChannel,
+                    status: Invitation_1.InvitationDeliveryStatus.PENDING,
+                    tokenHash
                 });
-            }
-            catch (err) {
-                console.error('Failed to generate high-resolution invitation card PNG for resend:', err);
-                cardBuffer = qrBuffer;
-            }
-            if (shouldSendEmail && !(await eventIsCancelled(eventId))) {
+                const shouldSendEmail = use.email;
+                const shouldSendWhatsApp = use.whatsapp;
+                let emailSuccess = false;
+                let whatsappSuccess = false;
+                let emailErrReason = '';
+                let whatsappErrReason = '';
+                // Event/session details for this invitee, rendered in the platform time zone
+                const { eventDate, dayOfWeek, eventTime, venue, locationSub, sessions: assignedSessions } = (0, invitationContent_1.buildInvitationContent)(event, allSessions, invitee);
+                // Render canonical personalized invitation card PNG
+                let cardBuffer;
                 try {
-                    if (!invitee.email)
-                        throw new Error('MISSING_EMAIL');
-                    const cid = `invitation-qr-${invitee._id}`;
-                    const cardCid = `invitation-card-${invitee._id}`;
-                    const htmlContent = buildFormalInvitationEmailHTML({
-                        eventTitle: event.title,
-                        inviteeName: invitee.name,
-                        eventDate,
-                        eventTime,
-                        venue,
-                        dietaryPreference: invitee.dietaryPreference,
-                        invitationUrl,
-                        cid,
-                        cardCid,
-                        isReminder: true,
-                    });
-                    const attachments = [
-                        {
-                            filename: 'invitation-card.png',
-                            content: cardBuffer,
-                            cid: cardCid,
-                            contentType: 'image/png'
+                    cardBuffer = await invitationCard_service_1.invitationCardService.generateInvitationCardPNG({
+                        invitee: { id: invitee._id.toString(), ...(0, cardInfo_1.cardGuestLines)(invitee, event.cardInfo) },
+                        event: {
+                            id: event._id.toString(),
+                            title: event.title,
+                            date: eventDate,
+                            dayOfWeek,
+                            startTime: eventTime,
+                            timeSub: 'ONWARDS',
+                            venue,
+                            locationSub,
+                            photoBase64: eventPhotoBase64,
+                            startIso: event.schedule?.start,
+                            endIso: event.schedule?.end,
+                            categoryName: cardContext.categoryName,
+                            subcategoryName: cardContext.subcategoryName,
+                            isVirtual: event.format === 'VIRTUAL',
+                            description: event.description,
+                            organizerName: cardContext.organizerName
                         },
-                        {
-                            filename: 'invitation-qr.png',
-                            content: qrBuffer,
-                            cid,
-                            contentType: 'image/png'
-                        }
-                    ];
-                    await (0, email_provider_1.sendEmail)(invitee.email, `Reminder: ${event.title}`, htmlContent, attachments);
-                    emailSuccess = true;
-                    resendInvitation.emailStatus = Invitation_1.InvitationDeliveryStatus.SENT;
-                    resendInvitation.emailFailureReason = undefined;
-                }
-                catch (err) {
-                    emailSuccess = false;
-                    emailErrReason = err.message === 'PROVIDER_NOT_CONFIGURED' ? 'Email provider not configured' : err.message;
-                    resendInvitation.emailStatus = Invitation_1.InvitationDeliveryStatus.FAILED;
-                    resendInvitation.emailFailureReason = emailErrReason;
-                }
-            }
-            if (shouldSendWhatsApp && !(await eventIsCancelled(eventId))) {
-                try {
-                    if (!invitee.mobile)
-                        throw new Error('MISSING_MOBILE');
-                    const { messageId } = await whatsapp_service_1.whatsappService.sendInvitationWhatsApp({
-                        recipientPhone: invitee.mobile,
-                        qrBuffer: cardBuffer,
-                        inviteeName: invitee.name,
-                        eventTitle: event.title,
-                        eventDate,
-                        eventTime,
-                        venue
+                        sessions: assignedSessions,
+                        qrDataUrl,
+                        invitationUrl: (0, qrPayload_1.admissionPayloadFor)(rawToken), // the card's QR (fallback) is always the admission credential
+                        cardDesign,
+                        designSpec: cardContext.designSpec
                     });
-                    whatsappSuccess = true;
-                    resendInvitation.whatsappStatus = Invitation_1.InvitationDeliveryStatus.SENT;
-                    resendInvitation.whatsappMessageId = messageId;
-                    resendInvitation.whatsappFailureReason = undefined;
                 }
                 catch (err) {
-                    whatsappSuccess = false;
-                    whatsappErrReason = (0, whatsapp_service_1.describeWhatsAppError)(err.message);
-                    resendInvitation.whatsappStatus = Invitation_1.InvitationDeliveryStatus.FAILED;
-                    resendInvitation.whatsappFailureReason = whatsappErrReason;
+                    console.error('Failed to generate high-resolution invitation card PNG for resend:', err);
+                    cardBuffer = qrBuffer;
                 }
-            }
-            const anySuccess = (shouldSendEmail && emailSuccess) || (shouldSendWhatsApp && whatsappSuccess);
-            if (anySuccess) {
-                resendInvitation.status = Invitation_1.InvitationDeliveryStatus.SENT;
-                resendInvitation.sentAt = new Date();
-                resendInvitation.failureReason = undefined;
-                invitee.qrTokenHash = tokenHash;
-                invitee.qrTokenCipher = (0, tokenCipher_1.encryptToken)(rawToken);
-                if (invitationToken.persist) {
-                    invitee.invitationTokenHash = invitationToken.hash;
-                    invitee.invitationTokenCipher = invitationToken.cipher;
+                if (shouldSendEmail && !(await eventIsCancelled(eventId))) {
+                    try {
+                        if (!invitee.email)
+                            throw new Error('MISSING_EMAIL');
+                        const cid = `invitation-qr-${invitee._id}`;
+                        const cardCid = `invitation-card-${invitee._id}`;
+                        const htmlContent = buildFormalInvitationEmailHTML({
+                            eventTitle: event.title,
+                            inviteeName: invitee.name,
+                            eventDate,
+                            eventTime,
+                            venue,
+                            dietaryPreference: invitee.dietaryPreference,
+                            invitationUrl,
+                            cid,
+                            cardCid,
+                            isReminder: true,
+                        });
+                        const attachments = [
+                            {
+                                filename: 'invitation-card.png',
+                                content: cardBuffer,
+                                cid: cardCid,
+                                contentType: 'image/png'
+                            },
+                            {
+                                filename: 'invitation-qr.png',
+                                content: qrBuffer,
+                                cid,
+                                contentType: 'image/png'
+                            }
+                        ];
+                        await (0, email_provider_1.sendEmail)(invitee.email, `Reminder: ${event.title}`, htmlContent, attachments);
+                        emailSuccess = true;
+                        resendInvitation.emailStatus = Invitation_1.InvitationDeliveryStatus.SENT;
+                        resendInvitation.emailFailureReason = undefined;
+                    }
+                    catch (err) {
+                        emailSuccess = false;
+                        emailErrReason = err.message === 'PROVIDER_NOT_CONFIGURED' ? 'Email provider not configured' : err.message;
+                        resendInvitation.emailStatus = Invitation_1.InvitationDeliveryStatus.FAILED;
+                        resendInvitation.emailFailureReason = emailErrReason;
+                    }
                 }
-                invitee.invitationStatus = Invitee_1.InvitationStatus.SENT;
+                if (shouldSendWhatsApp && !(await eventIsCancelled(eventId))) {
+                    try {
+                        if (!invitee.mobile)
+                            throw new Error('MISSING_MOBILE');
+                        const { messageId } = await whatsapp_service_1.whatsappService.sendInvitationWhatsApp({
+                            recipientPhone: invitee.mobile,
+                            qrBuffer: cardBuffer,
+                            inviteeName: invitee.name,
+                            eventTitle: event.title,
+                            eventDate,
+                            eventTime,
+                            venue
+                        });
+                        whatsappSuccess = true;
+                        resendInvitation.whatsappStatus = Invitation_1.InvitationDeliveryStatus.SENT;
+                        resendInvitation.whatsappMessageId = messageId;
+                        resendInvitation.whatsappFailureReason = undefined;
+                    }
+                    catch (err) {
+                        whatsappSuccess = false;
+                        whatsappErrReason = (0, whatsapp_service_1.describeWhatsAppError)(err.message);
+                        resendInvitation.whatsappStatus = Invitation_1.InvitationDeliveryStatus.FAILED;
+                        resendInvitation.whatsappFailureReason = whatsappErrReason;
+                    }
+                }
+                const anySuccess = (shouldSendEmail && emailSuccess) || (shouldSendWhatsApp && whatsappSuccess);
+                if (anySuccess) {
+                    resendInvitation.status = Invitation_1.InvitationDeliveryStatus.SENT;
+                    resendInvitation.sentAt = new Date();
+                    resendInvitation.failureReason = undefined;
+                    invitee.qrTokenHash = tokenHash;
+                    invitee.qrTokenCipher = (0, tokenCipher_1.encryptToken)(rawToken);
+                    if (invitationToken.persist) {
+                        invitee.invitationTokenHash = invitationToken.hash;
+                        invitee.invitationTokenCipher = invitationToken.cipher;
+                    }
+                    invitee.invitationStatus = Invitee_1.InvitationStatus.SENT;
+                }
+                else {
+                    resendInvitation.status = Invitation_1.InvitationDeliveryStatus.FAILED;
+                    const failures = [];
+                    if (shouldSendEmail && emailErrReason)
+                        failures.push(`Email: ${emailErrReason}`);
+                    if (shouldSendWhatsApp && whatsappErrReason)
+                        failures.push(`WhatsApp: ${whatsappErrReason}`);
+                    resendInvitation.failureReason = failures.join(' | ') || 'Delivery failed';
+                }
+                await resendInvitation.save();
+                await invitee.save();
+                if (resendInvitation.status === Invitation_1.InvitationDeliveryStatus.SENT) {
+                    await credential_service_1.credentialService.recordIssuance({ invitee, tokenHash, source: 'RESEND', actorId: organizerId, actorRole: userRole || 'ORGANIZER', organizerId: event.organizerId }).catch((e) => console.error('Credential history not recorded:', e?.message));
+                }
+                if (resendInvitation.status === Invitation_1.InvitationDeliveryStatus.SENT && (await eventIsCancelled(eventId))) {
+                    await cancellationNotice_service_1.cancellationNoticeService.enqueueLateInvitee(eventId, invitee._id).catch((e) => console.error('Late cancellation notice failed:', e?.message));
+                }
+                const cleanMobile = invitee.mobile ? whatsapp_service_1.whatsappService.normalizePhoneNumber(invitee.mobile) : '';
+                const waText = `Dear ${invitee.name},\n\nYou are cordially invited to ${event.title}!\n\n📅 Date: ${eventDate}\n⏰ Time: ${eventTime}\n📍 Venue: ${venue}\n\nView your official Invitation Pass & QR Code here:\n${invitationUrl}\n\nWe look forward to seeing you!`;
+                const whatsappWebUrl = cleanMobile ? `https://api.whatsapp.com/send?phone=${cleanMobile}&text=${encodeURIComponent(waText)}` : undefined;
+                return {
+                    invitationId: resendInvitation._id,
+                    inviteeId: invitee._id,
+                    inviteeName: invitee.name,
+                    inviteeMobile: invitee.mobile,
+                    status: resendInvitation.status,
+                    emailStatus: resendInvitation.emailStatus,
+                    whatsappStatus: resendInvitation.whatsappStatus,
+                    whatsappMessageId: resendInvitation.whatsappMessageId,
+                    failureReason: resendInvitation.failureReason,
+                    whatsappWebUrl,
+                };
             }
-            else {
-                resendInvitation.status = Invitation_1.InvitationDeliveryStatus.FAILED;
-                const failures = [];
-                if (shouldSendEmail && emailErrReason)
-                    failures.push(`Email: ${emailErrReason}`);
-                if (shouldSendWhatsApp && whatsappErrReason)
-                    failures.push(`WhatsApp: ${whatsappErrReason}`);
-                resendInvitation.failureReason = failures.join(' | ') || 'Delivery failed';
+            finally {
+                if (invitee)
+                    await (0, inviteeClaim_1.releaseInviteeClaim)(invitee._id).catch((e) => console.error('Delivery claim release failed:', e?.message));
             }
-            await resendInvitation.save();
-            await invitee.save();
-            if (resendInvitation.status === Invitation_1.InvitationDeliveryStatus.SENT) {
-                await credential_service_1.credentialService.recordIssuance({ invitee, tokenHash, source: 'RESEND', actorId: organizerId, actorRole: userRole || 'ORGANIZER', organizerId: event.organizerId }).catch((e) => console.error('Credential history not recorded:', e?.message));
-            }
-            if (resendInvitation.status === Invitation_1.InvitationDeliveryStatus.SENT && (await eventIsCancelled(eventId))) {
-                await cancellationNotice_service_1.cancellationNoticeService.enqueueLateInvitee(eventId, invitee._id).catch((e) => console.error('Late cancellation notice failed:', e?.message));
-            }
-            const cleanMobile = invitee.mobile ? whatsapp_service_1.whatsappService.normalizePhoneNumber(invitee.mobile) : '';
-            const waText = `Dear ${invitee.name},\n\nYou are cordially invited to ${event.title}!\n\n📅 Date: ${eventDate}\n⏰ Time: ${eventTime}\n📍 Venue: ${venue}\n\nView your official Invitation Pass & QR Code here:\n${invitationUrl}\n\nWe look forward to seeing you!`;
-            const whatsappWebUrl = cleanMobile ? `https://api.whatsapp.com/send?phone=${cleanMobile}&text=${encodeURIComponent(waText)}` : undefined;
-            return {
-                invitationId: resendInvitation._id,
-                inviteeId: invitee._id,
-                inviteeName: invitee.name,
-                inviteeMobile: invitee.mobile,
-                status: resendInvitation.status,
-                emailStatus: resendInvitation.emailStatus,
-                whatsappStatus: resendInvitation.whatsappStatus,
-                whatsappMessageId: resendInvitation.whatsappMessageId,
-                failureReason: resendInvitation.failureReason,
-                whatsappWebUrl,
-            };
         });
         results.push(...outcomes);
         const failedCount = results.filter((r) => r.status === 'FAILED').length;
@@ -761,11 +792,12 @@ exports.invitationService = {
         }
         if (!event)
             throw new Error('EVENT_NOT_FOUND');
-        const skip = (page - 1) * limit;
+        const safePage = Math.max(page, 1), safeLimit = Math.min(Math.max(limit, 1), 200);
+        const skip = (safePage - 1) * safeLimit;
         const invitations = await Invitation_1.Invitation.find({ eventId })
             .populate('inviteeId', 'name email mobile invitationStatus rsvpStatus')
             .skip(skip)
-            .limit(limit)
+            .limit(safeLimit)
             .sort({ createdAt: -1 })
             .lean();
         // Strip tokenHash from response for security
@@ -777,8 +809,8 @@ exports.invitationService = {
         return {
             invitations: secureInvitations,
             total,
-            page,
-            totalPages: Math.ceil(total / limit)
+            page: safePage,
+            totalPages: Math.ceil(total / safeLimit)
         };
     },
     // Hides the event's delivery history. Records are kept: Resend addresses them by id and check-in uses them to

@@ -21,6 +21,9 @@ import { mapLimit } from '../utils/concurrency';
 import { loadCardContext } from './cardTemplates/context';
 import { cardGuestLines } from '../utils/cardInfo';
 import { resolveImageKeyBase64 } from '../utils/resolveImageBase64';
+import { escapeHtml } from '../utils/html';
+import { claimInviteeForIssue, releaseInviteeClaim } from '../utils/inviteeClaim';
+import { admissionState, effectiveAdmission } from '../utils/admissionWindow';
 
 function buildFormalInvitationEmailHTML(params: {
   eventTitle: string;
@@ -34,7 +37,15 @@ function buildFormalInvitationEmailHTML(params: {
   cardCid?: string;
   isReminder?: boolean;
 }): string {
-  const { eventTitle, inviteeName, eventDate, eventTime, venue, dietaryPreference, invitationUrl, cid, cardCid, isReminder } = params;
+  const { cid, cardCid, isReminder } = params;
+  // Every value below was typed by someone (an organizer, a spreadsheet, a guest); none of it may reach the guest's mail client as markup
+  const eventTitle = escapeHtml(params.eventTitle);
+  const inviteeName = escapeHtml(params.inviteeName);
+  const eventDate = escapeHtml(params.eventDate);
+  const eventTime = escapeHtml(params.eventTime);
+  const venue = escapeHtml(params.venue);
+  const dietaryPreference = params.dietaryPreference ? escapeHtml(params.dietaryPreference) : undefined;
+  const invitationUrl = escapeHtml(params.invitationUrl);
   
   return `
     <!DOCTYPE html>
@@ -164,12 +175,17 @@ export const SKIPPED_ALREADY_INVITED = 'Already invited';
 export const SKIPPED_EVENT_CANCELLED = 'The event was cancelled';
 export const SKIPPED_PASS_REVOKED = 'Pass revoked: use Replace Access Pass';
 
+export const SKIPPED_IN_PROGRESS = 'A delivery to this guest is already in progress';
+
+/** No pass is issued for an event that is over: it could not be used, and it is a message about the past. */
+function assertEventCanIssue(event: any) {
+  if (event.status === EventStatus.CANCELLED) throw new Error('EVENT_CANCELLED');
+  const window = effectiveAdmission(event);
+  if (event.status === EventStatus.COMPLETED || (window && admissionState(window, new Date()) === 'CLOSED')) throw new Error('EVENT_ENDED');
+}
+
 /** Read fresh on every use: a cancellation can land while a long send is running. */
 const eventIsCancelled = async (eventId: unknown) => !!(await Event.exists({ _id: eventId as any, status: EventStatus.CANCELLED }));
-
-// Guests whose invitation is being prepared right now (this process). A double click or two tabs sending the same
-// guest at the same moment would otherwise both pass the "not invited yet" check and deliver twice.
-const sendingNow = new Set<string>();
 
 /**
  * Channels to attempt for one guest. EMAIL or WHATSAPP is an explicit request, so a missing contact is a real
@@ -259,8 +275,8 @@ export const invitationService = {
       event = await Event.findOne({ _id: eventId, organizerId });
     }
     if (!event) throw new Error('EVENT_NOT_FOUND');
-    // A cancelled event never issues, sends or re-sends an invitation (and so never mints a pass that could be scanned)
-    if (event.status === EventStatus.CANCELLED) throw new Error('EVENT_CANCELLED');
+    // A cancelled or finished event never issues, sends or re-sends an invitation (and so never mints a pass that could be scanned)
+    assertEventCanIssue(event);
 
     // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
     const cardContext = await loadCardContext(event);
@@ -508,15 +524,18 @@ export const invitationService = {
     };
 
     const outcomes = await mapLimit(invitees, sendConcurrency(), async (invitee) => {
-      const claimKey = `${eventId}:${invitee._id}`;
-      if (alreadySent.has(String(invitee._id)) || invitee.invitationStatus === InvitationStatus.SENT || sendingNow.has(claimKey)) {
-        return { inviteeId: invitee._id, inviteeName: invitee.name, inviteeMobile: invitee.mobile, status: 'SKIPPED', failureReason: SKIPPED_ALREADY_INVITED } as any;
-      }
-      sendingNow.add(claimKey);
+      const skipped = (failureReason: string) => ({ inviteeId: invitee._id, inviteeName: invitee.name, inviteeMobile: invitee.mobile, status: 'SKIPPED', failureReason }) as any;
+      if (alreadySent.has(String(invitee._id)) || invitee.invitationStatus === InvitationStatus.SENT) return skipped(SKIPPED_ALREADY_INVITED);
+      // A double click or two tabs sending the same guest: the claim is on the guest's record, so it holds across backend instances
+      if (!(await claimInviteeForIssue(invitee._id))) return skipped(SKIPPED_ALREADY_INVITED);
       try {
-        return await deliverToInvitee(invitee);
+        // What was read before the claim may be out of date: another request may have finished delivering in between
+        const current: any = await Invitee.findById(invitee._id).select('+qrTokenCipher +invitationTokenCipher');
+        if (!current) return skipped(SKIPPED_NO_CONTACT);
+        if (current.invitationStatus === InvitationStatus.SENT) return skipped(SKIPPED_ALREADY_INVITED);
+        return await deliverToInvitee(current);
       } finally {
-        sendingNow.delete(claimKey);
+        await releaseInviteeClaim(invitee._id).catch((e) => console.error('Delivery claim release failed:', e?.message));
       }
     });
     results.push(...outcomes);
@@ -548,8 +567,8 @@ export const invitationService = {
       event = await Event.findOne({ _id: eventId, organizerId });
     }
     if (!event) throw new Error('EVENT_NOT_FOUND');
-    // A cancelled event never issues, sends or re-sends an invitation (and so never mints a pass that could be scanned)
-    if (event.status === EventStatus.CANCELLED) throw new Error('EVENT_CANCELLED');
+    // A cancelled or finished event never issues, sends or re-sends an invitation (and so never mints a pass that could be scanned)
+    assertEventCanIssue(event);
     // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
     const cardContext = await loadCardContext(event);
     const cardDesign = cardContext.cardDesign;
@@ -572,6 +591,10 @@ export const invitationService = {
 
     const outcomes = await mapLimit(invitations, sendConcurrency(), async (invitation) => {
       const invitee = invitation.inviteeId as any;
+      if (invitee && !(await claimInviteeForIssue(invitee._id))) {
+        return { invitationId: invitation._id, inviteeId: invitee._id, inviteeName: invitee.name, status: 'SKIPPED', failureReason: SKIPPED_IN_PROGRESS } as any;
+      }
+      try {
       if (!invitee) {
         invitation.status = InvitationDeliveryStatus.FAILED;
         invitation.failureReason = 'INVITEE_DELETED';
@@ -775,6 +798,9 @@ export const invitationService = {
         failureReason: resendInvitation.failureReason,
         whatsappWebUrl,
       } as any;
+      } finally {
+        if (invitee) await releaseInviteeClaim(invitee._id).catch((e) => console.error('Delivery claim release failed:', e?.message));
+      }
     });
     results.push(...outcomes);
 
@@ -806,11 +832,12 @@ export const invitationService = {
     }
     if (!event) throw new Error('EVENT_NOT_FOUND');
 
-    const skip = (page - 1) * limit;
+    const safePage = Math.max(page, 1), safeLimit = Math.min(Math.max(limit, 1), 200);
+    const skip = (safePage - 1) * safeLimit;
     const invitations = await Invitation.find({ eventId })
       .populate('inviteeId', 'name email mobile invitationStatus rsvpStatus')
       .skip(skip)
-      .limit(limit)
+      .limit(safeLimit)
       .sort({ createdAt: -1 })
       .lean();
 
@@ -825,8 +852,8 @@ export const invitationService = {
     return {
       invitations: secureInvitations,
       total,
-      page,
-      totalPages: Math.ceil(total / limit)
+      page: safePage,
+      totalPages: Math.ceil(total / safeLimit)
     };
   },
 

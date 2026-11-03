@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { reportService } from '../services/report.service';
+import { OBJECT_ID_PATTERN, queryString } from '../utils/query';
 
 const parseDate = (v: unknown) => {
   if (typeof v !== 'string' || !v) return undefined;
@@ -11,10 +12,12 @@ export const reportController = {
   async getEarnings(req: Request, res: Response) {
     try {
       const actor = (req as any).user;
+      const eventId = queryString(req.query.eventId);
+      if (eventId && !OBJECT_ID_PATTERN.test(eventId)) return res.status(400).json({ success: false, message: 'Invalid eventId format' });
       const data = await reportService.getEarnings({
         from: parseDate(req.query.from),
         to: parseDate(req.query.to),
-        eventId: req.query.eventId as string | undefined,
+        eventId,
         organizerId: actor.role === 'ORGANIZER' ? actor.userId : undefined,
       });
       return res.status(200).json({ success: true, data });

@@ -6,7 +6,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.env = void 0;
 const zod_1 = require("zod");
 const dotenv_1 = __importDefault(require("dotenv"));
-dotenv_1.default.config();
+// The test suite never reads the developer's .env (real provider credentials): tests/helpers/testEnv.js supplies placeholders.
+if (process.env.NODE_ENV !== 'test')
+    dotenv_1.default.config();
 const envSchema = zod_1.z.object({
     PORT: zod_1.z.string().default('5000'),
     NODE_ENV: zod_1.z.enum(['development', 'production', 'test']).default('development'),
@@ -18,6 +20,8 @@ const envSchema = zod_1.z.object({
     // Time zone used when dates are rendered on the server (invitation cards, emails, WhatsApp)
     APP_TIMEZONE: zod_1.z.string().default('Asia/Kolkata'),
     JWT_SECRET: zod_1.z.string().min(1, 'JWT_SECRET is required'),
+    // Encrypts the stored copies of guest tokens (utils/tokenCipher.ts). Keep it separate from JWT_SECRET.
+    QR_TOKEN_SECRET: zod_1.z.string().optional(),
     JWT_REFRESH_SECRET: zod_1.z.string().min(1, 'JWT_REFRESH_SECRET is required'),
     JWT_EXPIRES_IN: zod_1.z.string().default('15m'),
     JWT_REFRESH_EXPIRES_IN: zod_1.z.string().default('7d'),
@@ -59,5 +63,8 @@ if (exports.env.NODE_ENV === 'production') {
     }
     if (exports.env.JWT_SECRET === exports.env.JWT_REFRESH_SECRET) {
         console.warn('[security] JWT_SECRET and JWT_REFRESH_SECRET are identical. Use two different random secrets.');
+    }
+    if (!exports.env.QR_TOKEN_SECRET || exports.env.QR_TOKEN_SECRET === exports.env.JWT_SECRET) {
+        console.warn('[security] QR_TOKEN_SECRET is not set separately from JWT_SECRET. Set a dedicated random value before inviting guests (existing tokens stay readable).');
     }
 }

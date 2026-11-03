@@ -30,4 +30,18 @@ export const eventHasEnded = (event: { status?: string; schedule?: { end?: Date 
   return !!end && !Number.isNaN(end.getTime()) && end.getTime() <= now.getTime();
 };
 
+/**
+ * A closed or cancelled event is a historical record: its guests, sessions and staff no longer change.
+ * Throws a 409 the global error handler reports as it stands.
+ */
+export function assertEventOpenForChanges(event: { status?: string }): void {
+  if (event.status === EventStatus.COMPLETED || event.status === EventStatus.CANCELLED) {
+    throw {
+      statusCode: 409,
+      code: 'EVENT_CLOSED',
+      message: event.status === EventStatus.CANCELLED ? 'This event has been cancelled, so it can no longer be changed.' : 'This event has been closed, so it can no longer be changed.',
+    };
+  }
+}
+
 export const canTransition = (from: EventStatus, to: EventStatus): boolean => TRANSITIONS[from]?.includes(to) ?? false;

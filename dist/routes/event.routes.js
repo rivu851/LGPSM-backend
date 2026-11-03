@@ -32,6 +32,8 @@ router.post('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.
 router.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), event_controller_1.eventController.getEvents);
 // SYSTEM_USER may read details of events they are assigned to (for check-in)
 router.get('/:eventId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER), event_controller_1.eventController.getEventById);
+// Tab-strip totals for an event page (sessions / invitees / assigned staff) in a single call
+router.get('/:eventId/counts', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), event_controller_1.eventController.getEventCounts);
 router.patch('/:eventId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(event_validator_1.updateEventSchema), (0, auditAction_1.auditAction)({ action: 'EVENT_UPDATE', entityType: 'Event', entityParam: 'eventId' }), event_controller_1.eventController.updateEvent);
 // Cancel (terminal, notifies invited guests). DELETE is the same operation for older clients; nothing is ever deleted by it.
 const cancelAudit = (0, auditAction_1.auditAction)({ action: 'EVENT_CANCEL', entityType: 'Event', entityParam: 'eventId', critical: true, describe: 'Event cancelled', meta: (req, body) => ({ reason: req.body?.reason, notices: body?.data?.notices, alreadyCancelled: body?.data?.alreadyCancelled }) });

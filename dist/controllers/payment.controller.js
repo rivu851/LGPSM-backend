@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.paymentController = void 0;
 const securityLog_1 = require("../utils/securityLog");
 const payment_service_1 = require("../services/payment.service");
+const query_1 = require("../utils/query");
 exports.paymentController = {
     async createTicketOrder(req, res) {
         try {
@@ -70,8 +71,7 @@ exports.paymentController = {
     async getUserOrders(req, res) {
         try {
             const userId = req.user.userId;
-            const page = parseInt(req.query.page) || 1;
-            const limit = parseInt(req.query.limit) || 20;
+            const { page, limit } = (0, query_1.pageParams)(req.query, { limit: 20, max: 100 });
             const result = await payment_service_1.paymentService.getUserOrders(userId, page, limit);
             return res.status(200).json({ success: true, data: result.orders, meta: { total: result.total, page: result.page, totalPages: result.totalPages } });
         }

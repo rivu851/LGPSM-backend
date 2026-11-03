@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.checkInController = void 0;
 const checkIn_service_1 = require("../services/checkIn.service");
+const query_1 = require("../utils/query");
 // QR problems carry a machine-readable `code` so the client can tell an unreadable pass from an
 // unknown one and from a business-rule denial.
 const QR_REJECTION_RESPONSES = {
@@ -100,11 +101,13 @@ exports.checkInController = {
                 role: req.user.role
             };
             const eventId = req.params.eventId;
+            // The Reports screen builds its access log from one large page; beyond this a client has to page
+            const { page, limit } = (0, query_1.pageParams)(req.query, { limit: 20, max: 1000 });
             const options = {
-                sessionId: req.query.sessionId,
-                checkInMethod: req.query.checkInMethod,
-                page: req.query.page ? parseInt(req.query.page) : 1,
-                limit: req.query.limit ? parseInt(req.query.limit) : 20
+                sessionId: (0, query_1.queryObjectId)(req.query.sessionId, 'sessionId'),
+                checkInMethod: (0, query_1.queryString)(req.query.checkInMethod),
+                page,
+                limit
             };
             const result = await checkIn_service_1.checkInService.getCheckIns(actor, eventId, options);
             res.status(200).json({

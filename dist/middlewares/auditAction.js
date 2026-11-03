@@ -39,9 +39,11 @@ function auditAction(opts) {
             actorId: user?.userId, actorRole: user?.role, eventId, organizerId, action: opts.action,
             entityType: opts.entityType, entityId, status, description: opts.describe, requestId: rid, metadata: baseMeta()
         });
-        let organizerId = await auditLog_service_1.auditLogService.organizerOfEvent(eventId).catch(() => undefined);
+        // Only a critical action needs the owner before the handler runs (its PENDING record is written first). For every other
+        // action the owner is worked out after the response has gone out, so the request does not wait for this lookup.
+        let organizerId = opts.critical ? await auditLog_service_1.auditLogService.organizerOfEvent(eventId).catch(() => undefined) : undefined;
         // An organizer's own activity (e.g. managing their staff accounts) belongs to their tenant even without an event
-        if (!organizerId && user?.role === 'ORGANIZER')
+        if (!organizerId && user?.role === 'ORGANIZER' && (opts.critical || !eventId))
             organizerId = user.userId;
         let pendingId;
         if (opts.critical) {
@@ -53,21 +55,27 @@ function auditAction(opts) {
                 return res.status(503).json({ success: false, error: 'Service Unavailable', message: 'This action could not be recorded, so it was not performed. Please try again.' });
             }
         }
+        // A listener's rejection would be unhandled: recording the outcome must never be able to take the process down
         res.on('finish', async () => {
-            const ok = res.statusCode < 400;
-            const data = isObj(captured) ? captured.data : undefined;
-            entityId = entityId || (isObj(data) ? data._id || data.id || data.eventId : undefined);
-            eventId = eventId || (isObj(data) ? data.eventId : undefined) || (opts.entityType === 'Event' ? entityId : undefined);
-            if (!organizerId && eventId)
-                organizerId = await auditLog_service_1.auditLogService.organizerOfEvent(eventId).catch(() => undefined);
-            if (!organizerId && user?.role === 'ORGANIZER')
-                organizerId = user.userId;
-            const metadata = { ...baseMeta(), httpStatus: res.statusCode, ...(opts.meta ? opts.meta(req, captured) : {}) };
-            if (pendingId) {
-                await auditLog_service_1.auditLogService.finish(pendingId, { status: ok ? 'SUCCESS' : 'FAILED', eventId, organizerId, entityId, metadata });
+            try {
+                const ok = res.statusCode < 400;
+                const data = isObj(captured) ? captured.data : undefined;
+                entityId = entityId || (isObj(data) ? data._id || data.id || data.eventId : undefined);
+                eventId = eventId || (isObj(data) ? data.eventId : undefined) || (opts.entityType === 'Event' ? entityId : undefined);
+                if (!organizerId && eventId)
+                    organizerId = await auditLog_service_1.auditLogService.organizerOfEvent(eventId).catch(() => undefined);
+                if (!organizerId && user?.role === 'ORGANIZER')
+                    organizerId = user.userId;
+                const metadata = { ...baseMeta(), httpStatus: res.statusCode, ...(opts.meta ? opts.meta(req, captured) : {}) };
+                if (pendingId) {
+                    await auditLog_service_1.auditLogService.finish(pendingId, { status: ok ? 'SUCCESS' : 'FAILED', eventId, organizerId, entityId, metadata });
+                }
+                else {
+                    await auditLog_service_1.auditLogService.record({ ...entry(ok ? 'SUCCESS' : 'FAILED', organizerId), eventId, entityId, metadata });
+                }
             }
-            else {
-                await auditLog_service_1.auditLogService.record({ ...entry(ok ? 'SUCCESS' : 'FAILED', organizerId), eventId, entityId, metadata });
+            catch (error) {
+                console.error('Audit outcome could not be recorded:', opts.action, error?.message);
             }
         });
         next();

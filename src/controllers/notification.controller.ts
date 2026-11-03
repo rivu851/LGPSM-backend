@@ -1,13 +1,13 @@
 import { Request, Response } from 'express';
 import { notificationService } from '../services/notification.service';
+import { pageParams } from '../utils/query';
 
 export const notificationController = {
   async getUserNotifications(req: Request, res: Response) {
     try {
       const userId = (req as any).user.userId;
       const unreadOnly = req.query.unreadOnly === 'true';
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const { page, limit } = pageParams(req.query, { limit: 20, max: 100 });
 
       const result = await notificationService.getUserNotifications(userId, unreadOnly, page, limit);
       return res.status(200).json({ success: true, data: result.notifications, meta: { total: result.total, unreadCount: result.unreadCount, page: result.page, totalPages: result.totalPages } });

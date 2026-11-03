@@ -7,6 +7,7 @@ import { staffVisibleToOrganizer } from './user.service';
 import { findManageableEvent, getUserRole } from '../utils/eventAccess';
 import { getInvitationCounts } from '../repositories/event.repository';
 import mongoose from 'mongoose';
+import { assertEventOpenForChanges } from '../utils/eventLifecycle';
 
 // Populate only selects a handful of Event fields (title/status/format/location/
 // schedule/organizerId) — invitationsSent is computed on the fly, same as the
@@ -39,6 +40,7 @@ export const systemUserAssignmentService = {
     if ((event as any).status === 'CANCELLED') {
       throw new Error('EVENT_CANCELLED');
     }
+    assertEventOpenForChanges(event);
 
     const targetUser = await User.findById(data.userId);
     if (!targetUser || !targetUser.isActive || targetUser.role !== Role.SYSTEM_USER) {
@@ -136,6 +138,7 @@ export const systemUserAssignmentService = {
     if (!event) {
       throw new Error('ASSIGNMENT_NOT_FOUND');
     }
+    assertEventOpenForChanges(event);
 
     const uniqueSessionIds = [...new Set(sessionIds)];
     if (uniqueSessionIds.length > 0) {
@@ -165,6 +168,7 @@ export const systemUserAssignmentService = {
     if (!event) {
       throw new Error('ASSIGNMENT_NOT_FOUND');
     }
+    assertEventOpenForChanges(event);
 
     const deleted = await systemUserAssignmentRepository.delete(assignmentId);
     if (!deleted) {

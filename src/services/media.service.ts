@@ -20,7 +20,8 @@ export class MediaService {
   async generatePresignedUrl(fileName: string, fileType: string): Promise<{ uploadUrl: string; fileKey: string }> {
     const bucket = env.AWS_S3_BUCKET;
     if (!bucket) {
-      throw new Error('S3_NOT_CONFIGURED');
+      // Uploads go through /media/upload and are kept in the database; direct-to-S3 upload exists only once a bucket is configured
+      throw { statusCode: 503, code: 'STORAGE_NOT_CONFIGURED', exposeMessage: true, message: 'Direct upload to cloud storage is not configured on this server.' };
     }
 
     // Generate unique key

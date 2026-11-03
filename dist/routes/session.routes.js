@@ -11,7 +11,7 @@ const session_validator_1 = require("../validators/session.validator");
 const validate = (schema) => (req, res, next) => {
     try {
         const parsed = schema.parse({ body: req.body });
-        req.body = { ...req.body, ...parsed.body };
+        req.body = parsed.body; // only what the schema names: nothing else in the request reaches the service
         next();
     }
     catch (err) {

@@ -13,6 +13,7 @@ import { parseInvitationQrPayload } from '../utils/qrPayload';
 import { inviteeAllowedInSession } from '../utils/sessionAccess';
 import { clock } from '../utils/clock';
 import { admissionState, effectiveAdmission, formatAdmissionTime } from '../utils/admissionWindow';
+import { normalizePhoneNumber } from './whatsapp.service';
 
 /**
  * Core service for event check-in operations (QR scanning and manual entry).
@@ -149,7 +150,8 @@ export const checkInService = {
     } else if (dto.email) {
       invitee = await Invitee.findOne({ eventId: dto.eventId, email: dto.email.trim().toLowerCase() });
     } else if (dto.mobile) {
-      invitee = await Invitee.findOne({ eventId: dto.eventId, mobile: dto.mobile.trim() });
+      // the number as staff typed it, or the same number in any other format (the stored comparison key)
+      invitee = await Invitee.findOne({ eventId: dto.eventId, $or: [{ mobile: dto.mobile.trim() }, { mobileKey: normalizePhoneNumber(dto.mobile) || dto.mobile.trim() }] });
     }
 
     if (!invitee) {
@@ -289,7 +291,7 @@ export const checkInService = {
     const { assignment } = await this.validateActorAndEvent(actor, eventId);
 
     const page = options.page && options.page > 0 ? options.page : 1;
-    const limit = options.limit && options.limit > 0 ? options.limit : 20;
+    const limit = options.limit && options.limit > 0 ? Math.min(options.limit, 1000) : 20;
     const skip = (page - 1) * limit;
 
     let allowedSessionIds: string[] | undefined = undefined;

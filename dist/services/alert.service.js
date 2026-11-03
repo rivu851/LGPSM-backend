@@ -5,11 +5,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.alertService = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
+const html_1 = require("../utils/html");
 const Notification_1 = require("../models/Notification");
 const User_1 = require("../models/User");
 const platformSettings_service_1 = require("./platformSettings.service");
 const email_provider_1 = require("../utils/email.provider");
-const escapeHtml = (v) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 function toDoc(userId, content) {
     return {
         userId,
@@ -44,7 +44,7 @@ exports.alertService = {
             // Email goes out in the background so a slow mail server never delays the request
             void Promise.all(admins
                 .filter((a) => a.email)
-                .map((a) => (0, email_provider_1.sendEmail)(a.email, `LGPSM: ${content.title}`, `<p>${escapeHtml(content.message)}</p><p style="color:#828282;font-size:12px">You can change these alerts in Settings &gt; Notifications Settings.</p>`)
+                .map((a) => (0, email_provider_1.sendEmail)(a.email, `LGPSM: ${content.title}`, `<p>${(0, html_1.escapeHtml)(content.message)}</p><p style="color:#828282;font-size:12px">You can change these alerts in Settings &gt; Notifications Settings.</p>`)
                 .catch((err) => console.error('Admin alert email failed:', err.message))));
         });
     },

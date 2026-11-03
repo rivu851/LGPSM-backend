@@ -4,11 +4,9 @@ import { CheckIn } from '../models/CheckIn';
 
 export const inviteeRepository = {
   /**
-   * Same as findByEventId/countByEventId, but also joins each invitee against
-   * the checkins collection (scoped to `sessionId` when given) so check-in
-   * status can be filtered and paginated server-side instead of requiring the
-   * caller to fetch every invitee and every check-in record to cross-reference
-   * them in memory.
+   * One page of guests with each guest's check-in state (within `sessionId` when given). This runs after every door scan, so its cost must
+   * not grow with the size of the guest list: the people who checked in are read first when the list is filtered by that, and only the
+   * guests on the page are then looked up. (It used to join every guest of the event against the check-ins before taking one page.)
    */
   async findByEventIdWithCheckInStatus(
     eventId: string,
@@ -21,51 +19,33 @@ export const inviteeRepository = {
       limit?: number;
     } = {}
   ): Promise<{ invitees: (IInvitee & { isCheckedIn: boolean; checkedInAt: Date | null })[]; total: number }> {
-    const matchStage: any = { eventId: new mongoose.Types.ObjectId(eventId), ...(options.filter || {}) };
+    const eventObjectId = new mongoose.Types.ObjectId(eventId);
+    const checkInScope: any = { eventId: eventObjectId };
+    if (options.sessionId) checkInScope.sessionId = new mongoose.Types.ObjectId(options.sessionId);
 
-    const checkInMatch: any = { $expr: { $eq: ['$inviteeId', '$$inviteeId'] } };
-    if (options.sessionId) {
-      checkInMatch.sessionId = new mongoose.Types.ObjectId(options.sessionId);
-    }
-
-    const pipeline: any[] = [
-      { $match: matchStage },
-      {
-        $lookup: {
-          from: CheckIn.collection.name,
-          let: { inviteeId: '$_id' },
-          pipeline: [{ $match: checkInMatch }, { $sort: { checkInAt: -1 } }, { $limit: 1 }],
-          as: 'checkInRecord',
-        },
-      },
-      {
-        $addFields: {
-          isCheckedIn: { $gt: [{ $size: '$checkInRecord' }, 0] },
-          checkedInAt: { $arrayElemAt: ['$checkInRecord.checkInAt', 0] },
-        },
-      },
-    ];
-
+    const match: any = { eventId: eventObjectId, ...(options.filter || {}) };
     if (options.checkInStatus) {
-      pipeline.push({ $match: { isCheckedIn: options.checkInStatus === 'CHECKED_IN' } });
+      const attended = await CheckIn.distinct('inviteeId', checkInScope);
+      match._id = options.checkInStatus === 'CHECKED_IN' ? { $in: attended } : { $nin: attended };
     }
 
-    pipeline.push({
-      $facet: {
-        data: [
-          { $sort: options.sort || { createdAt: -1 } },
-          { $skip: options.skip || 0 },
-          { $limit: options.limit || 25 },
-          { $project: { checkInRecord: 0 } },
-        ],
-        totalCount: [{ $count: 'count' }],
-      },
-    });
+    const [rows, total] = await Promise.all([
+      Invitee.find(match)
+        .sort(options.sort || { createdAt: -1 })
+        .skip(options.skip || 0)
+        .limit(options.limit || 25)
+        .lean(),
+      Invitee.countDocuments(match),
+    ]);
 
-    const [result] = await Invitee.aggregate(pipeline);
-    const invitees = result?.data || [];
-    const total = result?.totalCount?.[0]?.count || 0;
-    return { invitees, total };
+    const records = await CheckIn.find({ ...checkInScope, inviteeId: { $in: rows.map((r: any) => r._id) } })
+      .select('inviteeId checkInAt')
+      .sort({ checkInAt: 1 })
+      .lean();
+    // Ascending, so the latest check-in for a guest is the one that stays
+    const latest = new Map<string, Date>(records.map((r: any) => [String(r.inviteeId), r.checkInAt]));
+    const invitees = rows.map((r: any) => ({ ...r, isCheckedIn: latest.has(String(r._id)), checkedInAt: latest.get(String(r._id)) ?? undefined }));
+    return { invitees: invitees as any, total };
   },
   async create(data: Partial<IInvitee>): Promise<IInvitee> {
     const invitee = new Invitee(data);

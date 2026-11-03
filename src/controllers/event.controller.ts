@@ -3,6 +3,7 @@ import { cancellationNoticeService } from '../services/cancellationNotice.servic
 import { eventService } from '../services/event.service';
 import { EventStatus } from '../models/Event';
 import { Role } from '../models/User';
+import { OBJECT_ID_PATTERN, pageParams, queryString } from '../utils/query';
 
 export const eventController = {
   async createEvent(req: Request, res: Response, next: NextFunction) {
@@ -18,8 +19,9 @@ export const eventController = {
             : null;
 
         if (organizerIds && organizerIds.length > 0) {
+          const targets = await eventService.resolveOrganizerTargets(organizerIds);
           const eventsCreated = [];
-          for (const orgId of organizerIds) {
+          for (const orgId of targets) {
             const event = await eventService.createEvent(orgId, { ...req.body, organizerId: orgId });
             eventsCreated.push(event);
           }
@@ -56,16 +58,21 @@ export const eventController = {
   async getEvents(req: Request, res: Response, next: NextFunction) {
     try {
       const organizerId = (req as any).user.userId;
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 10;
-      const requestedOrganizer = req.query.organizerId as string | undefined;
-      if (requestedOrganizer && !/^[0-9a-fA-F]{24}$/.test(requestedOrganizer)) {
+      const { page, limit } = pageParams(req.query, { limit: 10, max: 200 });
+      const requestedOrganizer = queryString(req.query.organizerId);
+      if (requestedOrganizer && !OBJECT_ID_PATTERN.test(requestedOrganizer)) {
         res.status(400).json({ success: false, message: 'Invalid organizerId format' });
         return;
       }
+      const categoryId = queryString(req.query.categoryId);
+      if (categoryId && !OBJECT_ID_PATTERN.test(categoryId)) {
+        res.status(400).json({ success: false, message: 'Invalid categoryId format' });
+        return;
+      }
+      const status = queryString(req.query.status);
       const filter = {
-        status: req.query.status as EventStatus,
-        categoryId: req.query.categoryId as string,
+        status: status && (Object.values(EventStatus) as string[]).includes(status) ? (status as EventStatus) : undefined,
+        categoryId,
         organizerId: requestedOrganizer
       };
 

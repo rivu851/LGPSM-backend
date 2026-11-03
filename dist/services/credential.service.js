@@ -49,6 +49,7 @@ const tokenCipher_1 = require("../utils/tokenCipher");
 const credentialPolicy_1 = require("../utils/credentialPolicy");
 const cancellationNotice_service_1 = require("./cancellationNotice.service");
 const admissionWindow_1 = require("../utils/admissionWindow");
+const inviteeClaim_1 = require("../utils/inviteeClaim");
 const err = (code, extra = {}) => Object.assign(new Error(code), extra);
 let txSupport;
 function supportsTransactions() {
@@ -136,6 +137,19 @@ exports.credentialService = {
         const problem = (0, credentialPolicy_1.validateReason)('REPLACE', input.category, input.note);
         if (problem)
             throw err('INVALID_REASON', { detail: problem });
+        const { invitee } = await loadForAction(actor, inviteeId);
+        // Overlapping with a send or re-send of the same guest would leave one of the two messages carrying a dead pass
+        if (!(await (0, inviteeClaim_1.claimInviteeForIssue)(invitee._id)))
+            throw err('CONFLICT');
+        try {
+            return await this.replaceClaimed(actor, inviteeId, input);
+        }
+        finally {
+            await (0, inviteeClaim_1.releaseInviteeClaim)(invitee._id).catch((e) => console.error('Delivery claim release failed:', e?.message));
+        }
+    },
+    async replaceClaimed(actor, inviteeId, input) {
+        // read again now that nothing else can be issuing a pass for this guest
         const { invitee, event } = await loadForAction(actor, inviteeId);
         if (event.status !== Event_1.EventStatus.PUBLISHED)
             throw err('EVENT_NOT_ACTIVE');

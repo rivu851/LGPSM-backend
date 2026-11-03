@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { invitationService } from '../services/invitation.service';
 import { DeliveryChannel } from '../models/Invitation';
 import { shapePreview } from '../utils/previewImage';
+import { pageParams } from '../utils/query';
 
 // Per-guest outcome counts for a send or resend ("All" delivery skips guests with no usable contact)
 const deliverySummary = (results: { status: string }[]) => ({
@@ -38,6 +39,7 @@ export const invitationController = {
     } catch (error: any) {
       if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
       if (error.message === 'EVENT_CANCELLED') return res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_CANCELLED', message: 'This event has been cancelled. Invitations can no longer be sent.' });
+      if (error.message === 'EVENT_ENDED') return res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_ENDED', message: 'This event is over, so invitations can no longer be sent.' });
       if (error.message === 'INVALID_INVITEES') return res.status(400).json({ error: 'Bad Request', message: 'One or more invitees do not belong to this event' });
       console.error('Request failed:', error?.message);
       return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
@@ -58,6 +60,7 @@ export const invitationController = {
     } catch (error: any) {
       if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
       if (error.message === 'EVENT_CANCELLED') return res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_CANCELLED', message: 'This event has been cancelled. Invitations can no longer be sent.' });
+      if (error.message === 'EVENT_ENDED') return res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_ENDED', message: 'This event is over, so invitations can no longer be sent.' });
       if (error.message === 'INVALID_INVITATIONS') return res.status(400).json({ error: 'Bad Request', message: 'One or more invitations do not belong to this event' });
       console.error('Request failed:', error?.message);
       return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
@@ -71,8 +74,7 @@ export const invitationController = {
         userId: (req as any).user?.userId,
         role: (req as any).user?.role
       };
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const { page, limit } = pageParams(req.query, { limit: 20, max: 200 });
 
       const data = await invitationService.getInvitations(eventId, user, page, limit);
       return res.status(200).json(data);
@@ -102,7 +104,7 @@ export const invitationController = {
   async previewInvitationCard(req: Request, res: Response) {
     try {
       const eventId = req.params.eventId as string;
-      const inviteeId = req.query.inviteeId as string | undefined;
+      const inviteeId = typeof req.query.inviteeId === 'string' ? req.query.inviteeId : undefined;
       const user = {
         userId: (req as any).user?.userId,
         role: (req as any).user?.role

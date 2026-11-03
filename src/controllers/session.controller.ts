@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { sessionService } from '../services/session.service';
+import { pageParams } from '../utils/query';
 
 export const sessionController = {
   async createSession(req: Request, res: Response, next: NextFunction) {
@@ -30,8 +31,7 @@ export const sessionController = {
     try {
       const organizerId = (req as any).user.userId;
       const eventId = req.params.eventId as string;
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 10;
+      const { page, limit } = pageParams(req.query, { limit: 10, max: 200 });
 
       const result = await sessionService.getSessions(eventId, organizerId, { page, limit }, (req as any).user.role);
       

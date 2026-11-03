@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.cancellationNoticeService = void 0;
 exports.planRecipients = planRecipients;
+const html_1 = require("../utils/html");
 const CancellationNotice_1 = require("../models/CancellationNotice");
 const Event_1 = require("../models/Event");
 const Invitation_1 = require("../models/Invitation");
@@ -53,14 +54,13 @@ async function planRecipients(eventId, inviteeId) {
     }
     return [...byInvitee.values()].filter((p) => p.email || p.whatsapp || p.unknownChannel);
 }
-const escapeHtml = (v) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function cancellationEmail(args) {
-    const reason = args.reason ? `<p style="margin:16px 0;padding:12px;background:#f6f7f9;border-radius:8px"><strong>Message from the organizer:</strong><br>${escapeHtml(args.reason)}</p>` : '';
-    const contact = args.contact ? `<p>Questions? Contact the organizer on ${escapeHtml(args.contact)}.</p>` : '';
+    const reason = args.reason ? `<p style="margin:16px 0;padding:12px;background:#f6f7f9;border-radius:8px"><strong>Message from the organizer:</strong><br>${(0, html_1.escapeHtml)(args.reason)}</p>` : '';
+    const contact = args.contact ? `<p>Questions? Contact the organizer on ${(0, html_1.escapeHtml)(args.contact)}.</p>` : '';
     return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#15191c">
 <h2 style="margin:0 0 12px">Event cancelled</h2>
-<p>Dear ${escapeHtml(args.guest)},</p>
-<p>We are sorry to let you know that <strong>${escapeHtml(args.title)}</strong>${args.when ? `, planned for ${escapeHtml(args.when)},` : ''} has been cancelled and will not take place.</p>
+<p>Dear ${(0, html_1.escapeHtml)(args.guest)},</p>
+<p>We are sorry to let you know that <strong>${(0, html_1.escapeHtml)(args.title)}</strong>${args.when ? `, planned for ${(0, html_1.escapeHtml)(args.when)},` : ''} has been cancelled and will not take place.</p>
 <p><strong>Your access pass is no longer valid</strong> and cannot be used for entry. You do not need to do anything.</p>
 ${reason}${contact}
 <p style="color:#6b7280;font-size:12px">This message was sent because you were invited to this event.</p></div>`;
@@ -240,7 +240,17 @@ const noticeService = {
             whatsappNoticesAvailable: !!(process.env.WHATSAPP_CANCELLATION_TEMPLATE) && !!process.env.WHATSAPP_ACCESS_TOKEN
         };
     },
-    /** After a restart: send what was left PENDING for cancelled events. */
+    /**
+     * After a restart. Cancelling flips the event first and stores the notices straight after; a process that died between the two
+     * left guests with no notice at all, so recently cancelled events are filled in (enqueueing is idempotent).
+     */
+    async enqueueMissingAfterRestart(days = 7) {
+        const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        const events = await Event_1.Event.find({ status: Event_1.EventStatus.CANCELLED, cancelledAt: { $gte: since } }).select('_id organizerId').lean();
+        for (const event of events)
+            await this.enqueueForEvent(event).catch((e) => console.error('Cancellation notice recovery failed:', e?.message));
+    },
+    /** Send what was left PENDING for cancelled events (also run periodically, in case a dispatch was cut short). */
     async resumeAll() {
         const ids = await CancellationNotice_1.CancellationNotice.distinct('eventId', { $or: [{ 'email.status': 'PENDING' }, { 'whatsapp.status': 'PENDING' }] });
         for (const id of ids)

@@ -38,6 +38,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const requestId_1 = require("./middlewares/requestId");
 const express_1 = __importDefault(require("express"));
+const mongoose_1 = __importDefault(require("mongoose"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 const requestLogger_1 = require("./middlewares/requestLogger");
@@ -77,7 +78,7 @@ if (env_1.env.NODE_ENV !== 'test') {
 // Browsers send the origin without a trailing slash, so entries are normalised before matching
 const allowedOrigins = [
     env_1.env.FRONTEND_URL,
-    'http://localhost:3000',
+    ...(env_1.env.NODE_ENV === 'production' ? [] : ['http://localhost:3000']),
     'https://lgpsm-frontend.vercel.app',
     'https://lgpsm-frontend-beta.vercel.app',
     ...(env_1.env.CORS_ORIGINS?.split(',') ?? []),
@@ -99,8 +100,12 @@ app.use(express_1.default.json({
 }));
 app.use(express_1.default.urlencoded({ extended: true }));
 // Basic health-check endpoint
+// Always 200 while the process is up, so a brief database outage does not make the host restart a healthy instance;
+// `database` tells a monitor (or an administrator investigating) whether MongoDB is reachable.
 app.get('/api/health', (req, res) => {
-    res.status(200).json({ status: 'ok', message: 'Backend is running securely' });
+    // the web app pings this across origins to wake the server; helmet's default would make the browser report the answer as blocked
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.status(200).json({ status: 'ok', message: 'Backend is running securely', database: mongoose_1.default.connection.readyState === 1 ? 'connected' : 'disconnected' });
 });
 // Reject malformed ObjectId path params up-front so they surface as 400s instead of 500 CastErrors
 const OBJECT_ID_PATTERN = /^[0-9a-fA-F]{24}$/;

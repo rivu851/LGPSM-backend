@@ -1,12 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.errorHandler = void 0;
+exports.errorHandler = exports.isDatabaseOutage = void 0;
 exports.notFoundHandler = notFoundHandler;
 const env_1 = require("../config/env");
 function notFoundHandler(req, res) {
     res.status(404).json({ success: false, message: 'Route not found' });
 }
+const DATABASE_OUTAGE_ERRORS = new Set(['MongoServerSelectionError', 'MongooseServerSelectionError', 'MongoNetworkError', 'MongoNetworkTimeoutError', 'MongoNotConnectedError', 'MongoTopologyClosedError', 'MongoWaitQueueTimeoutError']);
+const isDatabaseOutage = (err) => DATABASE_OUTAGE_ERRORS.has(String(err.name)) || /buffering timed out/.test(String(err.message));
+exports.isDatabaseOutage = isDatabaseOutage;
 function resolveStatus(err) {
+    // Nothing was done and the request is safe to repeat: say so, instead of a generic server error
+    if ((0, exports.isDatabaseOutage)(err)) {
+        return { statusCode: 503, message: 'The service is temporarily unavailable. Please try again in a moment.', code: 'SERVICE_UNAVAILABLE' };
+    }
     if (err.name === 'CastError') {
         return { statusCode: 400, message: `Invalid ${err.path || 'identifier'} format` };
     }
@@ -49,6 +56,7 @@ function resolveStatus(err) {
         return {
             statusCode: status,
             message: status < 500 || err.exposeMessage ? err.message || 'Request failed' : 'Internal Server Error',
+            ...(typeof err.code === 'string' && /^[A-Z][A-Z0-9_]*$/.test(err.code) ? { code: err.code } : {}),
         };
     }
     return { statusCode: 500, message: 'Internal Server Error' };

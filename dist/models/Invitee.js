@@ -89,6 +89,7 @@ const InviteeSchema = new mongoose_1.Schema({
     credentialRevokedAt: { type: Date, default: null },
     credentialRevocation: { type: new mongoose_1.Schema({ category: String, note: String, by: mongoose_1.Schema.Types.ObjectId, at: Date }, { _id: false }), default: null },
     credentialVersion: { type: Number },
+    sendClaimAt: { type: Date },
     inviteeSetId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'InviteeSet', default: null },
     archivedAt: { type: Date, default: null },
     archivedReason: { type: String },
@@ -104,7 +105,7 @@ const InviteeSchema = new mongoose_1.Schema({
 }, {
     timestamps: true,
     // whatever serialises a guest (an API response, a log line) leaves the credential material out
-    toJSON: { transform: (_doc, ret) => { for (const k of ['qrTokenHash', 'qrTokenCipher', 'invitationTokenHash', 'invitationTokenCipher', 'mobileKey'])
+    toJSON: { transform: (_doc, ret) => { for (const k of ['qrTokenHash', 'qrTokenCipher', 'invitationTokenHash', 'invitationTokenCipher', 'mobileKey', 'sendClaimAt'])
             delete ret[k]; return ret; } }
 });
 // Indexes

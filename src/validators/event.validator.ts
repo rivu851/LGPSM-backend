@@ -29,14 +29,14 @@ const validateDietaryOptions = (preference: { enabled?: boolean; options?: any[]
 
 const dietaryPreferenceCreateSchema = z.object({
   enabled: z.boolean().optional(),
-  title: z.string().optional(),
-  options: z.array(z.any()).optional()
+  title: z.string().max(100).optional(),
+  options: z.array(z.any()).max(50, 'Too many dietary options').optional()
 }).superRefine(validateDietaryOptions);
 
 const dietaryPreferenceUpdateSchema = z.object({
   enabled: z.boolean(),
-  title: z.string().optional(),
-  options: z.array(z.any()).optional()
+  title: z.string().max(100).optional(),
+  options: z.array(z.any()).max(50, 'Too many dietary options').optional()
 }).superRefine(validateDietaryOptions);
 
 // When guests may be admitted (see utils/admissionWindow). null / absent = follow the event's start and end.
@@ -50,7 +50,7 @@ export const updateAdmissionSchema = z.object({ body: admissionSchema });
 // Event Location (the venue named on the invitation card) and the optional Address (extra directions) are separate fields
 const locationFieldsSchema = z.object({
   address: z.string().trim().min(1, 'Event location is required').max(EVENT_LOCATION_MAX_LENGTH, `Event location cannot exceed ${EVENT_LOCATION_MAX_LENGTH} characters`).optional(),
-  addressDetails: z.string().trim().max(500, 'Address cannot exceed 500 characters').optional(),
+  addressDetails: z.string().trim().max(300, 'Address cannot exceed 300 characters').optional(),
   coordinates: z.any().optional()
 }).passthrough();
 const hasVenue = (loc: unknown) => (typeof loc === 'string' ? loc.trim() !== '' : !!loc && typeof loc === 'object' && typeof (loc as any).address === 'string' && (loc as any).address.trim() !== '');
@@ -63,7 +63,7 @@ export const createEventSchema = z.object({
     subcategoryId: objectIdSchema.optional(),
     format: z.nativeEnum(EventFormat).optional().default(EventFormat.PHYSICAL),
     location: z.union([z.string().max(EVENT_LOCATION_MAX_LENGTH), locationFieldsSchema]).optional(),
-    contactNumber: z.string().optional(),
+    contactNumber: z.string().trim().max(30, 'Contact number is too long').optional(),
     schedule: z.object({
       start: z.string().optional(),
       end: z.string().optional()
@@ -103,13 +103,13 @@ export const updateEventSchema = z.object({
     format: z.nativeEnum(EventFormat).optional(),
     location: z.object({
       address: z.string().trim().min(1, 'Event location is required').max(EVENT_LOCATION_MAX_LENGTH, `Event location cannot exceed ${EVENT_LOCATION_MAX_LENGTH} characters`).optional(),
-      addressDetails: z.string().trim().max(500, 'Address cannot exceed 500 characters').optional(),
+      addressDetails: z.string().trim().max(300, 'Address cannot exceed 300 characters').optional(),
       coordinates: z.tuple([
         z.number().min(-180).max(180),
         z.number().min(-90).max(90)
       ]).optional()
     }).optional(),
-    contactNumber: z.string().optional(),
+    contactNumber: z.string().trim().max(30, 'Contact number is too long').optional(),
     schedule: z.object({
       start: z.string().datetime(),
       end: z.string().datetime()

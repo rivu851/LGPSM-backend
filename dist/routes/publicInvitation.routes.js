@@ -6,6 +6,8 @@ const publicInvitation_validator_1 = require("../validators/publicInvitation.val
 const rateLimiter_1 = require("../middlewares/rateLimiter");
 const router = (0, express_1.Router)();
 router.use(rateLimiter_1.publicInvitationLimiter);
+// These answers are one guest's details behind a secret link: no browser or proxy may keep a copy
+router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 const validate = (schema) => (req, res, next) => {
     try {
         const parsed = schema.parse({ body: req.body });

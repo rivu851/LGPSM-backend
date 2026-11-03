@@ -7,6 +7,8 @@ import { publicInvitationLimiter } from '../middlewares/rateLimiter';
 const router = Router();
 
 router.use(publicInvitationLimiter);
+// These answers are one guest's details behind a secret link: no browser or proxy may keep a copy
+router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 
 const validate = (schema: ZodSchema) => (req: Request, res: Response, next: NextFunction) => {
   try {

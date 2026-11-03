@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { escapeHtml } from '../utils/html';
 import { PassNotice } from '../models/PassNotice';
 import { Event } from '../models/Event';
 import { Invitee } from '../models/Invitee';
@@ -19,7 +20,6 @@ import { decryptToken } from '../utils/tokenCipher';
 const STALE_SENDING_MS = 10 * 60 * 1000;
 type ChannelKey = 'email' | 'whatsapp';
 
-const escapeHtml = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 
 function replacedEmail(a: { guest: string; title: string; when: string; link: string; cid: string }) {
   return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#15191c">

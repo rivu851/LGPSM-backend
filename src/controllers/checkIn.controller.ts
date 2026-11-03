@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { checkInService, AdmissionError } from '../services/checkIn.service';
+import { pageParams, queryObjectId, queryString } from '../utils/query';
 
 // QR problems carry a machine-readable `code` so the client can tell an unreadable pass from an
 // unknown one and from a business-rule denial.
@@ -103,11 +104,13 @@ export const checkInController = {
       };
       const eventId = req.params.eventId as string;
 
+      // The Reports screen builds its access log from one large page; beyond this a client has to page
+      const { page, limit } = pageParams(req.query, { limit: 20, max: 1000 });
       const options = {
-        sessionId: req.query.sessionId as string,
-        checkInMethod: req.query.checkInMethod as string,
-        page: req.query.page ? parseInt(req.query.page as string) : 1,
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 20
+        sessionId: queryObjectId(req.query.sessionId, 'sessionId'),
+        checkInMethod: queryString(req.query.checkInMethod),
+        page,
+        limit
       };
 
       const result = await checkInService.getCheckIns(actor, eventId, options);

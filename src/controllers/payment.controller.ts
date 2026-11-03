@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { securityEvent } from '../utils/securityLog';
 import { paymentService } from '../services/payment.service';
+import { pageParams } from '../utils/query';
 
 export const paymentController = {
   async createTicketOrder(req: Request, res: Response) {
@@ -57,8 +58,7 @@ export const paymentController = {
   async getUserOrders(req: Request, res: Response) {
     try {
       const userId = (req as any).user.userId;
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const { page, limit } = pageParams(req.query, { limit: 20, max: 100 });
 
       const result = await paymentService.getUserOrders(userId, page, limit);
       return res.status(200).json({ success: true, data: result.orders, meta: { total: result.total, page: result.page, totalPages: result.totalPages } });

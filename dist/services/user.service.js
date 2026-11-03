@@ -38,6 +38,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.userService = void 0;
 exports.staffVisibleToOrganizer = staffVisibleToOrganizer;
+exports.assertPhoneAvailable = assertPhoneAvailable;
 const mongoose_1 = __importDefault(require("mongoose"));
 const user_repository_1 = require("../repositories/user.repository");
 const User_1 = require("../models/User");
@@ -48,6 +49,7 @@ const securityLog_1 = require("../utils/securityLog");
 const token_repository_1 = require("../repositories/token.repository");
 const email_provider_1 = require("../utils/email.provider");
 const crypto_1 = __importDefault(require("crypto"));
+const html_1 = require("../utils/html");
 const PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 /** 12 random characters from an alphabet without look-alike characters (0/O, 1/l/I). */
 function generateTemporaryPassword() {
@@ -59,10 +61,10 @@ async function sendCredentialsEmail(email, fullName, role, password) {
     const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px 24px;border:1px solid #e5e7eb;border-radius:8px">
       <h2 style="color:#111827;margin-top:0">Your LGPSM ${label} account is ready</h2>
-      <p style="color:#374151">Hello ${fullName},</p>
+      <p style="color:#374151">Hello ${(0, html_1.escapeHtml)(fullName)},</p>
       <p style="color:#374151">Use these details to sign in:</p>
       <table style="margin:16px 0;color:#374151">
-        <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Email</td><td><strong>${email}</strong></td></tr>
+        <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Email</td><td><strong>${(0, html_1.escapeHtml)(email)}</strong></td></tr>
         <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Password</td><td><strong style="font-family:monospace;font-size:16px">${password}</strong></td></tr>
       </table>
       <p style="color:#6b7280;font-size:13px">For your security, change this password after your first sign in (Profile &gt; Change Password).</p>
@@ -79,6 +81,36 @@ async function staffVisibleToOrganizer(organizerId) {
     const ids = new Map();
     [...created, ...assigned].forEach((id) => ids.set(String(id), id));
     return [...ids.values()];
+}
+// Phone numbers sign people in. Two accounts on one number lock both out of phone sign-in (login refuses to guess), so a number
+// another account already uses is refused here instead of letting someone lock that person out.
+async function assertPhoneAvailable(phone, exceptUserId) {
+    if (!phone)
+        return;
+    const taken = await User_1.User.exists({ phone, ...(exceptUserId ? { _id: { $ne: exceptUserId } } : {}) });
+    if (taken)
+        throw { statusCode: 409, code: 'PHONE_IN_USE', message: 'This mobile number is already used by another account.' };
+}
+// An organizer may see the staff who work their events, but may only change an account that is theirs. Staff created by another
+// organizer, or also working for one, have their password and email out of reach: changing them would take the account from its owner.
+async function assertOrganizerOwnsStaff(organizerId, target) {
+    if (target.createdBy && String(target.createdBy) === organizerId)
+        return;
+    const creator = target.createdBy ? await User_1.User.findById(target.createdBy).select('role').lean() : null;
+    const forbidden = { statusCode: 403, message: 'This staff account belongs to another organizer, so only an administrator can change it.' };
+    if (creator?.role === User_1.Role.ORGANIZER)
+        throw forbidden;
+    const eventIds = await SystemUserAssignment_1.SystemUserAssignment.find({ userId: target._id }).distinct('eventId');
+    if (await Event_1.Event.exists({ _id: { $in: eventIds }, organizerId: { $ne: organizerId } }))
+        throw forbidden;
+}
+// The platform must always keep someone able to administer it
+async function assertNotLastAdmin(target) {
+    if (target.role !== User_1.Role.ADMIN || !target.isActive)
+        return;
+    const others = await User_1.User.countDocuments({ role: User_1.Role.ADMIN, isActive: true, _id: { $ne: target._id } });
+    if (others === 0)
+        throw { statusCode: 409, code: 'LAST_ADMIN', message: 'This is the only active administrator, so the account cannot be deactivated.' };
 }
 // Organizers may only manage their own staff accounts (SYSTEM_USER); admins may manage anyone.
 async function findManageableUser(actor, userId) {
@@ -108,6 +140,7 @@ exports.userService = {
     async updateProfile(userId, data) {
         const { organization, ...personal } = data || {};
         let payload = personal.phone !== undefined ? { ...personal, phone: (0, whatsapp_service_1.normalizePhoneNumber)(personal.phone) } : { ...personal };
+        await assertPhoneAvailable(payload.phone, userId);
         if (organization) {
             const me = await user_repository_1.userRepository.findById(userId);
             if (!me)
@@ -120,8 +153,12 @@ exports.userService = {
                 phone: organization.phone || undefined, email: organization.email || undefined,
                 address: organization.address || undefined, website: organization.website || undefined
             };
-            if (payload.profile)
-                delete payload.profile.organizationName; // the name is changed only through `organization`
+            // the name is changed only through `organization`; the other profile fields sent with it are set one by one, because
+            // MongoDB refuses a single update that sets both `profile` and `profile.organization`
+            const { organizationName: _name, organization: _details, ...otherProfile } = payload.profile || {};
+            delete payload.profile;
+            for (const [key, value] of Object.entries(otherProfile))
+                payload[`profile.${key}`] = value;
         }
         const user = await user_repository_1.userRepository.updateById(userId, payload);
         if (!user) {
@@ -169,6 +206,8 @@ exports.userService = {
                 throw { statusCode: 404, message: 'Organizer not found' };
             ownerId = String(owner._id);
         }
+        const phone = data.phone ? (0, whatsapp_service_1.normalizePhoneNumber)(data.phone) : undefined;
+        await assertPhoneAvailable(phone);
         const { hashPassword } = await Promise.resolve().then(() => __importStar(require('../utils/password')));
         const { AuthProvider } = await Promise.resolve().then(() => __importStar(require('../models/User')));
         // No password given: generate one and email it with the login email (the person adding the account never sees it)
@@ -177,7 +216,7 @@ exports.userService = {
         const user = await user_repository_1.userRepository.create({
             fullName: data.fullName,
             email: data.email,
-            phone: data.phone ? (0, whatsapp_service_1.normalizePhoneNumber)(data.phone) : undefined,
+            phone,
             ...(data.profile ? { profile: data.profile } : {}),
             passwordHash: hashedPassword,
             authProvider: AuthProvider.LOCAL,
@@ -238,6 +277,9 @@ exports.userService = {
     },
     async deleteUser(actor, userId) {
         const target = await findManageableUser(actor, userId);
+        if (actor.role === User_1.Role.ORGANIZER)
+            await assertOrganizerOwnsStaff(actor.userId, target);
+        await assertNotLastAdmin(target);
         const user = await user_repository_1.userRepository.updateById(userId, { isActive: false });
         if (!user) {
             throw { statusCode: 404, message: 'User not found' };
@@ -256,7 +298,9 @@ exports.userService = {
         return { deleted: true };
     },
     async updateUser(actor, userId, data) {
-        await findManageableUser(actor, userId);
+        const target = await findManageableUser(actor, userId);
+        if (actor.role === User_1.Role.ORGANIZER)
+            await assertOrganizerOwnsStaff(actor.userId, target);
         const updatePayload = {};
         if (data.fullName !== undefined)
             updatePayload.fullName = data.fullName;
@@ -267,10 +311,15 @@ exports.userService = {
             }
             updatePayload.email = data.email;
         }
-        if (data.phone !== undefined)
+        if (data.phone !== undefined) {
             updatePayload.phone = (0, whatsapp_service_1.normalizePhoneNumber)(data.phone);
-        if (data.isActive !== undefined && actor.role === User_1.Role.ADMIN)
+            await assertPhoneAvailable(updatePayload.phone, userId);
+        }
+        if (data.isActive !== undefined && actor.role === User_1.Role.ADMIN) {
+            if (data.isActive === false)
+                await assertNotLastAdmin(target);
             updatePayload.isActive = data.isActive;
+        }
         // Only the organizer details an admin manages; the rest of the profile (avatar, etc.) is left as is
         if (data.profile && actor.role === User_1.Role.ADMIN) {
             if (data.profile.organizationName !== undefined)

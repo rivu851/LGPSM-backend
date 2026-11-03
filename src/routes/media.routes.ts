@@ -8,6 +8,8 @@ import { presignMediaSchema } from '../validators/media.validator';
 import { MAX_UPLOAD_BYTES } from '../services/media.service';
 import { ZodSchema } from 'zod';
 
+import { mediaUploadLimiter } from '../middlewares/rateLimiter';
+
 const router = Router();
 
 const validate = (schema: ZodSchema) => (req: Request, res: Response, next: NextFunction) => {
@@ -34,7 +36,7 @@ const imageUpload = multer({
 router.post('/presign', authenticate, authorizeRoles(Role.ORGANIZER), validate(presignMediaSchema), mediaController.presign);
 
 // Direct upload stored by the API; the purpose decides which roles may upload
-router.post('/upload', authenticate, (req, res, next) => {
+router.post('/upload', authenticate, mediaUploadLimiter, (req, res, next) => {
   imageUpload.single('file')(req, res, (err) => {
     if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({ success: false, message: 'Image must be 5 MB or smaller' });

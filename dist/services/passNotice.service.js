@@ -38,6 +38,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.passNoticeService = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
+const html_1 = require("../utils/html");
 const PassNotice_1 = require("../models/PassNotice");
 const Event_1 = require("../models/Event");
 const Invitee_1 = require("../models/Invitee");
@@ -54,23 +55,22 @@ const tokenCipher_1 = require("../utils/tokenCipher");
 // states (SENT = the provider accepted it; UNAVAILABLE = not configured; UNKNOWN = interrupted, retried only with an explicit
 // acknowledgement). The reason category is internal and is never put in a guest message.
 const STALE_SENDING_MS = 10 * 60 * 1000;
-const escapeHtml = (v) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function replacedEmail(a) {
     return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#15191c">
 <h2 style="margin:0 0 12px">Your new access pass</h2>
-<p>Dear ${escapeHtml(a.guest)},</p>
-<p>We have issued you a new access pass for <strong>${escapeHtml(a.title)}</strong>${a.when ? ` (${escapeHtml(a.when)})` : ''}. <strong>Your previous pass no longer works</strong>; please use only this one.</p>
+<p>Dear ${(0, html_1.escapeHtml)(a.guest)},</p>
+<p>We have issued you a new access pass for <strong>${(0, html_1.escapeHtml)(a.title)}</strong>${a.when ? ` (${(0, html_1.escapeHtml)(a.when)})` : ''}. <strong>Your previous pass no longer works</strong>; please use only this one.</p>
 <p><img src="cid:${a.cid}" alt="Your access pass" style="max-width:100%;border:1px solid #e0e0e0;border-radius:8px"></p>
-${a.link ? `<p><a href="${escapeHtml(a.link)}">Open your invitation online</a> (your invitation link has not changed)</p>` : ''}
+${a.link ? `<p><a href="${(0, html_1.escapeHtml)(a.link)}">Open your invitation online</a> (your invitation link has not changed)</p>` : ''}
 <p style="color:#6b7280;font-size:12px">Your RSVP has not changed.</p></div>`;
 }
 function revokedEmail(a) {
     return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#15191c">
 <h2 style="margin:0 0 12px">Your access pass was withdrawn</h2>
-<p>Dear ${escapeHtml(a.guest)},</p>
-<p>Your access pass for <strong>${escapeHtml(a.title)}</strong> is <strong>no longer valid</strong> and cannot be used for entry.</p>
+<p>Dear ${(0, html_1.escapeHtml)(a.guest)},</p>
+<p>Your access pass for <strong>${(0, html_1.escapeHtml)(a.title)}</strong> is <strong>no longer valid</strong> and cannot be used for entry.</p>
 <p>Your invitation link still works for the event details and your RSVP.</p>
-${a.contact ? `<p>Questions? Contact the organizer on ${escapeHtml(a.contact)}.</p>` : ''}
+${a.contact ? `<p>Questions? Contact the organizer on ${(0, html_1.escapeHtml)(a.contact)}.</p>` : ''}
 <p style="color:#6b7280;font-size:12px">Your RSVP has not changed.</p></div>`;
 }
 exports.passNoticeService = {

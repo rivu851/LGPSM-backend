@@ -37,10 +37,13 @@ exports.RefreshToken = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const RefreshTokenSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
+    // SHA-256 of the token, so a copy of this collection cannot be used to sign in. Rows written before this change hold the token itself until they expire.
     token: { type: String, required: true, unique: true },
     expiresAt: { type: Date, required: true },
-    isRevoked: { type: Boolean, default: false }
+    isRevoked: { type: Boolean, default: false },
+    rotatedAt: { type: Date }
 }, { timestamps: true });
 // Optional: Automatically delete expired tokens via TTL index
 RefreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+RefreshTokenSchema.index({ userId: 1 });
 exports.RefreshToken = mongoose_1.default.model('RefreshToken', RefreshTokenSchema);

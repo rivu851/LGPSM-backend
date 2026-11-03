@@ -15,17 +15,18 @@ const validate = (schema) => (req, res, next) => {
     next();
 };
 // Apply the base auth rate limiter to all routes in this router
-router.use(rateLimiter_1.authRateLimiter);
-router.post('/register', validate(auth_validator_1.registerSchema), auth_controller_1.authController.register);
-router.post('/login', validate(auth_validator_1.loginSchema), auth_controller_1.authController.login);
-router.post('/refresh', validate(auth_validator_1.refreshTokenSchema), auth_controller_1.authController.refresh);
-router.post('/logout', auth_controller_1.authController.logout);
-router.post('/forgot-password', validate(auth_validator_1.forgotPasswordSchema), auth_controller_1.authController.forgotPassword);
+// Tokens and reset codes travel in these answers: nothing may keep a copy
+router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
+router.post('/register', rateLimiter_1.authRateLimiter, validate(auth_validator_1.registerSchema), auth_controller_1.authController.register);
+router.post('/login', rateLimiter_1.loginIpLimiter, rateLimiter_1.loginAccountLimiter, validate(auth_validator_1.loginSchema), auth_controller_1.authController.login);
+router.post('/refresh', rateLimiter_1.refreshRateLimiter, validate(auth_validator_1.refreshTokenSchema), auth_controller_1.authController.refresh);
+router.post('/logout', rateLimiter_1.refreshRateLimiter, auth_controller_1.authController.logout);
+router.post('/forgot-password', rateLimiter_1.authRateLimiter, validate(auth_validator_1.forgotPasswordSchema), auth_controller_1.authController.forgotPassword);
 // Mobile reset flow: emailed 4-digit code → short-lived reset token (stricter limiters on top of authRateLimiter)
-router.post('/forgot-password/otp', rateLimiter_1.resendVerificationRateLimiter, validate(auth_validator_1.forgotPasswordSchema), auth_controller_1.authController.requestPasswordResetOtp);
-router.post('/forgot-password/verify-otp', rateLimiter_1.verifyEmailRateLimiter, validate(auth_validator_1.verifyResetOtpSchema), auth_controller_1.authController.verifyPasswordResetOtp);
-router.post('/reset-password', validate(auth_validator_1.resetPasswordSchema), auth_controller_1.authController.resetPassword);
+router.post('/forgot-password/otp', rateLimiter_1.authRateLimiter, rateLimiter_1.resendVerificationRateLimiter, validate(auth_validator_1.forgotPasswordSchema), auth_controller_1.authController.requestPasswordResetOtp);
+router.post('/forgot-password/verify-otp', rateLimiter_1.authRateLimiter, rateLimiter_1.verifyEmailRateLimiter, validate(auth_validator_1.verifyResetOtpSchema), auth_controller_1.authController.verifyPasswordResetOtp);
+router.post('/reset-password', rateLimiter_1.authRateLimiter, validate(auth_validator_1.resetPasswordSchema), auth_controller_1.authController.resetPassword);
 // Email verification — additional, stricter rate limiters on top of authRateLimiter
-router.post('/verify-email', rateLimiter_1.verifyEmailRateLimiter, validate(auth_validator_1.verifyEmailSchema), auth_controller_1.authController.verifyEmail);
-router.post('/resend-verification', rateLimiter_1.resendVerificationRateLimiter, validate(auth_validator_1.resendVerificationSchema), auth_controller_1.authController.resendVerificationCode);
+router.post('/verify-email', rateLimiter_1.authRateLimiter, rateLimiter_1.verifyEmailRateLimiter, validate(auth_validator_1.verifyEmailSchema), auth_controller_1.authController.verifyEmail);
+router.post('/resend-verification', rateLimiter_1.authRateLimiter, rateLimiter_1.resendVerificationRateLimiter, validate(auth_validator_1.resendVerificationSchema), auth_controller_1.authController.resendVerificationCode);
 exports.default = router;

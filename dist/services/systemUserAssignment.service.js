@@ -13,6 +13,7 @@ const user_service_1 = require("./user.service");
 const eventAccess_1 = require("../utils/eventAccess");
 const event_repository_1 = require("../repositories/event.repository");
 const mongoose_1 = __importDefault(require("mongoose"));
+const eventLifecycle_1 = require("../utils/eventLifecycle");
 // Populate only selects a handful of Event fields (title/status/format/location/
 // schedule/organizerId) — invitationsSent is computed on the fly, same as the
 // events-list endpoint, so the mobile "Number of invites" figure isn't stuck
@@ -41,6 +42,7 @@ exports.systemUserAssignmentService = {
         if (event.status === 'CANCELLED') {
             throw new Error('EVENT_CANCELLED');
         }
+        (0, eventLifecycle_1.assertEventOpenForChanges)(event);
         const targetUser = await User_1.User.findById(data.userId);
         if (!targetUser || !targetUser.isActive || targetUser.role !== User_1.Role.SYSTEM_USER) {
             throw new Error('INVALID_USER');
@@ -81,28 +83,35 @@ exports.systemUserAssignmentService = {
     /**
      * Staff of this event's organizer who are already assigned to another of that organizer's events running at the same time
      * (the two time ranges overlap). Used to warn before the same person is put on two events at once; nothing is blocked.
+     *
+     * With `includeAll` it returns every assignment those staff hold on the organizer's OTHER (non-cancelled) events, each marked
+     * with whether it overlaps this event in time, so a screen can show a person's real workload and the clash warning from one
+     * dataset. `sessionIds` empty means all sessions of that event.
      */
-    async overlapsForEvent(eventId, actorId) {
+    async overlapsForEvent(eventId, actorId, includeAll = false) {
         const event = await findAccessibleEvent(eventId, actorId);
         if (!event)
             throw new Error('EVENT_NOT_FOUND');
         const start = event.schedule?.start, end = event.schedule?.end;
-        if (!start || !end)
+        if (!includeAll && (!start || !end))
             return [];
-        const others = await Event_1.Event.find({
-            organizerId: event.organizerId,
-            _id: { $ne: event._id },
-            status: { $ne: 'CANCELLED' },
-            'schedule.start': { $lt: end },
-            'schedule.end': { $gt: start }
-        }).select('title schedule').lean();
+        const query = { organizerId: event.organizerId, _id: { $ne: event._id }, status: { $ne: 'CANCELLED' } };
+        if (!includeAll) {
+            query['schedule.start'] = { $lt: end };
+            query['schedule.end'] = { $gt: start };
+        }
+        const others = await Event_1.Event.find(query).select('title schedule').lean();
         if (!others.length)
             return [];
         const byId = new Map(others.map((e) => [String(e._id), e]));
-        const assignments = await SystemUserAssignment_1.SystemUserAssignment.find({ eventId: { $in: others.map((e) => e._id) } }).select('userId eventId').lean();
+        const assignments = await SystemUserAssignment_1.SystemUserAssignment.find({ eventId: { $in: others.map((e) => e._id) } }).select('userId eventId sessionIds').lean();
         return assignments.map((a) => {
             const e = byId.get(String(a.eventId));
-            return { userId: String(a.userId), eventId: String(e._id), title: e.title, start: e.schedule.start, end: e.schedule.end };
+            const overlaps = !!start && !!end && !!e.schedule?.start && !!e.schedule?.end && e.schedule.start < end && e.schedule.end > start;
+            return {
+                userId: String(a.userId), eventId: String(e._id), title: e.title, start: e.schedule?.start, end: e.schedule?.end,
+                sessionIds: (a.sessionIds || []).map((id) => String(id)), overlaps
+            };
         });
     },
     async getAssignmentsByUser(userId, actor) {
@@ -127,6 +136,7 @@ exports.systemUserAssignmentService = {
         if (!event) {
             throw new Error('ASSIGNMENT_NOT_FOUND');
         }
+        (0, eventLifecycle_1.assertEventOpenForChanges)(event);
         const uniqueSessionIds = [...new Set(sessionIds)];
         if (uniqueSessionIds.length > 0) {
             const sessions = await Session_1.Session.find({ _id: { $in: uniqueSessionIds }, eventId: assignment.eventId });
@@ -151,6 +161,7 @@ exports.systemUserAssignmentService = {
         if (!event) {
             throw new Error('ASSIGNMENT_NOT_FOUND');
         }
+        (0, eventLifecycle_1.assertEventOpenForChanges)(event);
         const deleted = await systemUserAssignment_repository_1.systemUserAssignmentRepository.delete(assignmentId);
         if (!deleted) {
             throw new Error('DELETE_FAILED');

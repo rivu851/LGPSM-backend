@@ -49,7 +49,7 @@ exports.systemUserAssignmentController = {
     },
     async getOverlaps(req, res, next) {
         try {
-            const data = await systemUserAssignment_service_1.systemUserAssignmentService.overlapsForEvent(req.params.eventId, req.user.userId);
+            const data = await systemUserAssignment_service_1.systemUserAssignmentService.overlapsForEvent(req.params.eventId, req.user.userId, req.query.all === '1');
             res.status(200).json({ success: true, data });
         }
         catch (error) {

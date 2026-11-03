@@ -321,6 +321,8 @@ describe('P0.3 — event cancellation lifecycle', () => {
     it('a send still running when the event is cancelled stops, and a guest it already reached is still told', async () => {
       const { invitationService } = await import('../src/services/invitation.service');
       await Promise.all([Invitation, Invitee].map((m: any) => m.deleteMany({})));
+      // START/END are fixed dates, already past by the time this runs: invitations only go out for an event that is not over
+      await Event.updateOne({ _id: event._id }, { schedule: { start: new Date(Date.now() + 24 * 3600e3), end: new Date(Date.now() + 48 * 3600e3) } });
       await invite('late1', 'Lia', { invitationStatus: InvitationStatus.PENDING, rsvpStatus: RsvpStatus.PENDING });
       await invite('late2', 'Leo', { invitationStatus: InvitationStatus.PENDING, rsvpStatus: RsvpStatus.PENDING });
       emailSpy.mockClear();

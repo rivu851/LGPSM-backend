@@ -36,7 +36,7 @@ exports.authController = {
     },
     async logout(req, res, next) {
         try {
-            await auth_service_1.authService.logout(req.body.refreshToken);
+            await auth_service_1.authService.logout(req.body?.refreshToken);
             res.status(200).json({ success: true, message: 'Logged out successfully' });
         }
         catch (error) {

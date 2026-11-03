@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sessionController = void 0;
 const session_service_1 = require("../services/session.service");
+const query_1 = require("../utils/query");
 exports.sessionController = {
     async createSession(req, res, next) {
         try {
@@ -32,8 +33,7 @@ exports.sessionController = {
         try {
             const organizerId = req.user.userId;
             const eventId = req.params.eventId;
-            const page = parseInt(req.query.page) || 1;
-            const limit = parseInt(req.query.limit) || 10;
+            const { page, limit } = (0, query_1.pageParams)(req.query, { limit: 10, max: 200 });
             const result = await session_service_1.sessionService.getSessions(eventId, organizerId, { page, limit }, req.user.role);
             res.status(200).json({
                 success: true,

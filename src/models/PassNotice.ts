@@ -47,5 +47,8 @@ const PassNoticeSchema = new Schema(
 // one notice per credential change: creating it twice is impossible, which makes enqueueing idempotent
 PassNoticeSchema.index({ credentialEventId: 1 }, { unique: true });
 PassNoticeSchema.index({ eventId: 1, createdAt: -1 });
+// The sweep that resumes interrupted messages looks these up every minute
+PassNoticeSchema.index({ 'email.status': 1 });
+PassNoticeSchema.index({ 'whatsapp.status': 1 });
 
 export const PassNotice = mongoose.model<IPassNotice>('PassNotice', PassNoticeSchema);

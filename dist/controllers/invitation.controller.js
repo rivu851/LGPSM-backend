@@ -4,6 +4,7 @@ exports.invitationController = void 0;
 const invitation_service_1 = require("../services/invitation.service");
 const Invitation_1 = require("../models/Invitation");
 const previewImage_1 = require("../utils/previewImage");
+const query_1 = require("../utils/query");
 // Per-guest outcome counts for a send or resend ("All" delivery skips guests with no usable contact)
 const deliverySummary = (results) => ({
     sent: results.filter((r) => r.status === 'SENT').length,
@@ -41,6 +42,8 @@ exports.invitationController = {
                 return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
             if (error.message === 'EVENT_CANCELLED')
                 return res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_CANCELLED', message: 'This event has been cancelled. Invitations can no longer be sent.' });
+            if (error.message === 'EVENT_ENDED')
+                return res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_ENDED', message: 'This event is over, so invitations can no longer be sent.' });
             if (error.message === 'INVALID_INVITEES')
                 return res.status(400).json({ error: 'Bad Request', message: 'One or more invitees do not belong to this event' });
             console.error('Request failed:', error?.message);
@@ -63,6 +66,8 @@ exports.invitationController = {
                 return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
             if (error.message === 'EVENT_CANCELLED')
                 return res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_CANCELLED', message: 'This event has been cancelled. Invitations can no longer be sent.' });
+            if (error.message === 'EVENT_ENDED')
+                return res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_ENDED', message: 'This event is over, so invitations can no longer be sent.' });
             if (error.message === 'INVALID_INVITATIONS')
                 return res.status(400).json({ error: 'Bad Request', message: 'One or more invitations do not belong to this event' });
             console.error('Request failed:', error?.message);
@@ -76,8 +81,7 @@ exports.invitationController = {
                 userId: req.user?.userId,
                 role: req.user?.role
             };
-            const page = parseInt(req.query.page) || 1;
-            const limit = parseInt(req.query.limit) || 20;
+            const { page, limit } = (0, query_1.pageParams)(req.query, { limit: 20, max: 200 });
             const data = await invitation_service_1.invitationService.getInvitations(eventId, user, page, limit);
             return res.status(200).json(data);
         }
@@ -108,7 +112,7 @@ exports.invitationController = {
     async previewInvitationCard(req, res) {
         try {
             const eventId = req.params.eventId;
-            const inviteeId = req.query.inviteeId;
+            const inviteeId = typeof req.query.inviteeId === 'string' ? req.query.inviteeId : undefined;
             const user = {
                 userId: req.user?.userId,
                 role: req.user?.role

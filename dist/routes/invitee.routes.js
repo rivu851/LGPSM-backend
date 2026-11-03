@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.inviteeRoutes = exports.eventInviteeRoutes = void 0;
 const auditAction_1 = require("../middlewares/auditAction");
+const rateLimiter_1 = require("../middlewares/rateLimiter");
 const express_1 = require("express");
 const invitee_controller_1 = require("../controllers/invitee.controller");
 const authenticate_1 = require("../middlewares/authenticate");
@@ -30,7 +31,7 @@ const upload = (0, multer_1.default)({
 const validate = (schema) => (req, res, next) => {
     try {
         const parsed = schema.parse({ body: req.body });
-        req.body = { ...req.body, ...parsed.body };
+        req.body = parsed.body; // only what the schema names: nothing else in the request reaches the service
         next();
     }
     catch (err) {
@@ -54,7 +55,7 @@ exports.eventInviteeRoutes.get('/credential-events', (0, authorizeRoles_1.author
 exports.eventInviteeRoutes.post('/pass-notices/retry', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), (0, auditAction_1.auditAction)({ action: 'PASS_NOTICES_RETRY', entityType: 'Event', eventParam: 'eventId', describe: 'Access-pass messages retried', meta: (req) => ({ includeUnknown: req.body?.includeUnknown === true }) }), invitee_controller_1.inviteeController.retryPassNotices);
 exports.eventInviteeRoutes.put('/session-access/bulk', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(invitee_validator_1.bulkUpdateSessionAccessSchema), (0, auditAction_1.auditAction)({ action: 'INVITEE_SESSION_ACCESS_BULK', entityType: 'Invitee', eventParam: 'eventId' }), invitee_controller_1.inviteeController.bulkUpdateSessionAccess);
 // Upload handling
-exports.eventInviteeRoutes.post('/import', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), (req, res, next) => {
+exports.eventInviteeRoutes.post('/import', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), rateLimiter_1.importLimiter, (req, res, next) => {
     upload.single('file')(req, res, (err) => {
         if (err instanceof multer_1.default.MulterError) {
             if (err.code === 'LIMIT_FILE_SIZE') {
@@ -75,6 +76,6 @@ exports.inviteeRoutes.patch('/:inviteeId', (0, authorizeRoles_1.authorizeRoles)(
 exports.inviteeRoutes.delete('/:inviteeId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), (0, auditAction_1.auditAction)({ action: 'INVITEE_DELETE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee', critical: true }), invitee_controller_1.inviteeController.deleteInvitee);
 // Individual access pass: revoke / replace (critical: refused if the audit record cannot be written). The reason category is
 // stored; the free-text note is not copied into the audit entry.
-exports.inviteeRoutes.post('/:inviteeId/revoke', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), (0, auditAction_1.auditAction)({ action: 'CREDENTIAL_REVOKE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee', critical: true, describe: 'Access pass revoked', meta: (req) => ({ category: req.body?.category }) }), invitee_controller_1.inviteeController.revokeCredential);
-exports.inviteeRoutes.post('/:inviteeId/replace', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), (0, auditAction_1.auditAction)({ action: 'CREDENTIAL_REPLACE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee', critical: true, describe: 'Access pass replaced', meta: (req) => ({ category: req.body?.category, reviewConfirmed: req.body?.reviewConfirmed === true }) }), invitee_controller_1.inviteeController.replaceCredential);
+exports.inviteeRoutes.post('/:inviteeId/revoke', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), rateLimiter_1.credentialActionLimiter, (0, auditAction_1.auditAction)({ action: 'CREDENTIAL_REVOKE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee', critical: true, describe: 'Access pass revoked', meta: (req) => ({ category: req.body?.category }) }), invitee_controller_1.inviteeController.revokeCredential);
+exports.inviteeRoutes.post('/:inviteeId/replace', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), rateLimiter_1.credentialActionLimiter, (0, auditAction_1.auditAction)({ action: 'CREDENTIAL_REPLACE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee', critical: true, describe: 'Access pass replaced', meta: (req) => ({ category: req.body?.category, reviewConfirmed: req.body?.reviewConfirmed === true }) }), invitee_controller_1.inviteeController.replaceCredential);
 exports.inviteeRoutes.put('/:inviteeId/session-access', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(invitee_validator_1.updateSessionAccessSchema), (0, auditAction_1.auditAction)({ action: 'INVITEE_SESSION_ACCESS_UPDATE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee' }), invitee_controller_1.inviteeController.updateSessionAccess);

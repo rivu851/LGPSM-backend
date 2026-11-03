@@ -51,7 +51,8 @@ const authorizeAssignedSession = async (req, res, next) => {
                 return;
             }
             const sessionId = req.params.sessionId || req.body.sessionId;
-            if (sessionId) {
+            // An assignment with no sessions listed covers every session of the event (same rule as check-in)
+            if (sessionId && assignment.sessionIds?.length > 0) {
                 const hasAccess = assignment.sessionIds.some((id) => id.toString() === sessionId);
                 if (!hasAccess) {
                     res.status(403).json({ success: false, message: 'Forbidden. Not assigned to this session.' });

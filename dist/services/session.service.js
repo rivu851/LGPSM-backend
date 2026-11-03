@@ -11,6 +11,9 @@ const Event_1 = require("../models/Event");
 const mongoose_1 = __importDefault(require("mongoose"));
 const Invitee_1 = require("../models/Invitee");
 const eventAccess_1 = require("../utils/eventAccess");
+const eventLifecycle_1 = require("../utils/eventLifecycle");
+const admissionWindow_1 = require("../utils/admissionWindow");
+const CheckIn_1 = require("../models/CheckIn");
 // The primary session is the event's first-created session
 async function primarySessionId(eventId) {
     const first = await Session_1.Session.findOne({ eventId }).sort({ _id: 1 }).select('_id').lean();
@@ -37,6 +40,10 @@ exports.sessionService = {
         if (!event) {
             throw new Error('EVENT_NOT_FOUND');
         }
+        (0, eventLifecycle_1.assertEventOpenForChanges)(event);
+        const admissionError = (0, admissionWindow_1.validateAdmissionInput)(data.schedule, data.admission);
+        if (admissionError)
+            throw { statusCode: 400, message: admissionError };
         // Cross-session validation is configured on the primary (first) session only
         if (data.validateAgainstOtherSessions && (await primarySessionId(eventId))) {
             throw { statusCode: 400, message: 'Session access validation can only be set on the first session' };
@@ -102,6 +109,14 @@ exports.sessionService = {
     },
     async updateSession(sessionId, organizerId, data) {
         const session = await this.getSessionById(sessionId, organizerId); // Ensures ownership
+        const owningEvent = await Event_1.Event.findById(session.eventId).select('status').lean();
+        if (owningEvent)
+            (0, eventLifecycle_1.assertEventOpenForChanges)(owningEvent);
+        if (data.admission !== undefined || data.schedule) {
+            const admissionError = (0, admissionWindow_1.validateAdmissionInput)(data.schedule ?? session.schedule, (data.admission ?? session.admission));
+            if (admissionError)
+                throw { statusCode: 400, message: admissionError };
+        }
         // Avoid mass assignment of protected fields
         delete data._id;
         delete data.eventId;
@@ -133,6 +148,13 @@ exports.sessionService = {
     },
     async deleteSession(sessionId, organizerId) {
         const session = await this.getSessionById(sessionId, organizerId); // Ensures ownership
+        const owningEvent = await Event_1.Event.findById(session.eventId).select('status').lean();
+        if (owningEvent)
+            (0, eventLifecycle_1.assertEventOpenForChanges)(owningEvent);
+        // Deleting it would leave attendance records pointing at nothing and lose what they were for
+        if (await CheckIn_1.CheckIn.exists({ sessionId: session._id })) {
+            throw { statusCode: 409, code: 'SESSION_HAS_ATTENDANCE', message: 'Guests have already checked in to this session, so it cannot be deleted. Its attendance history is kept.' };
+        }
         // Sessions that kept this session's invitees get their own copy of the list before it disappears
         const dependents = await Session_1.Session.find({ eventId: session.eventId, sourceSessionId: session._id });
         if (dependents.length > 0) {

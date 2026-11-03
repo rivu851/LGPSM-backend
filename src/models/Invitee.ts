@@ -49,6 +49,8 @@ export interface IInvitee extends Document {
   credentialRevocation?: { category: string; note?: string; by?: mongoose.Types.ObjectId; at?: Date } | null;
   // 1 for the first pass; +1 for every re-issue (resend or replacement). Absent on older guests: treated as 1 once a pass exists.
   credentialVersion?: number;
+  /** Held while a new admission credential is being issued (see utils/inviteeClaim.ts); absent otherwise */
+  sendClaimAt?: Date | null;
   /** The uploaded list this guest came from (absent on guests added by hand or before lists were tracked) */
   inviteeSetId?: mongoose.Types.ObjectId | null;
   /** Set when a newer upload replaced this never-invited guest. Archived guests are hidden everywhere, never deleted. */
@@ -108,6 +110,7 @@ const InviteeSchema: Schema = new Schema(
     credentialRevokedAt: { type: Date, default: null },
     credentialRevocation: { type: new Schema({ category: String, note: String, by: Schema.Types.ObjectId, at: Date }, { _id: false }), default: null },
     credentialVersion: { type: Number },
+    sendClaimAt: { type: Date },
     inviteeSetId: { type: Schema.Types.ObjectId, ref: 'InviteeSet', default: null },
     archivedAt: { type: Date, default: null },
     archivedReason: { type: String },
@@ -124,7 +127,7 @@ const InviteeSchema: Schema = new Schema(
   {
     timestamps: true,
     // whatever serialises a guest (an API response, a log line) leaves the credential material out
-    toJSON: { transform: (_doc: unknown, ret: Record<string, unknown>) => { for (const k of ['qrTokenHash', 'qrTokenCipher', 'invitationTokenHash', 'invitationTokenCipher', 'mobileKey']) delete ret[k]; return ret; } }
+    toJSON: { transform: (_doc: unknown, ret: Record<string, unknown>) => { for (const k of ['qrTokenHash', 'qrTokenCipher', 'invitationTokenHash', 'invitationTokenCipher', 'mobileKey', 'sendClaimAt']) delete ret[k]; return ret; } }
   }
 );
 

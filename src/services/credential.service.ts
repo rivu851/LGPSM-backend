@@ -10,6 +10,7 @@ import { encryptToken } from '../utils/tokenCipher';
 import { cleanNote, credentialStatus, eligibleForAdmission, replacementAfterRevocation, validateReason } from '../utils/credentialPolicy';
 import { planRecipients } from './cancellationNotice.service';
 import { effectiveAdmission } from '../utils/admissionWindow';
+import { claimInviteeForIssue, releaseInviteeClaim } from '../utils/inviteeClaim';
 
 // Individual access passes: revoke, replace, and the history of both.
 //
@@ -109,6 +110,18 @@ export const credentialService = {
   async replace(actor: Actor, inviteeId: string, input: { category?: unknown; note?: unknown; reviewConfirmed?: unknown }) {
     const problem = validateReason('REPLACE', input.category, input.note);
     if (problem) throw err('INVALID_REASON', { detail: problem });
+    const { invitee } = await loadForAction(actor, inviteeId);
+    // Overlapping with a send or re-send of the same guest would leave one of the two messages carrying a dead pass
+    if (!(await claimInviteeForIssue(invitee._id))) throw err('CONFLICT');
+    try {
+      return await this.replaceClaimed(actor, inviteeId, input);
+    } finally {
+      await releaseInviteeClaim(invitee._id).catch((e) => console.error('Delivery claim release failed:', e?.message));
+    }
+  },
+
+  async replaceClaimed(actor: Actor, inviteeId: string, input: { category?: unknown; note?: unknown; reviewConfirmed?: unknown }) {
+    // read again now that nothing else can be issuing a pass for this guest
     const { invitee, event } = await loadForAction(actor, inviteeId);
     if (event.status !== EventStatus.PUBLISHED) throw err('EVENT_NOT_ACTIVE');
     const current = credentialStatus(invitee, event);

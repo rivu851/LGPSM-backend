@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { escapeHtml } from '../utils/html';
 import { CancellationNotice, INoticeChannel } from '../models/CancellationNotice';
 import { Event, EventStatus } from '../models/Event';
 import { Invitation, InvitationDeliveryStatus, DeliveryChannel } from '../models/Invitation';
@@ -56,7 +57,6 @@ export async function planRecipients(eventId: mongoose.Types.ObjectId | string, 
   return [...byInvitee.values()].filter((p) => p.email || p.whatsapp || p.unknownChannel);
 }
 
-const escapeHtml = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 
 function cancellationEmail(args: { guest: string; title: string; when: string; reason?: string; contact?: string }) {
   const reason = args.reason ? `<p style="margin:16px 0;padding:12px;background:#f6f7f9;border-radius:8px"><strong>Message from the organizer:</strong><br>${escapeHtml(args.reason)}</p>` : '';
@@ -257,7 +257,17 @@ const noticeService = {
     };
   },
 
-  /** After a restart: send what was left PENDING for cancelled events. */
+  /**
+   * After a restart. Cancelling flips the event first and stores the notices straight after; a process that died between the two
+   * left guests with no notice at all, so recently cancelled events are filled in (enqueueing is idempotent).
+   */
+  async enqueueMissingAfterRestart(days = 7) {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const events: any[] = await Event.find({ status: EventStatus.CANCELLED, cancelledAt: { $gte: since } }).select('_id organizerId').lean();
+    for (const event of events) await this.enqueueForEvent(event).catch((e) => console.error('Cancellation notice recovery failed:', e?.message));
+  },
+
+  /** Send what was left PENDING for cancelled events (also run periodically, in case a dispatch was cut short). */
   async resumeAll() {
     const ids = await CancellationNotice.distinct('eventId', { $or: [{ 'email.status': 'PENDING' }, { 'whatsapp.status': 'PENDING' }] });
     for (const id of ids) await this.processEvent(id).catch((e) => console.error('Cancellation notice resume failed:', e?.message));

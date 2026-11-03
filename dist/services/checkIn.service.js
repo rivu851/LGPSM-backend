@@ -19,6 +19,7 @@ const qrPayload_1 = require("../utils/qrPayload");
 const sessionAccess_1 = require("../utils/sessionAccess");
 const clock_1 = require("../utils/clock");
 const admissionWindow_1 = require("../utils/admissionWindow");
+const whatsapp_service_1 = require("./whatsapp.service");
 /**
  * Core service for event check-in operations (QR scanning and manual entry).
  *
@@ -132,7 +133,8 @@ exports.checkInService = {
             invitee = await Invitee_1.Invitee.findOne({ eventId: dto.eventId, email: dto.email.trim().toLowerCase() });
         }
         else if (dto.mobile) {
-            invitee = await Invitee_1.Invitee.findOne({ eventId: dto.eventId, mobile: dto.mobile.trim() });
+            // the number as staff typed it, or the same number in any other format (the stored comparison key)
+            invitee = await Invitee_1.Invitee.findOne({ eventId: dto.eventId, $or: [{ mobile: dto.mobile.trim() }, { mobileKey: (0, whatsapp_service_1.normalizePhoneNumber)(dto.mobile) || dto.mobile.trim() }] });
         }
         if (!invitee) {
             throw new Error('INVITEE_NOT_FOUND');
@@ -269,7 +271,7 @@ exports.checkInService = {
     async getCheckIns(actor, eventId, options) {
         const { assignment } = await this.validateActorAndEvent(actor, eventId);
         const page = options.page && options.page > 0 ? options.page : 1;
-        const limit = options.limit && options.limit > 0 ? options.limit : 20;
+        const limit = options.limit && options.limit > 0 ? Math.min(options.limit, 1000) : 20;
         const skip = (page - 1) * limit;
         let allowedSessionIds = undefined;
         if (actor.role === User_1.Role.SYSTEM_USER && assignment) {

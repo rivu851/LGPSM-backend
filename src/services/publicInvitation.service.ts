@@ -68,6 +68,7 @@ export const publicInvitationService = {
     if (!invitee) throw new Error('INVITATION_NOT_FOUND');
     const event = await Event.findById(invitee.eventId).select('status schedule rsvp dietaryPreference');
     if (!event || event.status === 'CANCELLED') throw new Error('EVENT_CANCELLED');
+    if (event.status === 'COMPLETED') throw new Error('RSVP_CLOSED');
     if (event.rsvp?.enabled) throw new Error('RSVP_ENABLED');
     if (!dietaryGroups(event.dietaryPreference).length) throw new Error('DIETARY_DISABLED');
     if (event.schedule?.end && new Date(event.schedule.end) < new Date()) throw new Error('RSVP_CLOSED');
@@ -99,7 +100,7 @@ export const publicInvitationService = {
       throw new Error('INVITATION_NOT_FOUND');
     }
 
-    const event = await Event.findById(invitee.eventId).select('title description format location contactNumber schedule admission status cancelledAt cancellationReason rsvp dietaryPreference organizerId templateId categoryId subcategoryId');
+    const event = await Event.findById(invitee.eventId).select('title description format location contactNumber schedule admission status closedAt cancelledAt cancellationReason rsvp dietaryPreference organizerId templateId categoryId subcategoryId');
     if (!event) throw new Error('INVITATION_NOT_FOUND');
 
     const [sessions, organizer] = await Promise.all([
@@ -147,7 +148,7 @@ export const publicInvitationService = {
         // Only for a cancelled event: when, and the organizer's own note if they wrote one
         cancellation: event.status === 'CANCELLED' ? { cancelledAt: (event as any).cancelledAt ?? null, reason: (event as any).cancellationReason ?? null } : null,
         // Whether guests can answer at all; when off, the page shows no RSVP control (submitRsvp refuses it anyway)
-        rsvp: { enabled: !!event.rsvp?.enabled, closesAt: event.rsvp?.enabled ? event.rsvp.acceptanceLastDate || event.schedule?.end || null : null },
+        rsvp: { enabled: !!event.rsvp?.enabled, closesAt: event.rsvp?.enabled ? (event.status === 'COMPLETED' ? (event as any).closedAt || event.schedule?.end : event.rsvp.acceptanceLastDate || event.schedule?.end) || null : null },
         dietaryPreference: event.dietaryPreference
       },
       theme,
@@ -177,6 +178,7 @@ export const publicInvitationService = {
     // RSVP follows the event's own rules
     const event = await Event.findById(invitee.eventId).select('title status organizerId rsvp schedule dietaryPreference');
     if (!event || event.status === 'CANCELLED') throw new Error('EVENT_CANCELLED');
+    if (event.status === 'COMPLETED') throw new Error('RSVP_CLOSED');
     if (!event.rsvp?.enabled) throw new Error('RSVP_DISABLED');
     const closesAt = event.rsvp.acceptanceLastDate || event.schedule?.end;
     if (closesAt && new Date(closesAt) < new Date()) throw new Error('RSVP_CLOSED');

@@ -41,6 +41,7 @@ const Invitation_1 = require("../models/Invitation");
 const credentialPolicy_1 = require("../utils/credentialPolicy");
 const invitee_repository_1 = require("../repositories/invitee.repository");
 const Invitee_1 = require("../models/Invitee");
+const Event_1 = require("../models/Event");
 const Session_1 = require("../models/Session");
 const mongoose_1 = __importDefault(require("mongoose"));
 const xlsx = __importStar(require("xlsx"));
@@ -51,6 +52,29 @@ const whatsapp_service_1 = require("./whatsapp.service");
 const InviteeSet_1 = require("../models/InviteeSet");
 const inviteeSet_service_1 = require("./inviteeSet.service");
 const auditLog_service_1 = require("./auditLog.service");
+const eventLifecycle_1 = require("../utils/eventLifecycle");
+const spreadsheetGuard_1 = require("../utils/spreadsheetGuard");
+// The only guest fields a request can write. Delivery, credential, archive and list fields change through their own workflows;
+// the food choice belongs to the guest (invitation page).
+const GUEST_DETAIL_FIELDS = ['name', 'email', 'mobile', 'companyName', 'company', 'professionalIdentity', 'secondaryIdentity', 'sessionAccess'];
+const pickGuestDetails = (data, extra = []) => {
+    const out = {};
+    for (const key of [...GUEST_DETAIL_FIELDS, ...extra])
+        if (data?.[key] !== undefined)
+            out[key] = data[key];
+    return out;
+};
+/** A guest's session list may only name sessions of the guest's own event. */
+async function assertSessionsOfEvent(eventId, sessionAccess) {
+    if (!Array.isArray(sessionAccess) || sessionAccess.length === 0)
+        return;
+    const ids = [...new Set(sessionAccess.map((a) => String(a?.sessionId)))];
+    const invalid = () => ({ statusCode: 400, message: 'One or more sessions are invalid or belong to a different event' });
+    if (ids.some((id) => !mongoose_1.default.Types.ObjectId.isValid(id)))
+        throw invalid();
+    if ((await Session_1.Session.countDocuments({ _id: { $in: ids }, eventId: eventId })) !== ids.length)
+        throw invalid();
+}
 // Upper bound for one spreadsheet import (header row excluded)
 exports.MAX_IMPORT_ROWS = 5000;
 /** One identity per phone number regardless of formatting or a missing +91 (same normalisation WhatsApp uses). */
@@ -62,7 +86,7 @@ function withCredential(invitees, event) {
         const plain = typeof i.toObject === 'function' ? i.toObject() : { ...i };
         const c = (0, credentialPolicy_1.credentialStatus)(plain, event, now);
         // the secrets' hashes and ciphers never leave the server: the client gets the derived status only
-        for (const k of ['qrTokenHash', 'qrTokenCipher', 'invitationTokenHash', 'invitationTokenCipher', 'mobileKey'])
+        for (const k of ['qrTokenHash', 'qrTokenCipher', 'invitationTokenHash', 'invitationTokenCipher', 'mobileKey', 'sendClaimAt'])
             delete plain[k];
         return { ...plain, credentialStatus: c.status, credentialStatusReason: c.reason, credentialRevocation: plain.credentialRevocation ? { category: plain.credentialRevocation.category, at: plain.credentialRevocation.at } : null };
     });
@@ -73,6 +97,8 @@ exports.inviteeService = {
         if (!event) {
             throw new Error('EVENT_NOT_FOUND');
         }
+        (0, eventLifecycle_1.assertEventOpenForChanges)(event);
+        await assertSessionsOfEvent(eventId, data.sessionAccess);
         // Check duplicates
         const duplicates = await invitee_repository_1.inviteeRepository.findByEmailOrMobile(eventId, data.email, data.mobile);
         if (duplicates.length > 0) {
@@ -80,7 +106,7 @@ exports.inviteeService = {
         }
         const companyVal = data.companyName || data.company;
         // The food choice is the guest's own, made on the invitation page; nothing typed in by an organizer can pre-empt or contradict it
-        const { dietaryPreference: _ignoredDiet, dietarySelections: _ignoredSelections, ...details } = data;
+        const details = pickGuestDetails(data);
         const inviteeData = {
             ...details,
             companyName: companyVal,
@@ -141,13 +167,16 @@ exports.inviteeService = {
             });
             return { invitees: withCredential(invitees, event), total };
         }
-        const invitees = await invitee_repository_1.inviteeRepository.findByEventId(eventId, {
-            filter,
-            sort: { createdAt: -1, _id: -1 },
-            skip,
-            limit
-        });
-        const total = await invitee_repository_1.inviteeRepository.countByEventId(eventId, filter);
+        // The page and the total are independent reads: run them together instead of one after the other
+        const [invitees, total] = await Promise.all([
+            invitee_repository_1.inviteeRepository.findByEventId(eventId, {
+                filter,
+                sort: { createdAt: -1, _id: -1 },
+                skip,
+                limit
+            }),
+            invitee_repository_1.inviteeRepository.countByEventId(eventId, filter),
+        ]);
         return { invitees: withCredential(invitees, event), total };
     },
     async getInviteeById(inviteeId, organizerId) {
@@ -161,6 +190,11 @@ exports.inviteeService = {
         }
         return invitee;
     },
+    async assertGuestEventOpen(invitee) {
+        const event = await Event_1.Event.findById(invitee.eventId);
+        if (event)
+            (0, eventLifecycle_1.assertEventOpenForChanges)(event);
+    },
     /** True when this guest came from an uploaded list that an invitation was sent from, answered or attended (Locked). */
     async inLockedUploadedSet(invitee) {
         if (!invitee.inviteeSetId)
@@ -170,8 +204,10 @@ exports.inviteeService = {
     },
     async updateInvitee(inviteeId, organizerId, input) {
         // The food choice belongs to the guest (invitation page): an organizer's edit cannot set or change it
-        const { dietaryPreference: _ignoredDiet, dietarySelections: _ignoredSelections, ...data } = input;
+        const data = pickGuestDetails(input, ['rsvpStatus']);
         const invitee = await this.getInviteeById(inviteeId, organizerId); // Ensures ownership
+        await this.assertGuestEventOpen(invitee);
+        await assertSessionsOfEvent(invitee.eventId, data.sessionAccess);
         // A Locked list keeps who was on it: its guests' details are not rewritten (session access has its own route)
         const DETAIL_FIELDS = ['name', 'email', 'mobile', 'companyName', 'company', 'professionalIdentity', 'secondaryIdentity'];
         const changes = DETAIL_FIELDS.some((f) => data[f] !== undefined && String(data[f] ?? '') !== String(invitee[f] ?? ''));
@@ -188,11 +224,6 @@ exports.inviteeService = {
                 throw new Error('DUPLICATE_INVITEE');
             }
         }
-        // Protect system fields
-        delete data._id;
-        delete data.eventId;
-        delete data.createdAt;
-        delete data.invitationStatus; // Handled by separate workflows
         const updated = await invitee_repository_1.inviteeRepository.update(inviteeId, data);
         if (!updated) {
             throw new Error('UPDATE_FAILED');
@@ -201,6 +232,7 @@ exports.inviteeService = {
     },
     async updateSessionAccess(inviteeId, organizerId, sessionAccess) {
         const invitee = await this.getInviteeById(inviteeId, organizerId);
+        await this.assertGuestEventOpen(invitee);
         const eventId = invitee.eventId.toString();
         // Verify all sessions belong to the event
         const sessionIds = sessionAccess.map(sa => sa.sessionId);
@@ -228,6 +260,7 @@ exports.inviteeService = {
         if (!event) {
             throw new Error('EVENT_NOT_FOUND');
         }
+        (0, eventLifecycle_1.assertEventOpenForChanges)(event);
         // Verify all invitees belong to event
         const invitees = await Invitee_1.Invitee.find({ _id: { $in: inviteeIds }, eventId });
         if (invitees.length !== inviteeIds.length) {
@@ -252,6 +285,7 @@ exports.inviteeService = {
     },
     async deleteInvitee(inviteeId, organizerId) {
         const invitee = await this.getInviteeById(inviteeId, organizerId);
+        await this.assertGuestEventOpen(invitee);
         // A guest nothing has happened to can be removed from an open or hand-made list. Anyone who was invited, answered,
         // attended, or sits in a Locked list stays: removing them would erase history.
         if (await this.inLockedUploadedSet(invitee))
@@ -289,6 +323,7 @@ exports.inviteeService = {
         if (!event) {
             throw new Error('EVENT_NOT_FOUND');
         }
+        (0, eventLifecycle_1.assertEventOpenForChanges)(event);
         const eventSessions = await Session_1.Session.find({ eventId });
         let targetSession;
         if (options.sessionId) {
@@ -299,10 +334,11 @@ exports.inviteeService = {
                 throw { statusCode: 400, message: `"${targetSession.name}" keeps the same invitees as another session; upload the list to that session instead` };
             }
         }
+        (0, spreadsheetGuard_1.assertSafeWorkbook)(fileBuffer);
         let workbook;
         try {
-            // sheetRows bounds how much of a (possibly highly compressed) sheet is ever materialised
-            workbook = xlsx.read(fileBuffer, { type: 'buffer', sheetRows: exports.MAX_IMPORT_ROWS + 2 });
+            // sheetRows bounds how much of a sheet is materialised; only cell values are needed, so nothing else is parsed
+            workbook = xlsx.read(fileBuffer, { type: 'buffer', sheetRows: exports.MAX_IMPORT_ROWS + 2, cellFormula: false, cellHTML: false, cellStyles: false, bookVBA: false });
         }
         catch {
             throw { statusCode: 400, message: 'The file could not be read as an Excel sheet' };

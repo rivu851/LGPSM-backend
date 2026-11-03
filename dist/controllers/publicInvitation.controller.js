@@ -3,6 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.publicInvitationController = void 0;
 const publicInvitation_service_1 = require("../services/publicInvitation.service");
 const invitation_service_1 = require("../services/invitation.service");
+const errorHandler_1 = require("../middlewares/errorHandler");
+// A guest who hits a brief outage is told to try again, and nothing was saved
+const unavailable = (res, error) => (0, errorHandler_1.isDatabaseOutage)(error) ? res.status(503).json({ success: false, code: 'SERVICE_UNAVAILABLE', message: 'The service is temporarily unavailable. Please try again in a moment.' }) : null;
 exports.publicInvitationController = {
     async getPublicInvitationCard(req, res) {
         try {
@@ -43,6 +46,8 @@ exports.publicInvitationController = {
             if (error.message === 'INVITATION_NOT_FOUND' || error.message === 'INVALID_TOKEN') {
                 return res.status(404).json({ success: false, error: 'Not Found', message: 'Invitation not found or token is invalid' });
             }
+            if (unavailable(res, error))
+                return;
             console.error('Request failed:', error?.message);
             return res.status(500).json({ success: false, error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
@@ -68,6 +73,8 @@ exports.publicInvitationController = {
                 return res.status(400).json({ success: false, code: 'DIETARY_REQUIRED', message: 'Please choose an option for every question.' });
             if (m === 'INVALID_DIETARY_PREFERENCE')
                 return res.status(400).json({ success: false, message: 'Choose only from the dietary options provided for this event.' });
+            if (unavailable(res, error))
+                return;
             console.error('Request failed:', error?.message);
             return res.status(500).json({ success: false, error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }
@@ -101,6 +108,8 @@ exports.publicInvitationController = {
             if (error.message === 'INVALID_DIETARY_PREFERENCE') {
                 return res.status(400).json({ success: false, message: 'Choose only from the dietary options provided for this event.' });
             }
+            if (unavailable(res, error))
+                return;
             console.error('Request failed:', error?.message);
             return res.status(500).json({ success: false, error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
         }

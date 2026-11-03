@@ -45,7 +45,7 @@ describe('Invitation Service', () => {
       categoryId: new mongoose.Types.ObjectId(),
       format: 'PHYSICAL' as any,
       location: { type: 'Point', address: '123 Test St', coordinates: [0, 0] } as any,
-      schedule: { start: new Date(), end: new Date() }
+      schedule: { start: new Date(), end: new Date(Date.now() + 24 * 3600e3) }
     });
     eventId = (event as any)._id as mongoose.Types.ObjectId;
 

@@ -11,6 +11,7 @@ const authorizeRoles_1 = require("../middlewares/authorizeRoles");
 const User_1 = require("../models/User");
 const media_validator_1 = require("../validators/media.validator");
 const media_service_1 = require("../services/media.service");
+const rateLimiter_1 = require("../middlewares/rateLimiter");
 const router = (0, express_1.Router)();
 const validate = (schema) => (req, res, next) => {
     try {
@@ -36,7 +37,7 @@ const imageUpload = (0, multer_1.default)({
 // S3 presigned upload (used when object storage is configured)
 router.post('/presign', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER), validate(media_validator_1.presignMediaSchema), media_controller_1.mediaController.presign);
 // Direct upload stored by the API; the purpose decides which roles may upload
-router.post('/upload', authenticate_1.authenticate, (req, res, next) => {
+router.post('/upload', authenticate_1.authenticate, rateLimiter_1.mediaUploadLimiter, (req, res, next) => {
     imageUpload.single('file')(req, res, (err) => {
         if (err instanceof multer_1.default.MulterError && err.code === 'LIMIT_FILE_SIZE') {
             return res.status(413).json({ success: false, message: 'Image must be 5 MB or smaller' });

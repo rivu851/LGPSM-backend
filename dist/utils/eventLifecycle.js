@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.canTransition = exports.eventHasEnded = void 0;
+exports.assertEventOpenForChanges = assertEventOpenForChanges;
 const Event_1 = require("../models/Event");
 /**
  * Server-side event lifecycle. Status is never taken from a client request body: it only changes through the
@@ -33,5 +34,18 @@ const eventHasEnded = (event, now = new Date()) => {
     return !!end && !Number.isNaN(end.getTime()) && end.getTime() <= now.getTime();
 };
 exports.eventHasEnded = eventHasEnded;
+/**
+ * A closed or cancelled event is a historical record: its guests, sessions and staff no longer change.
+ * Throws a 409 the global error handler reports as it stands.
+ */
+function assertEventOpenForChanges(event) {
+    if (event.status === Event_1.EventStatus.COMPLETED || event.status === Event_1.EventStatus.CANCELLED) {
+        throw {
+            statusCode: 409,
+            code: 'EVENT_CLOSED',
+            message: event.status === Event_1.EventStatus.CANCELLED ? 'This event has been cancelled, so it can no longer be changed.' : 'This event has been closed, so it can no longer be changed.',
+        };
+    }
+}
 const canTransition = (from, to) => TRANSITIONS[from]?.includes(to) ?? false;
 exports.canTransition = canTransition;

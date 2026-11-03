@@ -2,13 +2,13 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.notificationController = void 0;
 const notification_service_1 = require("../services/notification.service");
+const query_1 = require("../utils/query");
 exports.notificationController = {
     async getUserNotifications(req, res) {
         try {
             const userId = req.user.userId;
             const unreadOnly = req.query.unreadOnly === 'true';
-            const page = parseInt(req.query.page) || 1;
-            const limit = parseInt(req.query.limit) || 20;
+            const { page, limit } = (0, query_1.pageParams)(req.query, { limit: 20, max: 100 });
             const result = await notification_service_1.notificationService.getUserNotifications(userId, unreadOnly, page, limit);
             return res.status(200).json({ success: true, data: result.notifications, meta: { total: result.total, unreadCount: result.unreadCount, page: result.page, totalPages: result.totalPages } });
         }

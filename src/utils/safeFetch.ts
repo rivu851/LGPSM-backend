@@ -24,6 +24,28 @@ const BLOCKED_V4: Array<[string, number]> = [
   ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4]
 ];
 
+/** The eight 16-bit groups of an IPv6 address in any notation (compressed, or with a dotted IPv4 tail); null when it does not parse. */
+function ipv6Groups(address: string): number[] | null {
+  let text = address.toLowerCase().split('%')[0];
+  const dotted = text.match(/^(.*:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) {
+    if (!net.isIPv4(dotted[2])) return null;
+    const v = ipv4ToInt(dotted[2]);
+    text = `${dotted[1]}${(v >>> 16).toString(16)}:${(v & 0xffff).toString(16)}`;
+  }
+  const [head, tail, ...rest] = text.split('::');
+  if (rest.length) return null;
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  if (tail === undefined && left.length !== 8) return null;
+  const fill = 8 - left.length - right.length;
+  if (fill < 0) return null;
+  const groups = [...left, ...Array(tail === undefined ? 0 : fill).fill('0'), ...right].map((g) => parseInt(g, 16));
+  return groups.length === 8 && groups.every((g) => Number.isInteger(g) && g >= 0 && g <= 0xffff) ? groups : null;
+}
+
+const embeddedV4 = (high: number, low: number) => `${high >>> 8}.${high & 0xff}.${low >>> 8}.${low & 0xff}`;
+
 export function isPrivateAddress(address: string): boolean {
   if (net.isIPv4(address)) {
     const value = ipv4ToInt(address);
@@ -33,15 +55,22 @@ export function isPrivateAddress(address: string): boolean {
     });
   }
   if (net.isIPv6(address)) {
-    const lower = address.toLowerCase();
-    const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-    if (mapped) return isPrivateAddress(mapped[1]);
+    const g = ipv6Groups(address);
+    if (!g) return true; // cannot be judged: refuse
+    const leadingZeros = (n: number) => g.slice(0, n).every((v) => v === 0);
+    // Addresses that carry an IPv4 address are judged by that address, however they were written (::ffff:7f00:1 is 127.0.0.1)
+    if (leadingZeros(5) && g[5] === 0xffff) return isPrivateAddress(embeddedV4(g[6], g[7])); // mapped
+    if (leadingZeros(6) && (g[6] !== 0 || g[7] > 1)) return isPrivateAddress(embeddedV4(g[6], g[7])); // compatible (deprecated)
+    if (g[0] === 0x2002) return isPrivateAddress(embeddedV4(g[1], g[2])); // 6to4
     return (
-      lower === '::' || lower === '::1' ||
-      lower.startsWith('fc') || lower.startsWith('fd') || // unique local
-      /^fe[89ab]/.test(lower) || // link local
-      lower.startsWith('ff') || // multicast
-      lower.startsWith('64:ff9b:') || lower.startsWith('2001:db8')
+      (leadingZeros(7) && g[7] <= 1) || // :: and ::1
+      (g[0] & 0xfe00) === 0xfc00 || // unique local
+      (g[0] & 0xffc0) === 0xfe80 || // link local
+      (g[0] & 0xffc0) === 0xfec0 || // site local (deprecated)
+      (g[0] & 0xff00) === 0xff00 || // multicast
+      (g[0] === 0x0064 && g[1] === 0xff9b) || // NAT64
+      (g[0] === 0x2001 && g[1] === 0x0db8) || // documentation
+      (g[0] === 0x2001 && g[1] === 0) // Teredo
     );
   }
   return true; // not an IP at all: refuse

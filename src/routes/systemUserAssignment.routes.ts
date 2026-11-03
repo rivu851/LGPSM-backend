@@ -10,7 +10,7 @@ import { ZodSchema } from 'zod';
 const validate = (schema: ZodSchema) => (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed: any = schema.parse({ body: req.body });
-    req.body = { ...req.body, ...parsed.body };
+    req.body = parsed.body; // only what the schema names: nothing else in the request reaches the service
     next();
   } catch (err: any) {
     res.status(400).json({ success: false, error: 'Validation Error', message: err.issues?.[0]?.message || 'Invalid input data', details: err.issues ?? err.errors });

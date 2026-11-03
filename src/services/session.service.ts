@@ -5,6 +5,9 @@ import { Event } from '../models/Event';
 import mongoose from 'mongoose';
 import { Invitee } from '../models/Invitee';
 import { findManageableEvent } from '../utils/eventAccess';
+import { assertEventOpenForChanges } from '../utils/eventLifecycle';
+import { validateAdmissionInput } from '../utils/admissionWindow';
+import { CheckIn } from '../models/CheckIn';
 
 // The primary session is the event's first-created session
 async function primarySessionId(eventId: string): Promise<string | null> {
@@ -33,6 +36,9 @@ export const sessionService = {
     if (!event) {
       throw new Error('EVENT_NOT_FOUND');
     }
+    assertEventOpenForChanges(event);
+    const admissionError = validateAdmissionInput(data.schedule as any, data.admission as any);
+    if (admissionError) throw { statusCode: 400, message: admissionError };
 
     // Cross-session validation is configured on the primary (first) session only
     if (data.validateAgainstOtherSessions && (await primarySessionId(eventId))) {
@@ -112,6 +118,12 @@ export const sessionService = {
 
   async updateSession(sessionId: string, organizerId: string, data: Partial<ISession>): Promise<ISession> {
     const session = await this.getSessionById(sessionId, organizerId); // Ensures ownership
+    const owningEvent = await Event.findById(session.eventId).select('status').lean();
+    if (owningEvent) assertEventOpenForChanges(owningEvent as any);
+    if (data.admission !== undefined || data.schedule) {
+      const admissionError = validateAdmissionInput(data.schedule ?? session.schedule, (data.admission ?? session.admission) as any);
+      if (admissionError) throw { statusCode: 400, message: admissionError };
+    }
 
     // Avoid mass assignment of protected fields
     delete (data as any)._id;
@@ -147,6 +159,12 @@ export const sessionService = {
 
   async deleteSession(sessionId: string, organizerId: string): Promise<ISession> {
     const session = await this.getSessionById(sessionId, organizerId); // Ensures ownership
+    const owningEvent = await Event.findById(session.eventId).select('status').lean();
+    if (owningEvent) assertEventOpenForChanges(owningEvent as any);
+    // Deleting it would leave attendance records pointing at nothing and lose what they were for
+    if (await CheckIn.exists({ sessionId: session._id })) {
+      throw { statusCode: 409, code: 'SESSION_HAS_ATTENDANCE', message: 'Guests have already checked in to this session, so it cannot be deleted. Its attendance history is kept.' };
+    }
 
     // Sessions that kept this session's invitees get their own copy of the list before it disappears
     const dependents = await Session.find({ eventId: session.eventId, sourceSessionId: session._id });

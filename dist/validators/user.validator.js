@@ -4,9 +4,10 @@ exports.changePasswordSchema = exports.updateUserSchema = exports.createUserSche
 const zod_1 = require("zod");
 const User_1 = require("../models/User");
 exports.updateProfileSchema = zod_1.z.object({
-    fullName: zod_1.z.string().min(2, 'Full name must be at least 2 characters').optional(),
+    fullName: zod_1.z.string().trim().min(2, 'Full name must be at least 2 characters').max(120, 'Full name is too long').optional(),
     phone: zod_1.z.string().optional(),
-    profile: zod_1.z.record(zod_1.z.string(), zod_1.z.any()).optional(),
+    // Keys become part of a database update path, so only plain names are accepted
+    profile: zod_1.z.record(zod_1.z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/, 'Invalid profile field'), zod_1.z.any()).optional(),
     // The organizer's organization, kept apart from their personal details (name, phone). Organizers and admins only.
     organization: zod_1.z.object({
         name: zod_1.z.string().trim().min(1, 'Organization name is required').max(150),
@@ -17,10 +18,10 @@ exports.updateProfileSchema = zod_1.z.object({
     }).strict().optional()
 }).strict();
 exports.createUserSchema = zod_1.z.object({
-    fullName: zod_1.z.string().min(2, 'Full name must be at least 2 characters'),
+    fullName: zod_1.z.string().trim().min(2, 'Full name must be at least 2 characters').max(120, 'Full name is too long'),
     email: zod_1.z.string().email('Invalid email address'),
     // Omit to have a password generated and emailed to the new account
-    password: zod_1.z.string().min(6, 'Password must be at least 6 characters').optional(),
+    password: zod_1.z.string().min(8, 'Password must be at least 8 characters').optional(),
     phone: zod_1.z.string().optional(),
     role: zod_1.z.enum([User_1.Role.ADMIN, User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER]),
     // Admin only: the organizer a new staff account is added for
@@ -31,10 +32,10 @@ exports.createUserSchema = zod_1.z.object({
     }).strict().optional()
 }).strict();
 exports.updateUserSchema = zod_1.z.object({
-    fullName: zod_1.z.string().min(2, 'Full name must be at least 2 characters').optional(),
+    fullName: zod_1.z.string().trim().min(2, 'Full name must be at least 2 characters').max(120, 'Full name is too long').optional(),
     email: zod_1.z.string().email('Invalid email address').optional(),
     phone: zod_1.z.string().optional(),
-    password: zod_1.z.string().min(6, 'Password must be at least 6 characters').optional(),
+    password: zod_1.z.string().min(8, 'Password must be at least 8 characters').optional(),
     isActive: zod_1.z.boolean().optional(),
     profile: zod_1.z.object({
         organizationName: zod_1.z.string().max(150).optional(),

@@ -7,7 +7,12 @@ const logged = (limiter: string) => (req: any, res: any, _next: any, options: Op
   res.status(options.statusCode).send(options.message);
 };
 
-/** 20 requests per 15 minutes per IP — applied to all auth endpoints. */
+const skipInTest = () => process.env.NODE_ENV === 'test' && process.env.ENABLE_RATE_LIMIT_TESTS !== 'true';
+
+/**
+ * 20 requests per 15 minutes per IP: registration and password recovery. Sign-in and token refresh have limits of their own below:
+ * many people share one address at a venue or an office, and refusing a refresh there would sign door staff out mid-event.
+ */
 export const authRateLimiter = rateLimit({
   handler: logged('authRateLimiter'),
   windowMs: 15 * 60 * 1000,
@@ -15,7 +20,44 @@ export const authRateLimiter = rateLimit({
   message: { success: false, message: 'Too many requests from this IP, please try again after 15 minutes' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => process.env.NODE_ENV === 'test',
+  skip: skipInTest,
+});
+
+/** Sign-in, per network: generous, because a whole staff team may sign in from one venue connection at once. */
+export const loginIpLimiter = rateLimit({
+  handler: logged('loginIpLimiter'),
+  windowMs: 15 * 60 * 1000,
+  max: 150,
+  message: { success: false, message: 'Too many sign-in attempts from this network. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipInTest,
+});
+
+const loginIdentifier = (req: any) => String(req.body?.email || req.body?.phone || '').trim().toLowerCase().slice(0, 200);
+
+/** Failed sign-ins for one account from one address: stops password guessing without letting a stranger lock the person out everywhere. */
+export const loginAccountLimiter = rateLimit({
+  handler: logged('loginAccountLimiter'),
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req: any) => `${loginIdentifier(req)}|${ipKeyGenerator(req.ip)}`,
+  skipSuccessfulRequests: true,
+  message: { success: false, message: 'Too many failed sign-in attempts for this account. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipInTest,
+});
+
+/** Token refresh: every signed-in device does this every few minutes, so the ceiling only stops floods. */
+export const refreshRateLimiter = rateLimit({
+  handler: logged('refreshRateLimiter'),
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  message: { success: false, message: 'Too many requests from this network. Please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipInTest,
 });
 
 /**
@@ -29,7 +71,7 @@ export const verifyEmailRateLimiter = rateLimit({
   message: { success: false, message: 'Too many verification attempts. Please try again in 10 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => process.env.NODE_ENV === 'test',
+  skip: skipInTest,
 });
 
 /**
@@ -43,7 +85,7 @@ export const resendVerificationRateLimiter = rateLimit({
   message: { success: false, message: 'Too many resend requests. Please try again in 10 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => process.env.NODE_ENV === 'test',
+  skip: skipInTest,
 });
 
 /**
@@ -55,8 +97,6 @@ export const resendVerificationRateLimiter = rateLimit({
  * - Submissions: 5 / 15 min / IP counting only requests that were accepted (skipFailedRequests), so a
  *   visitor correcting validation mistakes is not locked out.
  */
-const skipInTest = () => process.env.NODE_ENV === 'test' && process.env.ENABLE_RATE_LIMIT_TESTS !== 'true';
-
 export const contactAttemptLimiter = rateLimit({
   handler: logged('contactAttemptLimiter'),
   windowMs: 15 * 60 * 1000,
@@ -145,3 +185,25 @@ export const templateRenderLimiter = rateLimit({
   legacyHeaders: false,
   skip: skipInTest,
 });
+
+const perUserLimiter = (name: string, max: number, windowMs: number, message: string) => rateLimit({
+  handler: logged(name),
+  windowMs,
+  max,
+  keyGenerator: perUser,
+  message: { success: false, code: 'RATE_LIMITED', message },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipInTest,
+});
+
+/** Door scanning: far above what one person can scan, it only bounds a runaway client or a stolen session probing passes. */
+export const checkInLimiter = perUserLimiter('checkInLimiter', 300, 60 * 1000, 'Too many check-in requests. Please wait a moment.');
+/** Sending messages costs money and reputation with the mail provider. */
+export const invitationSendLimiter = perUserLimiter('invitationSendLimiter', 60, 60 * 1000, 'Too many send requests. Please wait a moment.');
+/** Revoke and replace each send a message to a guest. */
+export const credentialActionLimiter = perUserLimiter('credentialActionLimiter', 60, 60 * 1000, 'Too many access-pass changes. Please wait a moment.');
+/** Parsing a spreadsheet is the most expensive thing a request can ask for. */
+export const importLimiter = perUserLimiter('importLimiter', 30, 60 * 1000, 'Too many uploads. Please wait a moment.');
+/** Uploads are kept in the database, so they are bounded per account. */
+export const mediaUploadLimiter = perUserLimiter('mediaUploadLimiter', 30, 15 * 60 * 1000, 'Too many image uploads. Please wait a few minutes.');

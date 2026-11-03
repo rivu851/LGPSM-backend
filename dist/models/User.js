@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.User = exports.AuthProvider = exports.Role = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
+const userAuthCache_1 = require("../utils/userAuthCache");
 var Role;
 (function (Role) {
     Role["ADMIN"] = "ADMIN";
@@ -74,4 +75,6 @@ const UserSchema = new mongoose_1.Schema({
         }
     }
 });
+// A change to any account (role, active flag, removal) must show up on the next request, not after the auth cache expires
+UserSchema.post(['save', 'findOneAndUpdate', 'findOneAndReplace', 'findOneAndDelete', 'updateOne', 'updateMany', 'deleteOne', 'deleteMany'], () => userAuthCache_1.userAuthCache.clear());
 exports.User = mongoose_1.default.model('User', UserSchema);

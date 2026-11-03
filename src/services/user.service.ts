@@ -8,6 +8,7 @@ import { securityEvent } from '../utils/securityLog';
 import { tokenRepository } from '../repositories/token.repository';
 import { sendEmail } from '../utils/email.provider';
 import crypto from 'crypto';
+import { escapeHtml } from '../utils/html';
 
 const PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 
@@ -22,10 +23,10 @@ async function sendCredentialsEmail(email: string, fullName: string, role: strin
   const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px 24px;border:1px solid #e5e7eb;border-radius:8px">
       <h2 style="color:#111827;margin-top:0">Your LGPSM ${label} account is ready</h2>
-      <p style="color:#374151">Hello ${fullName},</p>
+      <p style="color:#374151">Hello ${escapeHtml(fullName)},</p>
       <p style="color:#374151">Use these details to sign in:</p>
       <table style="margin:16px 0;color:#374151">
-        <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Email</td><td><strong>${email}</strong></td></tr>
+        <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Email</td><td><strong>${escapeHtml(email)}</strong></td></tr>
         <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Password</td><td><strong style="font-family:monospace;font-size:16px">${password}</strong></td></tr>
       </table>
       <p style="color:#6b7280;font-size:13px">For your security, change this password after your first sign in (Profile &gt; Change Password).</p>
@@ -48,6 +49,32 @@ export async function staffVisibleToOrganizer(organizerId: string): Promise<mong
   const ids = new Map<string, mongoose.Types.ObjectId>();
   [...created, ...assigned].forEach((id: any) => ids.set(String(id), id));
   return [...ids.values()];
+}
+
+// Phone numbers sign people in. Two accounts on one number lock both out of phone sign-in (login refuses to guess), so a number
+// another account already uses is refused here instead of letting someone lock that person out.
+export async function assertPhoneAvailable(phone: string | undefined, exceptUserId?: string) {
+  if (!phone) return;
+  const taken = await User.exists({ phone, ...(exceptUserId ? { _id: { $ne: exceptUserId } } : {}) });
+  if (taken) throw { statusCode: 409, code: 'PHONE_IN_USE', message: 'This mobile number is already used by another account.' };
+}
+
+// An organizer may see the staff who work their events, but may only change an account that is theirs. Staff created by another
+// organizer, or also working for one, have their password and email out of reach: changing them would take the account from its owner.
+async function assertOrganizerOwnsStaff(organizerId: string, target: any) {
+  if (target.createdBy && String(target.createdBy) === organizerId) return;
+  const creator: any = target.createdBy ? await User.findById(target.createdBy).select('role').lean() : null;
+  const forbidden = { statusCode: 403, message: 'This staff account belongs to another organizer, so only an administrator can change it.' };
+  if (creator?.role === Role.ORGANIZER) throw forbidden;
+  const eventIds = await SystemUserAssignment.find({ userId: target._id }).distinct('eventId');
+  if (await Event.exists({ _id: { $in: eventIds }, organizerId: { $ne: organizerId } })) throw forbidden;
+}
+
+// The platform must always keep someone able to administer it
+async function assertNotLastAdmin(target: any) {
+  if (target.role !== Role.ADMIN || !target.isActive) return;
+  const others = await User.countDocuments({ role: Role.ADMIN, isActive: true, _id: { $ne: target._id } });
+  if (others === 0) throw { statusCode: 409, code: 'LAST_ADMIN', message: 'This is the only active administrator, so the account cannot be deactivated.' };
 }
 
 // Organizers may only manage their own staff accounts (SYSTEM_USER); admins may manage anyone.
@@ -80,6 +107,7 @@ export const userService = {
   async updateProfile(userId: string, data: any) {
     const { organization, ...personal } = data || {};
     let payload: any = personal.phone !== undefined ? { ...personal, phone: normalizePhoneNumber(personal.phone) } : { ...personal };
+    await assertPhoneAvailable(payload.phone, userId);
     if (organization) {
       const me = await userRepository.findById(userId);
       if (!me) throw { statusCode: 404, message: 'User not found' };
@@ -90,7 +118,11 @@ export const userService = {
         phone: organization.phone || undefined, email: organization.email || undefined,
         address: organization.address || undefined, website: organization.website || undefined
       };
-      if (payload.profile) delete payload.profile.organizationName; // the name is changed only through `organization`
+      // the name is changed only through `organization`; the other profile fields sent with it are set one by one, because
+      // MongoDB refuses a single update that sets both `profile` and `profile.organization`
+      const { organizationName: _name, organization: _details, ...otherProfile } = payload.profile || {};
+      delete payload.profile;
+      for (const [key, value] of Object.entries(otherProfile)) payload[`profile.${key}`] = value;
     }
     const user = await userRepository.updateById(userId, payload);
     if (!user) {
@@ -143,6 +175,9 @@ export const userService = {
       ownerId = String(owner._id);
     }
 
+    const phone = data.phone ? normalizePhoneNumber(data.phone) : undefined;
+    await assertPhoneAvailable(phone);
+
     const { hashPassword } = await import('../utils/password');
     const { AuthProvider } = await import('../models/User');
 
@@ -152,7 +187,7 @@ export const userService = {
     const user = await userRepository.create({
       fullName: data.fullName,
       email: data.email,
-      phone: data.phone ? normalizePhoneNumber(data.phone) : undefined,
+      phone,
       ...(data.profile ? { profile: data.profile } : {}),
       passwordHash: hashedPassword,
       authProvider: AuthProvider.LOCAL,
@@ -227,6 +262,8 @@ export const userService = {
 
   async deleteUser(actor: Actor, userId: string) {
     const target = await findManageableUser(actor, userId);
+    if (actor.role === Role.ORGANIZER) await assertOrganizerOwnsStaff(actor.userId, target);
+    await assertNotLastAdmin(target);
     const user = await userRepository.updateById(userId, { isActive: false });
     if (!user) {
       throw { statusCode: 404, message: 'User not found' };
@@ -246,7 +283,8 @@ export const userService = {
   },
 
   async updateUser(actor: Actor, userId: string, data: any) {
-    await findManageableUser(actor, userId);
+    const target = await findManageableUser(actor, userId);
+    if (actor.role === Role.ORGANIZER) await assertOrganizerOwnsStaff(actor.userId, target);
 
     const updatePayload: any = {};
     if (data.fullName !== undefined) updatePayload.fullName = data.fullName;
@@ -257,8 +295,14 @@ export const userService = {
       }
       updatePayload.email = data.email;
     }
-    if (data.phone !== undefined) updatePayload.phone = normalizePhoneNumber(data.phone);
-    if (data.isActive !== undefined && actor.role === Role.ADMIN) updatePayload.isActive = data.isActive;
+    if (data.phone !== undefined) {
+      updatePayload.phone = normalizePhoneNumber(data.phone);
+      await assertPhoneAvailable(updatePayload.phone, userId);
+    }
+    if (data.isActive !== undefined && actor.role === Role.ADMIN) {
+      if (data.isActive === false) await assertNotLastAdmin(target);
+      updatePayload.isActive = data.isActive;
+    }
     // Only the organizer details an admin manages; the rest of the profile (avatar, etc.) is left as is
     if (data.profile && actor.role === Role.ADMIN) {
       if (data.profile.organizationName !== undefined) updatePayload['profile.organizationName'] = data.profile.organizationName;

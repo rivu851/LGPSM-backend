@@ -14,6 +14,26 @@ import { CheckIn } from '../models/CheckIn';
 import { InviteeSet, ImportMode } from '../models/InviteeSet';
 import { lockedSetKeys, setKeyOf, loadActivity, neverAttempted, deliveryStateOf, withEventLock } from './inviteeSet.service';
 import { auditLogService } from './auditLog.service';
+import { assertEventOpenForChanges } from '../utils/eventLifecycle';
+import { assertSafeWorkbook } from '../utils/spreadsheetGuard';
+
+// The only guest fields a request can write. Delivery, credential, archive and list fields change through their own workflows;
+// the food choice belongs to the guest (invitation page).
+const GUEST_DETAIL_FIELDS = ['name', 'email', 'mobile', 'companyName', 'company', 'professionalIdentity', 'secondaryIdentity', 'sessionAccess'] as const;
+const pickGuestDetails = (data: any, extra: readonly string[] = []) => {
+  const out: Record<string, unknown> = {};
+  for (const key of [...GUEST_DETAIL_FIELDS, ...extra]) if (data?.[key] !== undefined) out[key] = data[key];
+  return out;
+};
+
+/** A guest's session list may only name sessions of the guest's own event. */
+async function assertSessionsOfEvent(eventId: unknown, sessionAccess: unknown) {
+  if (!Array.isArray(sessionAccess) || sessionAccess.length === 0) return;
+  const ids = [...new Set(sessionAccess.map((a: any) => String(a?.sessionId)))];
+  const invalid = () => ({ statusCode: 400, message: 'One or more sessions are invalid or belong to a different event' });
+  if (ids.some((id) => !mongoose.Types.ObjectId.isValid(id))) throw invalid();
+  if ((await Session.countDocuments({ _id: { $in: ids }, eventId: eventId as any })) !== ids.length) throw invalid();
+}
 
 // Upper bound for one spreadsheet import (header row excluded)
 export const MAX_IMPORT_ROWS = 5000;
@@ -28,7 +48,7 @@ function withCredential<T>(invitees: T[], event: any): T[] {
     const plain = typeof i.toObject === 'function' ? i.toObject() : { ...i };
     const c = credentialStatus(plain, event, now);
     // the secrets' hashes and ciphers never leave the server: the client gets the derived status only
-    for (const k of ['qrTokenHash', 'qrTokenCipher', 'invitationTokenHash', 'invitationTokenCipher', 'mobileKey']) delete (plain as any)[k];
+    for (const k of ['qrTokenHash', 'qrTokenCipher', 'invitationTokenHash', 'invitationTokenCipher', 'mobileKey', 'sendClaimAt']) delete (plain as any)[k];
     return { ...plain, credentialStatus: c.status, credentialStatusReason: c.reason, credentialRevocation: plain.credentialRevocation ? { category: plain.credentialRevocation.category, at: plain.credentialRevocation.at } : null };
   });
 }
@@ -39,6 +59,8 @@ export const inviteeService = {
     if (!event) {
       throw new Error('EVENT_NOT_FOUND');
     }
+    assertEventOpenForChanges(event);
+    await assertSessionsOfEvent(eventId, (data as any).sessionAccess);
 
     // Check duplicates
     const duplicates = await inviteeRepository.findByEmailOrMobile(eventId, data.email, data.mobile);
@@ -49,8 +71,8 @@ export const inviteeService = {
     const companyVal = (data as any).companyName || (data as any).company;
 
     // The food choice is the guest's own, made on the invitation page; nothing typed in by an organizer can pre-empt or contradict it
-    const { dietaryPreference: _ignoredDiet, dietarySelections: _ignoredSelections, ...details } = data as any;
-    const inviteeData = {
+    const details = pickGuestDetails(data);
+    const inviteeData: any = {
       ...details,
       companyName: companyVal,
       company: companyVal,
@@ -160,6 +182,11 @@ export const inviteeService = {
     return invitee;
   },
 
+  async assertGuestEventOpen(invitee: IInvitee) {
+    const event = await Event.findById(invitee.eventId);
+    if (event) assertEventOpenForChanges(event);
+  },
+
   /** True when this guest came from an uploaded list that an invitation was sent from, answered or attended (Locked). */
   async inLockedUploadedSet(invitee: IInvitee): Promise<boolean> {
     if (!invitee.inviteeSetId) return false; // guests added by hand are not part of an uploaded list
@@ -169,8 +196,10 @@ export const inviteeService = {
 
   async updateInvitee(inviteeId: string, organizerId: string, input: Partial<IInvitee>): Promise<IInvitee> {
     // The food choice belongs to the guest (invitation page): an organizer's edit cannot set or change it
-    const { dietaryPreference: _ignoredDiet, dietarySelections: _ignoredSelections, ...data } = input as any;
+    const data: any = pickGuestDetails(input, ['rsvpStatus']);
     const invitee = await this.getInviteeById(inviteeId, organizerId); // Ensures ownership
+    await this.assertGuestEventOpen(invitee);
+    await assertSessionsOfEvent(invitee.eventId, data.sessionAccess);
 
     // A Locked list keeps who was on it: its guests' details are not rewritten (session access has its own route)
     const DETAIL_FIELDS = ['name', 'email', 'mobile', 'companyName', 'company', 'professionalIdentity', 'secondaryIdentity'] as const;
@@ -192,12 +221,6 @@ export const inviteeService = {
       }
     }
 
-    // Protect system fields
-    delete (data as any)._id;
-    delete (data as any).eventId;
-    delete (data as any).createdAt;
-    delete (data as any).invitationStatus; // Handled by separate workflows
-
     const updated = await inviteeRepository.update(inviteeId, data);
     if (!updated) {
       throw new Error('UPDATE_FAILED');
@@ -207,6 +230,7 @@ export const inviteeService = {
 
   async updateSessionAccess(inviteeId: string, organizerId: string, sessionAccess: { sessionId: string; allowed: boolean }[]): Promise<IInvitee> {
     const invitee = await this.getInviteeById(inviteeId, organizerId);
+    await this.assertGuestEventOpen(invitee);
     const eventId = invitee.eventId.toString();
 
     // Verify all sessions belong to the event
@@ -240,6 +264,7 @@ export const inviteeService = {
     if (!event) {
       throw new Error('EVENT_NOT_FOUND');
     }
+    assertEventOpenForChanges(event);
 
     // Verify all invitees belong to event
     const invitees = await Invitee.find({ _id: { $in: inviteeIds }, eventId });
@@ -271,6 +296,7 @@ export const inviteeService = {
 
   async deleteInvitee(inviteeId: string, organizerId: string): Promise<IInvitee> {
     const invitee = await this.getInviteeById(inviteeId, organizerId);
+    await this.assertGuestEventOpen(invitee);
 
     // A guest nothing has happened to can be removed from an open or hand-made list. Anyone who was invited, answered,
     // attended, or sits in a Locked list stays: removing them would erase history.
@@ -309,6 +335,7 @@ export const inviteeService = {
     if (!event) {
       throw new Error('EVENT_NOT_FOUND');
     }
+    assertEventOpenForChanges(event);
 
     const eventSessions = await Session.find({ eventId });
     let targetSession: (typeof eventSessions)[number] | undefined;
@@ -320,10 +347,11 @@ export const inviteeService = {
       }
     }
 
+    assertSafeWorkbook(fileBuffer);
     let workbook: xlsx.WorkBook;
     try {
-      // sheetRows bounds how much of a (possibly highly compressed) sheet is ever materialised
-      workbook = xlsx.read(fileBuffer, { type: 'buffer', sheetRows: MAX_IMPORT_ROWS + 2 });
+      // sheetRows bounds how much of a sheet is materialised; only cell values are needed, so nothing else is parsed
+      workbook = xlsx.read(fileBuffer, { type: 'buffer', sheetRows: MAX_IMPORT_ROWS + 2, cellFormula: false, cellHTML: false, cellStyles: false, bookVBA: false });
     } catch {
       throw { statusCode: 400, message: 'The file could not be read as an Excel sheet' };
     }

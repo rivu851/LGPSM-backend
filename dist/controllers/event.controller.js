@@ -3,7 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.eventController = void 0;
 const cancellationNotice_service_1 = require("../services/cancellationNotice.service");
 const event_service_1 = require("../services/event.service");
+const Event_1 = require("../models/Event");
 const User_1 = require("../models/User");
+const query_1 = require("../utils/query");
 exports.eventController = {
     async createEvent(req, res, next) {
         try {
@@ -16,8 +18,9 @@ exports.eventController = {
                         ? [req.body.organizerId]
                         : null;
                 if (organizerIds && organizerIds.length > 0) {
+                    const targets = await event_service_1.eventService.resolveOrganizerTargets(organizerIds);
                     const eventsCreated = [];
-                    for (const orgId of organizerIds) {
+                    for (const orgId of targets) {
                         const event = await event_service_1.eventService.createEvent(orgId, { ...req.body, organizerId: orgId });
                         eventsCreated.push(event);
                     }
@@ -52,16 +55,21 @@ exports.eventController = {
     async getEvents(req, res, next) {
         try {
             const organizerId = req.user.userId;
-            const page = parseInt(req.query.page) || 1;
-            const limit = parseInt(req.query.limit) || 10;
-            const requestedOrganizer = req.query.organizerId;
-            if (requestedOrganizer && !/^[0-9a-fA-F]{24}$/.test(requestedOrganizer)) {
+            const { page, limit } = (0, query_1.pageParams)(req.query, { limit: 10, max: 200 });
+            const requestedOrganizer = (0, query_1.queryString)(req.query.organizerId);
+            if (requestedOrganizer && !query_1.OBJECT_ID_PATTERN.test(requestedOrganizer)) {
                 res.status(400).json({ success: false, message: 'Invalid organizerId format' });
                 return;
             }
+            const categoryId = (0, query_1.queryString)(req.query.categoryId);
+            if (categoryId && !query_1.OBJECT_ID_PATTERN.test(categoryId)) {
+                res.status(400).json({ success: false, message: 'Invalid categoryId format' });
+                return;
+            }
+            const status = (0, query_1.queryString)(req.query.status);
             const filter = {
-                status: req.query.status,
-                categoryId: req.query.categoryId,
+                status: status && Object.values(Event_1.EventStatus).includes(status) ? status : undefined,
+                categoryId,
                 organizerId: requestedOrganizer
             };
             const result = await event_service_1.eventService.getEventsByOrganizer(organizerId, filter, { page, limit }, req.user.role);
@@ -85,6 +93,20 @@ exports.eventController = {
             const eventId = req.params.eventId;
             const event = await event_service_1.eventService.getEventDetails(eventId, organizerId, req.user.role);
             res.status(200).json({ success: true, data: event });
+        }
+        catch (error) {
+            if (error.message === 'EVENT_NOT_FOUND') {
+                res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
+            }
+            else {
+                next(error);
+            }
+        }
+    },
+    async getEventCounts(req, res, next) {
+        try {
+            const data = await event_service_1.eventService.getEventCounts(req.params.eventId, req.user.userId, req.user.role);
+            res.status(200).json({ success: true, data });
         }
         catch (error) {
             if (error.message === 'EVENT_NOT_FOUND') {

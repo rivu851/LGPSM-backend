@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -19,6 +52,35 @@ const PasswordResetOtp_1 = require("../models/PasswordResetOtp");
 const alert_service_1 = require("./alert.service");
 const env_1 = require("../config/env");
 const whatsapp_service_1 = require("./whatsapp.service");
+const html_1 = require("../utils/html");
+const PasswordResetThrottle_1 = require("../models/PasswordResetThrottle");
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+// Compared against when no account matches, so an unknown address costs the same time as a wrong password.
+const UNKNOWN_ACCOUNT_HASH = bcrypt_1.default.hashSync(crypto_1.default.randomBytes(16).toString('hex'), 10);
+// Two tabs or a retried request can present a token that was exchanged a moment ago: that is refused but is no sign of theft.
+// The same token coming back later means two parties hold it, so every session of the account is ended.
+const REFRESH_REUSE_GRACE_MS = 30 * 1000;
+/** When a refresh token stops being accepted, read from the token itself so the record always agrees with JWT_REFRESH_EXPIRES_IN. */
+const refreshExpiry = (token) => {
+    const exp = jsonwebtoken_1.default.decode(token)?.exp;
+    return new Date(exp ? exp * 1000 : Date.now() + 7 * 24 * 60 * 60 * 1000);
+};
+const throttleUpdate = (inc) => ({
+    $inc: { [inc]: 1 },
+    $setOnInsert: { purgeAt: new Date(Date.now() + PasswordResetThrottle_1.RESET_THROTTLE_WINDOW_MS) },
+});
+/** Takes one unit of an account's allowance atomically; false when it is used up. */
+async function spendResetAllowance(email, field, max) {
+    try {
+        await PasswordResetThrottle_1.PasswordResetThrottle.findOneAndUpdate({ email, [field]: { $lt: max } }, throttleUpdate(field), { upsert: true, new: true });
+        return true;
+    }
+    catch (e) {
+        if (e?.code === 11000)
+            return false; // the record exists and is at its limit, so the conditional match inserted a duplicate
+        throw e;
+    }
+}
 // ─── OTP helpers (no plaintext ever leaves this module) ───────────────────────
 /** Generates a cryptographically random 6-digit string (zero-padded). */
 function generateOtpPlaintext() {
@@ -42,7 +104,7 @@ async function sendVerificationEmail(email, fullName, otp) {
     const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px 24px;border:1px solid #e5e7eb;border-radius:8px">
       <h2 style="color:#111827;margin-top:0">Verify your email address</h2>
-      <p style="color:#374151">Hello ${fullName},</p>
+      <p style="color:#374151">Hello ${(0, html_1.escapeHtml)(fullName)},</p>
       <p style="color:#374151">
         Enter the following 6-digit code to verify your LGPSM organizer account.
         The code expires in <strong>${EmailVerification_1.OTP_EXPIRY_MINUTES} minutes</strong>.
@@ -80,6 +142,8 @@ exports.authService = {
         if (data.role && data.role !== User_1.Role.ORGANIZER) {
             throw { statusCode: 403, message: 'Only organizer accounts can be self-registered' };
         }
+        const { assertPhoneAvailable } = await Promise.resolve().then(() => __importStar(require('./user.service')));
+        await assertPhoneAvailable(data.phone ? (0, whatsapp_service_1.normalizePhoneNumber)(data.phone) : undefined);
         const hashedPassword = await (0, password_1.hashPassword)(data.password);
         // Create account as active but unverified (isActive is preserved for administrative activation semantics)
         const user = await user_repository_1.userRepository.create({
@@ -245,22 +309,15 @@ exports.authService = {
         let user;
         if (data.email && data.phone) {
             // Both identifiers supplied — they must resolve to the same account.
-            if (!userByEmail || !userByPhone || String(userByEmail._id) !== String(userByPhone._id)) {
-                throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
-            }
-            user = userByEmail;
+            user = userByEmail && userByPhone && String(userByEmail._id) === String(userByPhone._id) ? userByEmail : null;
         }
         else {
             user = userByEmail ?? userByPhone;
         }
-        if (!user) {
-            throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
-        }
-        if (user.authProvider !== User_1.AuthProvider.LOCAL || !user.passwordHash) {
-            throw { statusCode: 401, message: 'Invalid authentication method' };
-        }
-        const isMatch = await (0, password_1.verifyPassword)(data.password, user.passwordHash);
-        if (!isMatch) {
+        // Every sign-in failure before this point looks the same from outside: same answer, same time spent
+        const canUsePassword = !!user && user.authProvider === User_1.AuthProvider.LOCAL && !!user.passwordHash;
+        const isMatch = await (0, password_1.verifyPassword)(data.password, canUsePassword ? user.passwordHash : UNKNOWN_ACCOUNT_HASH);
+        if (!user || !canUsePassword || !isMatch) {
             throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
         }
         // Role-portal check
@@ -281,30 +338,33 @@ exports.authService = {
         const userId = user._id.toString();
         const accessToken = (0, token_1.generateAccessToken)(userId, user.role);
         const refreshToken = (0, token_1.generateRefreshToken)(userId, user.role);
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        await token_repository_1.tokenRepository.createRefreshToken(userId, refreshToken, expiresAt);
+        await token_repository_1.tokenRepository.createRefreshToken(userId, refreshToken, refreshExpiry(refreshToken));
         return { user, accessToken, refreshToken };
     },
     async refresh(token) {
         const payload = (0, token_1.verifyRefreshToken)(token);
-        const tokenDoc = await token_repository_1.tokenRepository.findByToken(token);
-        if (!tokenDoc || tokenDoc.isRevoked || tokenDoc.expiresAt < new Date()) {
+        const consumed = await token_repository_1.tokenRepository.consumeForRotation(token);
+        if (!consumed) {
+            const known = await token_repository_1.tokenRepository.findByToken(token);
+            if (known?.rotatedAt && Date.now() - known.rotatedAt.getTime() > REFRESH_REUSE_GRACE_MS) {
+                await token_repository_1.tokenRepository.revokeAllForUser(String(known.userId));
+                (0, securityLog_1.securityEvent)('REFRESH_TOKEN_REUSED', undefined, { subject: String(known.userId) });
+            }
             throw { statusCode: 401, message: 'Invalid or expired refresh token' };
         }
         const user = await user_repository_1.userRepository.findById(payload.userId);
         if (!user || !user.isActive) {
             throw { statusCode: 401, message: 'User not found or inactive' };
         }
-        await token_repository_1.tokenRepository.revokeToken(token);
         const userId = user._id.toString();
         const newAccessToken = (0, token_1.generateAccessToken)(userId, user.role);
         const newRefreshToken = (0, token_1.generateRefreshToken)(userId, user.role);
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        await token_repository_1.tokenRepository.createRefreshToken(userId, newRefreshToken, expiresAt);
+        await token_repository_1.tokenRepository.createRefreshToken(userId, newRefreshToken, refreshExpiry(newRefreshToken));
         return { accessToken: newAccessToken, refreshToken: newRefreshToken };
     },
     async logout(token) {
-        if (token) {
+        // The body of this route is not schema-checked: anything but a string (such as a query operator) is ignored
+        if (typeof token === 'string' && token) {
             await token_repository_1.tokenRepository.revokeToken(token);
         }
     },
@@ -315,12 +375,8 @@ exports.authService = {
         const resetToken = (0, token_1.generatePasswordResetToken)(user._id.toString(), user.role, user.passwordHash);
         const portal = user.role === User_1.Role.ADMIN ? 'admin' : user.role === User_1.Role.ORGANIZER ? 'organizer' : 'app';
         const resetUrl = `${env_1.env.FRONTEND_URL}/forgot-password?mode=${portal}&token=${encodeURIComponent(resetToken)}`;
-        try {
-            await (0, email_provider_1.sendEmail)(user.email, 'Reset your LGPSM password', `<p>Hello ${user.fullName},</p><p>Use the link below to reset your password. It expires in 15 minutes.</p><p><a href="${resetUrl}">Reset password</a></p><p>If you did not request this, you can ignore this email.</p>`);
-        }
-        catch (err) {
-            console.error('Password reset email could not be sent:', err.message);
-        }
+        // Not awaited: waiting for the mail server would reveal, by the response time, that this address has an account
+        void (0, email_provider_1.sendEmail)(user.email, 'Reset your LGPSM password', `<p>Hello ${(0, html_1.escapeHtml)(user.fullName)},</p><p>Use the link below to reset your password. It expires in 15 minutes.</p><p><a href="${(0, html_1.escapeHtml)(resetUrl)}">Reset password</a></p><p>If you did not request this, you can ignore this email.</p>`).catch((err) => console.error('Password reset email could not be sent:', err.message));
     },
     /**
      * Mobile "Forgot password", step 1. Emails a short code when the address belongs to an active account.
@@ -335,6 +391,9 @@ exports.authService = {
         const existing = await PasswordResetOtp_1.PasswordResetOtp.findOne({ email: normalised });
         if (existing && Date.now() - existing.lastSentAt.getTime() < PasswordResetOtp_1.RESET_OTP_RESEND_COOLDOWN_SECONDS * 1000)
             return;
+        // Bounds the mail one address can be sent, whatever IP addresses the requests come from
+        if (!(await spendResetAllowance(normalised, 'codesSent', PasswordResetThrottle_1.MAX_RESET_CODES_PER_WINDOW)))
+            return;
         const otp = generateResetOtp();
         const now = new Date();
         await PasswordResetOtp_1.PasswordResetOtp.findOneAndUpdate({ email: normalised }, {
@@ -344,17 +403,12 @@ exports.authService = {
             attempts: 0,
             lastSentAt: now,
         }, { upsert: true, new: true, setDefaultsOnInsert: true });
-        try {
-            await (0, email_provider_1.sendEmail)(user.email, 'Your LGPSM password reset code', `<div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px 24px;border:1px solid #e5e7eb;border-radius:8px">
+        void (0, email_provider_1.sendEmail)(user.email, 'Your LGPSM password reset code', `<div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px 24px;border:1px solid #e5e7eb;border-radius:8px">
           <h2 style="color:#111827;margin-top:0">Reset your password</h2>
-          <p style="color:#374151">Hello ${user.fullName}, use this code to reset your LGPSM password. It expires in <strong>${PasswordResetOtp_1.RESET_OTP_EXPIRY_MINUTES} minutes</strong>.</p>
+          <p style="color:#374151">Hello ${(0, html_1.escapeHtml)(user.fullName)}, use this code to reset your LGPSM password. It expires in <strong>${PasswordResetOtp_1.RESET_OTP_EXPIRY_MINUTES} minutes</strong>.</p>
           <div style="text-align:center;margin:28px 0"><span style="display:inline-block;font-size:36px;font-weight:700;letter-spacing:10px;color:#FF651D;background:#fff7f0;padding:16px 24px;border-radius:8px;border:2px solid #FF651D">${otp}</span></div>
           <p style="color:#6b7280;font-size:13px">If you did not request this, you can ignore this email. Never share this code with anyone.</p>
-        </div>`);
-        }
-        catch (err) {
-            console.error('Password reset code email could not be sent:', err.message);
-        }
+        </div>`).catch((err) => console.error('Password reset code email could not be sent:', err.message));
     },
     /**
      * Mobile "Forgot password", step 2. Checks the emailed code and, when right, returns the same short-lived
@@ -364,16 +418,24 @@ exports.authService = {
     async verifyPasswordResetOtp(email, code) {
         const invalid = { statusCode: 400, message: 'Invalid or expired code.' };
         const normalised = email.toLowerCase().trim();
-        const record = await PasswordResetOtp_1.PasswordResetOtp.findOne({ email: normalised });
-        if (!record || record.expiresAt.getTime() <= Date.now() || record.attempts >= PasswordResetOtp_1.MAX_RESET_OTP_ATTEMPTS)
+        // The guess is counted before it is checked, in one database step, so simultaneous requests cannot exceed the limit
+        const record = await PasswordResetOtp_1.PasswordResetOtp.findOneAndUpdate({ email: normalised, expiresAt: { $gt: new Date() }, attempts: { $lt: PasswordResetOtp_1.MAX_RESET_OTP_ATTEMPTS } }, { $inc: { attempts: 1 } }, { new: true });
+        if (!record)
+            throw invalid;
+        const throttled = await PasswordResetThrottle_1.PasswordResetThrottle.findOne({ email: normalised }).select('failedGuesses').lean();
+        if ((throttled?.failedGuesses ?? 0) >= PasswordResetThrottle_1.MAX_RESET_GUESSES_PER_WINDOW)
             throw invalid;
         if (!(await verifyOtp(code, record.codeHash))) {
-            await PasswordResetOtp_1.PasswordResetOtp.updateOne({ _id: record._id }, { $inc: { attempts: 1 } });
             (0, securityLog_1.securityEvent)('PASSWORD_RESET_OTP_FAILED', undefined, { subject: normalised });
+            if (!(await spendResetAllowance(normalised, 'failedGuesses', PasswordResetThrottle_1.MAX_RESET_GUESSES_PER_WINDOW))) {
+                // this account has used up its guesses for now: a further new code cannot buy more
+                await PasswordResetOtp_1.PasswordResetOtp.deleteOne({ _id: record._id });
+            }
             throw invalid;
         }
-        // single use: a verified code is gone immediately
+        // single use: a verified code is gone immediately, and whoever holds the mailbox starts afresh
         await PasswordResetOtp_1.PasswordResetOtp.deleteOne({ _id: record._id });
+        await PasswordResetThrottle_1.PasswordResetThrottle.deleteOne({ email: normalised });
         const user = await user_repository_1.userRepository.findByEmail(normalised);
         if (!user || !user.isActive)
             throw invalid;

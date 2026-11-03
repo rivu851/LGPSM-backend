@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.reportController = void 0;
 const report_service_1 = require("../services/report.service");
+const query_1 = require("../utils/query");
 const parseDate = (v) => {
     if (typeof v !== 'string' || !v)
         return undefined;
@@ -12,10 +13,13 @@ exports.reportController = {
     async getEarnings(req, res) {
         try {
             const actor = req.user;
+            const eventId = (0, query_1.queryString)(req.query.eventId);
+            if (eventId && !query_1.OBJECT_ID_PATTERN.test(eventId))
+                return res.status(400).json({ success: false, message: 'Invalid eventId format' });
             const data = await report_service_1.reportService.getEarnings({
                 from: parseDate(req.query.from),
                 to: parseDate(req.query.to),
-                eventId: req.query.eventId,
+                eventId,
                 organizerId: actor.role === 'ORGANIZER' ? actor.userId : undefined,
             });
             return res.status(200).json({ success: true, data });

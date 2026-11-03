@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { userService } from '../services/user.service';
 import { systemUserAssignmentService } from '../services/systemUserAssignment.service';
+import { queryObjectId, queryString } from '../utils/query';
 
 export const userController = {
   async getProfile(req: Request, res: Response, next: NextFunction) {
@@ -46,12 +47,12 @@ export const userController = {
   async getUsers(req: Request, res: Response, next: NextFunction) {
     try {
       if (!req.user) throw { statusCode: 401, message: 'Unauthorized' };
-      const roleFilter = req.query.role as string | undefined;
+      const roleFilter = queryString(req.query.role);
       const includeInactive = req.query.includeInactive === 'true';
       const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
-      const search = (req.query.search as string | undefined)?.trim() || undefined;
-      const result = await userService.getUsers(req.user, roleFilter, includeInactive, { page, limit, search, organizerId: (req.query.organizerId as string | undefined) || undefined });
+      const search = queryString(req.query.search)?.trim().slice(0, 100) || undefined;
+      const result = await userService.getUsers(req.user, roleFilter, includeInactive, { page, limit, search, organizerId: queryObjectId(req.query.organizerId, 'organizerId') });
       res.status(200).json({
         success: true,
         data: result.users,

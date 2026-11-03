@@ -13,7 +13,8 @@ exports.submitFoodSchema = zod_1.z.object({
 });
 exports.submitRsvpSchema = zod_1.z.object({
     body: zod_1.z.object({
-        rsvpStatus: zod_1.z.nativeEnum(Invitee_1.RsvpStatus, {
+        // PENDING is the state before a guest answers; it is not an answer
+        rsvpStatus: zod_1.z.enum([Invitee_1.RsvpStatus.ACCEPTED, Invitee_1.RsvpStatus.DECLINED], {
             message: 'rsvpStatus must be ACCEPTED or DECLINED'
         }),
         dietaryPreference: zod_1.z.string().max(100).optional(),

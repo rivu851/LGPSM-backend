@@ -77,7 +77,8 @@ export function auditAction(opts: AuditActionOptions) {
       }
     }
 
-    res.on('finish', async () => {
+    // A listener's rejection would be unhandled: recording the outcome must never be able to take the process down
+    res.on('finish', async () => { try {
       const ok = res.statusCode < 400;
       const data = isObj(captured) ? captured.data : undefined;
       entityId = entityId || (isObj(data) ? data._id || data.id || data.eventId : undefined);
@@ -90,7 +91,7 @@ export function auditAction(opts: AuditActionOptions) {
       } else {
         await auditLogService.record({ ...entry(ok ? 'SUCCESS' : 'FAILED', organizerId), eventId, entityId, metadata });
       }
-    });
+    } catch (error: any) { console.error('Audit outcome could not be recorded:', opts.action, error?.message); } });
     next();
   };
 }

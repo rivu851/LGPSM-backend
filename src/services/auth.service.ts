@@ -26,6 +26,38 @@ import {
 import { alertService } from './alert.service';
 import { env } from '../config/env';
 import { normalizePhoneNumber } from './whatsapp.service';
+import { escapeHtml } from '../utils/html';
+import { PasswordResetThrottle, RESET_THROTTLE_WINDOW_MS, MAX_RESET_GUESSES_PER_WINDOW, MAX_RESET_CODES_PER_WINDOW } from '../models/PasswordResetThrottle';
+import jwt from 'jsonwebtoken';
+
+// Compared against when no account matches, so an unknown address costs the same time as a wrong password.
+const UNKNOWN_ACCOUNT_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
+
+// Two tabs or a retried request can present a token that was exchanged a moment ago: that is refused but is no sign of theft.
+// The same token coming back later means two parties hold it, so every session of the account is ended.
+const REFRESH_REUSE_GRACE_MS = 30 * 1000;
+
+/** When a refresh token stops being accepted, read from the token itself so the record always agrees with JWT_REFRESH_EXPIRES_IN. */
+const refreshExpiry = (token: string): Date => {
+  const exp = (jwt.decode(token) as { exp?: number } | null)?.exp;
+  return new Date(exp ? exp * 1000 : Date.now() + 7 * 24 * 60 * 60 * 1000);
+};
+
+const throttleUpdate = (inc: 'failedGuesses' | 'codesSent') => ({
+  $inc: { [inc]: 1 },
+  $setOnInsert: { purgeAt: new Date(Date.now() + RESET_THROTTLE_WINDOW_MS) },
+});
+
+/** Takes one unit of an account's allowance atomically; false when it is used up. */
+async function spendResetAllowance(email: string, field: 'failedGuesses' | 'codesSent', max: number): Promise<boolean> {
+  try {
+    await PasswordResetThrottle.findOneAndUpdate({ email, [field]: { $lt: max } }, throttleUpdate(field), { upsert: true, new: true });
+    return true;
+  } catch (e: any) {
+    if (e?.code === 11000) return false; // the record exists and is at its limit, so the conditional match inserted a duplicate
+    throw e;
+  }
+}
 
 // ─── OTP helpers (no plaintext ever leaves this module) ───────────────────────
 
@@ -60,7 +92,7 @@ async function sendVerificationEmail(
   const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px 24px;border:1px solid #e5e7eb;border-radius:8px">
       <h2 style="color:#111827;margin-top:0">Verify your email address</h2>
-      <p style="color:#374151">Hello ${fullName},</p>
+      <p style="color:#374151">Hello ${escapeHtml(fullName)},</p>
       <p style="color:#374151">
         Enter the following 6-digit code to verify your LGPSM organizer account.
         The code expires in <strong>${OTP_EXPIRY_MINUTES} minutes</strong>.
@@ -108,6 +140,9 @@ export const authService = {
     if (data.role && data.role !== Role.ORGANIZER) {
       throw { statusCode: 403, message: 'Only organizer accounts can be self-registered' };
     }
+
+    const { assertPhoneAvailable } = await import('./user.service');
+    await assertPhoneAvailable(data.phone ? normalizePhoneNumber(data.phone) : undefined);
 
     const hashedPassword = await hashPassword(data.password);
 
@@ -312,27 +347,18 @@ export const authService = {
     }
     const userByPhone = phoneMatches[0] ?? null;
 
-    let user;
+    let user: Awaited<ReturnType<typeof userRepository.findByEmail>>;
     if (data.email && data.phone) {
       // Both identifiers supplied — they must resolve to the same account.
-      if (!userByEmail || !userByPhone || String(userByEmail._id) !== String(userByPhone._id)) {
-        throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
-      }
-      user = userByEmail;
+      user = userByEmail && userByPhone && String(userByEmail._id) === String(userByPhone._id) ? userByEmail : null;
     } else {
       user = userByEmail ?? userByPhone;
     }
 
-    if (!user) {
-      throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
-    }
-
-    if (user.authProvider !== AuthProvider.LOCAL || !user.passwordHash) {
-      throw { statusCode: 401, message: 'Invalid authentication method' };
-    }
-
-    const isMatch = await verifyPassword(data.password, user.passwordHash);
-    if (!isMatch) {
+    // Every sign-in failure before this point looks the same from outside: same answer, same time spent
+    const canUsePassword = !!user && user.authProvider === AuthProvider.LOCAL && !!user.passwordHash;
+    const isMatch = await verifyPassword(data.password, canUsePassword ? user!.passwordHash! : UNKNOWN_ACCOUNT_HASH);
+    if (!user || !canUsePassword || !isMatch) {
       throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
     }
 
@@ -358,8 +384,7 @@ export const authService = {
     const accessToken = generateAccessToken(userId, user.role);
     const refreshToken = generateRefreshToken(userId, user.role);
 
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await tokenRepository.createRefreshToken(userId, refreshToken, expiresAt);
+    await tokenRepository.createRefreshToken(userId, refreshToken, refreshExpiry(refreshToken));
 
     return { user, accessToken, refreshToken };
   },
@@ -367,8 +392,13 @@ export const authService = {
   async refresh(token: string) {
     const payload = verifyRefreshToken(token);
 
-    const tokenDoc = await tokenRepository.findByToken(token);
-    if (!tokenDoc || tokenDoc.isRevoked || tokenDoc.expiresAt < new Date()) {
+    const consumed = await tokenRepository.consumeForRotation(token);
+    if (!consumed) {
+      const known = await tokenRepository.findByToken(token);
+      if (known?.rotatedAt && Date.now() - known.rotatedAt.getTime() > REFRESH_REUSE_GRACE_MS) {
+        await tokenRepository.revokeAllForUser(String(known.userId));
+        securityEvent('REFRESH_TOKEN_REUSED', undefined, { subject: String(known.userId) });
+      }
       throw { statusCode: 401, message: 'Invalid or expired refresh token' };
     }
 
@@ -377,20 +407,18 @@ export const authService = {
       throw { statusCode: 401, message: 'User not found or inactive' };
     }
 
-    await tokenRepository.revokeToken(token);
-
     const userId = (user as any)._id.toString();
     const newAccessToken = generateAccessToken(userId, user.role);
     const newRefreshToken = generateRefreshToken(userId, user.role);
 
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await tokenRepository.createRefreshToken(userId, newRefreshToken, expiresAt);
+    await tokenRepository.createRefreshToken(userId, newRefreshToken, refreshExpiry(newRefreshToken));
 
     return { accessToken: newAccessToken, refreshToken: newRefreshToken };
   },
 
-  async logout(token: string) {
-    if (token) {
+  async logout(token: unknown) {
+    // The body of this route is not schema-checked: anything but a string (such as a query operator) is ignored
+    if (typeof token === 'string' && token) {
       await tokenRepository.revokeToken(token);
     }
   },
@@ -403,15 +431,12 @@ export const authService = {
     const portal = user.role === Role.ADMIN ? 'admin' : user.role === Role.ORGANIZER ? 'organizer' : 'app';
     const resetUrl = `${env.FRONTEND_URL}/forgot-password?mode=${portal}&token=${encodeURIComponent(resetToken)}`;
 
-    try {
-      await sendEmail(
-        user.email,
-        'Reset your LGPSM password',
-        `<p>Hello ${user.fullName},</p><p>Use the link below to reset your password. It expires in 15 minutes.</p><p><a href="${resetUrl}">Reset password</a></p><p>If you did not request this, you can ignore this email.</p>`
-      );
-    } catch (err) {
-      console.error('Password reset email could not be sent:', (err as Error).message);
-    }
+    // Not awaited: waiting for the mail server would reveal, by the response time, that this address has an account
+    void sendEmail(
+      user.email,
+      'Reset your LGPSM password',
+      `<p>Hello ${escapeHtml(user.fullName)},</p><p>Use the link below to reset your password. It expires in 15 minutes.</p><p><a href="${escapeHtml(resetUrl)}">Reset password</a></p><p>If you did not request this, you can ignore this email.</p>`
+    ).catch((err) => console.error('Password reset email could not be sent:', (err as Error).message));
   },
 
 
@@ -427,6 +452,8 @@ export const authService = {
 
     const existing = await PasswordResetOtp.findOne({ email: normalised });
     if (existing && Date.now() - existing.lastSentAt.getTime() < RESET_OTP_RESEND_COOLDOWN_SECONDS * 1000) return;
+    // Bounds the mail one address can be sent, whatever IP addresses the requests come from
+    if (!(await spendResetAllowance(normalised, 'codesSent', MAX_RESET_CODES_PER_WINDOW))) return;
 
     const otp = generateResetOtp();
     const now = new Date();
@@ -442,20 +469,16 @@ export const authService = {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
-    try {
-      await sendEmail(
+    void sendEmail(
         user.email,
         'Your LGPSM password reset code',
         `<div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px 24px;border:1px solid #e5e7eb;border-radius:8px">
           <h2 style="color:#111827;margin-top:0">Reset your password</h2>
-          <p style="color:#374151">Hello ${user.fullName}, use this code to reset your LGPSM password. It expires in <strong>${RESET_OTP_EXPIRY_MINUTES} minutes</strong>.</p>
+          <p style="color:#374151">Hello ${escapeHtml(user.fullName)}, use this code to reset your LGPSM password. It expires in <strong>${RESET_OTP_EXPIRY_MINUTES} minutes</strong>.</p>
           <div style="text-align:center;margin:28px 0"><span style="display:inline-block;font-size:36px;font-weight:700;letter-spacing:10px;color:#FF651D;background:#fff7f0;padding:16px 24px;border-radius:8px;border:2px solid #FF651D">${otp}</span></div>
           <p style="color:#6b7280;font-size:13px">If you did not request this, you can ignore this email. Never share this code with anyone.</p>
         </div>`
-      );
-    } catch (err) {
-      console.error('Password reset code email could not be sent:', (err as Error).message);
-    }
+    ).catch((err) => console.error('Password reset code email could not be sent:', (err as Error).message));
   },
 
   /**
@@ -467,17 +490,28 @@ export const authService = {
     const invalid = { statusCode: 400, message: 'Invalid or expired code.' };
     const normalised = email.toLowerCase().trim();
 
-    const record = await PasswordResetOtp.findOne({ email: normalised });
-    if (!record || record.expiresAt.getTime() <= Date.now() || record.attempts >= MAX_RESET_OTP_ATTEMPTS) throw invalid;
+    // The guess is counted before it is checked, in one database step, so simultaneous requests cannot exceed the limit
+    const record = await PasswordResetOtp.findOneAndUpdate(
+      { email: normalised, expiresAt: { $gt: new Date() }, attempts: { $lt: MAX_RESET_OTP_ATTEMPTS } },
+      { $inc: { attempts: 1 } },
+      { new: true }
+    );
+    if (!record) throw invalid;
+    const throttled: any = await PasswordResetThrottle.findOne({ email: normalised }).select('failedGuesses').lean();
+    if ((throttled?.failedGuesses ?? 0) >= MAX_RESET_GUESSES_PER_WINDOW) throw invalid;
 
     if (!(await verifyOtp(code, record.codeHash))) {
-      await PasswordResetOtp.updateOne({ _id: record._id }, { $inc: { attempts: 1 } });
       securityEvent('PASSWORD_RESET_OTP_FAILED', undefined, { subject: normalised });
+      if (!(await spendResetAllowance(normalised, 'failedGuesses', MAX_RESET_GUESSES_PER_WINDOW))) {
+        // this account has used up its guesses for now: a further new code cannot buy more
+        await PasswordResetOtp.deleteOne({ _id: record._id });
+      }
       throw invalid;
     }
 
-    // single use: a verified code is gone immediately
+    // single use: a verified code is gone immediately, and whoever holds the mailbox starts afresh
     await PasswordResetOtp.deleteOne({ _id: record._id });
+    await PasswordResetThrottle.deleteOne({ email: normalised });
 
     const user = await userRepository.findByEmail(normalised);
     if (!user || !user.isActive) throw invalid;

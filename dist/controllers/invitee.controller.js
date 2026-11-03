@@ -6,6 +6,7 @@ const passNotice_service_1 = require("../services/passNotice.service");
 const invitee_service_1 = require("../services/invitee.service");
 const inviteeSet_service_1 = require("../services/inviteeSet.service");
 const InviteeSet_1 = require("../models/InviteeSet");
+const query_1 = require("../utils/query");
 const CREDENTIAL_REFUSALS = {
     INVITEE_NOT_FOUND: { status: 404, message: 'Guest not found or inaccessible' },
     EVENT_NOT_FOUND: { status: 404, message: 'Event not found or inaccessible' },
@@ -143,17 +144,17 @@ exports.inviteeController = {
             const eventId = req.params.eventId;
             const page = Math.max(parseInt(req.query.page) || 1, 1);
             const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 100);
-            const checkInStatusParam = req.query.checkInStatus;
+            const checkInStatusParam = (0, query_1.queryString)(req.query.checkInStatus);
             const checkInStatus = checkInStatusParam === 'CHECKED_IN' || checkInStatusParam === 'PENDING' ? checkInStatusParam : undefined;
             const options = {
                 page,
                 limit,
-                rsvpStatus: req.query.rsvpStatus,
-                invitationStatus: req.query.invitationStatus,
-                search: req.query.search,
-                sessionId: req.query.sessionId,
+                rsvpStatus: (0, query_1.queryString)(req.query.rsvpStatus),
+                invitationStatus: (0, query_1.queryString)(req.query.invitationStatus),
+                search: (0, query_1.queryString)(req.query.search)?.slice(0, 100),
+                sessionId: (0, query_1.queryObjectId)(req.query.sessionId, 'sessionId'),
                 checkInStatus,
-                sessionAccessId: req.query.sessionAccessId,
+                sessionAccessId: (0, query_1.queryObjectId)(req.query.sessionAccessId, 'sessionAccessId'),
                 invitation: req.query.invitation === 'SENT' || req.query.invitation === 'NOT_SENT' ? req.query.invitation : undefined,
             };
             const result = await invitee_service_1.inviteeService.getInvitees(eventId, organizerId, options, req.user.role);
@@ -281,7 +282,7 @@ exports.inviteeController = {
                 res.status(400).json({ error: 'Bad Request', message: 'No file uploaded', details: [] });
                 return;
             }
-            const rawSessionId = (req.body?.sessionId || req.query.sessionId || '');
+            const rawSessionId = String(req.body?.sessionId || (0, query_1.queryString)(req.query.sessionId) || '');
             if (rawSessionId && !/^[0-9a-fA-F]{24}$/.test(rawSessionId)) {
                 res.status(400).json({ success: false, message: 'Invalid sessionId format' });
                 return;

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { escapeHtml } from '../utils/html';
 import { Notification } from '../models/Notification';
 import { User, Role } from '../models/User';
 import { INotificationPreferences } from '../models/PlatformSettings';
@@ -13,7 +14,6 @@ interface AlertContent {
   entityId?: unknown;
 }
 
-const escapeHtml = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 function toDoc(userId: unknown, content: AlertContent) {
   return {

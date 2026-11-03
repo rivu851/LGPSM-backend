@@ -32,13 +32,13 @@ const validateDietaryOptions = (preference, ctx) => {
 };
 const dietaryPreferenceCreateSchema = zod_1.z.object({
     enabled: zod_1.z.boolean().optional(),
-    title: zod_1.z.string().optional(),
-    options: zod_1.z.array(zod_1.z.any()).optional()
+    title: zod_1.z.string().max(100).optional(),
+    options: zod_1.z.array(zod_1.z.any()).max(50, 'Too many dietary options').optional()
 }).superRefine(validateDietaryOptions);
 const dietaryPreferenceUpdateSchema = zod_1.z.object({
     enabled: zod_1.z.boolean(),
-    title: zod_1.z.string().optional(),
-    options: zod_1.z.array(zod_1.z.any()).optional()
+    title: zod_1.z.string().max(100).optional(),
+    options: zod_1.z.array(zod_1.z.any()).max(50, 'Too many dietary options').optional()
 }).superRefine(validateDietaryOptions);
 // When guests may be admitted (see utils/admissionWindow). null / absent = follow the event's start and end.
 exports.admissionSchema = zod_1.z.object({
@@ -49,7 +49,7 @@ exports.updateAdmissionSchema = zod_1.z.object({ body: exports.admissionSchema }
 // Event Location (the venue named on the invitation card) and the optional Address (extra directions) are separate fields
 const locationFieldsSchema = zod_1.z.object({
     address: zod_1.z.string().trim().min(1, 'Event location is required').max(eventLimits_1.EVENT_LOCATION_MAX_LENGTH, `Event location cannot exceed ${eventLimits_1.EVENT_LOCATION_MAX_LENGTH} characters`).optional(),
-    addressDetails: zod_1.z.string().trim().max(500, 'Address cannot exceed 500 characters').optional(),
+    addressDetails: zod_1.z.string().trim().max(300, 'Address cannot exceed 300 characters').optional(),
     coordinates: zod_1.z.any().optional()
 }).passthrough();
 const hasVenue = (loc) => (typeof loc === 'string' ? loc.trim() !== '' : !!loc && typeof loc === 'object' && typeof loc.address === 'string' && loc.address.trim() !== '');
@@ -61,7 +61,7 @@ exports.createEventSchema = zod_1.z.object({
         subcategoryId: objectIdSchema.optional(),
         format: zod_1.z.nativeEnum(Event_1.EventFormat).optional().default(Event_1.EventFormat.PHYSICAL),
         location: zod_1.z.union([zod_1.z.string().max(eventLimits_1.EVENT_LOCATION_MAX_LENGTH), locationFieldsSchema]).optional(),
-        contactNumber: zod_1.z.string().optional(),
+        contactNumber: zod_1.z.string().trim().max(30, 'Contact number is too long').optional(),
         schedule: zod_1.z.object({
             start: zod_1.z.string().optional(),
             end: zod_1.z.string().optional()
@@ -100,13 +100,13 @@ exports.updateEventSchema = zod_1.z.object({
         format: zod_1.z.nativeEnum(Event_1.EventFormat).optional(),
         location: zod_1.z.object({
             address: zod_1.z.string().trim().min(1, 'Event location is required').max(eventLimits_1.EVENT_LOCATION_MAX_LENGTH, `Event location cannot exceed ${eventLimits_1.EVENT_LOCATION_MAX_LENGTH} characters`).optional(),
-            addressDetails: zod_1.z.string().trim().max(500, 'Address cannot exceed 500 characters').optional(),
+            addressDetails: zod_1.z.string().trim().max(300, 'Address cannot exceed 300 characters').optional(),
             coordinates: zod_1.z.tuple([
                 zod_1.z.number().min(-180).max(180),
                 zod_1.z.number().min(-90).max(90)
             ]).optional()
         }).optional(),
-        contactNumber: zod_1.z.string().optional(),
+        contactNumber: zod_1.z.string().trim().max(30, 'Contact number is too long').optional(),
         schedule: zod_1.z.object({
             start: zod_1.z.string().datetime(),
             end: zod_1.z.string().datetime()

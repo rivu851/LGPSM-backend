@@ -1,5 +1,6 @@
 import { requestId } from './middlewares/requestId';
 import express from 'express';
+import mongoose from 'mongoose';
 import cors from 'cors';
 import helmet from 'helmet';
 import { requestLogger } from './middlewares/requestLogger';
@@ -43,7 +44,7 @@ if (env.NODE_ENV !== 'test') {
 // Browsers send the origin without a trailing slash, so entries are normalised before matching
 const allowedOrigins = [
   env.FRONTEND_URL,
-  'http://localhost:3000',
+  ...(env.NODE_ENV === 'production' ? [] : ['http://localhost:3000']),
   'https://lgpsm-frontend.vercel.app',
   'https://lgpsm-frontend-beta.vercel.app',
   ...(env.CORS_ORIGINS?.split(',') ?? []),
@@ -66,8 +67,12 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: true }));
 
 // Basic health-check endpoint
+// Always 200 while the process is up, so a brief database outage does not make the host restart a healthy instance;
+// `database` tells a monitor (or an administrator investigating) whether MongoDB is reachable.
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'ok', message: 'Backend is running securely' });
+  // the web app pings this across origins to wake the server; helmet's default would make the browser report the answer as blocked
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.status(200).json({ status: 'ok', message: 'Backend is running securely', database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' });
 });
 
 // Reject malformed ObjectId path params up-front so they surface as 400s instead of 500 CastErrors

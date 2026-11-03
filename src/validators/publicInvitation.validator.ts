@@ -12,7 +12,8 @@ export const submitFoodSchema = z.object({
 
 export const submitRsvpSchema = z.object({
   body: z.object({
-    rsvpStatus: z.nativeEnum(RsvpStatus, {
+    // PENDING is the state before a guest answers; it is not an answer
+    rsvpStatus: z.enum([RsvpStatus.ACCEPTED, RsvpStatus.DECLINED], {
       message: 'rsvpStatus must be ACCEPTED or DECLINED'
     }),
     dietaryPreference: z.string().max(100).optional(),

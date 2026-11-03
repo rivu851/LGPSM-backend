@@ -1,4 +1,5 @@
 import { auditAction } from '../middlewares/auditAction';
+import { credentialActionLimiter, importLimiter } from '../middlewares/rateLimiter';
 import { Router, Request, Response, NextFunction } from 'express';
 import { inviteeController } from '../controllers/invitee.controller';
 import { authenticate } from '../middlewares/authenticate';
@@ -26,7 +27,7 @@ const upload = multer({
 const validate = (schema: ZodSchema) => (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed: any = schema.parse({ body: req.body });
-    req.body = { ...req.body, ...parsed.body };
+    req.body = parsed.body; // only what the schema names: nothing else in the request reaches the service
     next();
   } catch (err: any) {
     res.status(400).json({ success: false, error: 'Validation Error', message: err.issues?.[0]?.message || 'Invalid input data', details: err.issues ?? err.errors });
@@ -54,7 +55,7 @@ eventInviteeRoutes.post('/pass-notices/retry', authorizeRoles(Role.ADMIN, Role.O
 eventInviteeRoutes.put('/session-access/bulk', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(bulkUpdateSessionAccessSchema), auditAction({ action: 'INVITEE_SESSION_ACCESS_BULK', entityType: 'Invitee', eventParam: 'eventId' }), inviteeController.bulkUpdateSessionAccess);
 
 // Upload handling
-eventInviteeRoutes.post('/import', authorizeRoles(Role.ADMIN, Role.ORGANIZER), (req, res, next) => {
+eventInviteeRoutes.post('/import', authorizeRoles(Role.ADMIN, Role.ORGANIZER), importLimiter, (req, res, next) => {
   upload.single('file')(req, res, (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
@@ -76,6 +77,6 @@ inviteeRoutes.patch('/:inviteeId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), v
 inviteeRoutes.delete('/:inviteeId', authorizeRoles(Role.ADMIN, Role.ORGANIZER), auditAction({ action: 'INVITEE_DELETE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee', critical: true }), inviteeController.deleteInvitee);
 // Individual access pass: revoke / replace (critical: refused if the audit record cannot be written). The reason category is
 // stored; the free-text note is not copied into the audit entry.
-inviteeRoutes.post('/:inviteeId/revoke', authorizeRoles(Role.ADMIN, Role.ORGANIZER), auditAction({ action: 'CREDENTIAL_REVOKE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee', critical: true, describe: 'Access pass revoked', meta: (req) => ({ category: (req.body as any)?.category }) }), inviteeController.revokeCredential);
-inviteeRoutes.post('/:inviteeId/replace', authorizeRoles(Role.ADMIN, Role.ORGANIZER), auditAction({ action: 'CREDENTIAL_REPLACE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee', critical: true, describe: 'Access pass replaced', meta: (req) => ({ category: (req.body as any)?.category, reviewConfirmed: (req.body as any)?.reviewConfirmed === true }) }), inviteeController.replaceCredential);
+inviteeRoutes.post('/:inviteeId/revoke', authorizeRoles(Role.ADMIN, Role.ORGANIZER), credentialActionLimiter, auditAction({ action: 'CREDENTIAL_REVOKE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee', critical: true, describe: 'Access pass revoked', meta: (req) => ({ category: (req.body as any)?.category }) }), inviteeController.revokeCredential);
+inviteeRoutes.post('/:inviteeId/replace', authorizeRoles(Role.ADMIN, Role.ORGANIZER), credentialActionLimiter, auditAction({ action: 'CREDENTIAL_REPLACE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee', critical: true, describe: 'Access pass replaced', meta: (req) => ({ category: (req.body as any)?.category, reviewConfirmed: (req.body as any)?.reviewConfirmed === true }) }), inviteeController.replaceCredential);
 inviteeRoutes.put('/:inviteeId/session-access', authorizeRoles(Role.ADMIN, Role.ORGANIZER), validate(updateSessionAccessSchema), auditAction({ action: 'INVITEE_SESSION_ACCESS_UPDATE', entityType: 'Invitee', entityParam: 'inviteeId', eventOf: 'Invitee' }), inviteeController.updateSessionAccess);

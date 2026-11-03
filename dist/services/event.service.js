@@ -23,6 +23,12 @@ const cancellationNotice_service_1 = require("./cancellationNotice.service");
 const admissionWindow_1 = require("../utils/admissionWindow");
 const eventLifecycle_1 = require("../utils/eventLifecycle");
 const invitationContent_1 = require("../utils/invitationContent");
+const User_2 = require("../models/User");
+const CredentialEvent_1 = require("../models/CredentialEvent");
+const PassNotice_1 = require("../models/PassNotice");
+const CancellationNotice_1 = require("../models/CancellationNotice");
+const InviteeSet_1 = require("../models/InviteeSet");
+const Notification_1 = require("../models/Notification");
 // Client-writable event fields. Anything else in a request body (organizerId, status flags,
 // operationalDataCleared, pricing, ...) is server-controlled and is dropped before it reaches the database.
 const EVENT_WRITABLE_FIELDS = [
@@ -101,6 +107,11 @@ class EventService {
         const tomorrow = new Date(now.getTime() + 86400000);
         const startVal = eventData.schedule?.start || eventData.startDate || now;
         const endVal = eventData.schedule?.end || eventData.endDate || tomorrow;
+        const startAt = new Date(startVal), endAt = new Date(endVal);
+        if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()))
+            throw { statusCode: 400, message: 'Enter a valid start and end date.' };
+        if (endAt.getTime() <= startAt.getTime())
+            throw { statusCode: 400, message: 'The event must end after it starts.' };
         // Admin event settings apply on the server too
         await platformSettings_service_1.platformSettingsService.applyEventFeatureRules(eventData, true);
         const targetOrganizer = organizerId;
@@ -134,6 +145,17 @@ class EventService {
         });
         return created;
     }
+    /** The accounts an admin may create an event for: real, active organizers. Checked before anything is created. */
+    async resolveOrganizerTargets(ids) {
+        const unique = [...new Set(ids.map(String))];
+        const refuse = { statusCode: 400, message: 'Choose active organizers for this event.' };
+        if (unique.length === 0 || unique.length > 200 || unique.some((id) => !/^[0-9a-fA-F]{24}$/.test(id)))
+            throw refuse;
+        const found = await User_2.User.countDocuments({ _id: { $in: unique }, role: User_1.Role.ORGANIZER, isActive: true });
+        if (found !== unique.length)
+            throw refuse;
+        return unique;
+    }
     async getEventsByOrganizer(organizerId, filter, pagination, role) {
         // Admins can review every organizer's events (read-only); organizers only see their own
         if (role === User_1.Role.ADMIN) {
@@ -149,6 +171,19 @@ class EventService {
             throw new Error('EVENT_NOT_FOUND');
         }
         return event;
+    }
+    // The three numbers on an event's tab strip (sessions, invitees, assigned staff) in one request, instead of three list calls.
+    // Each count matches what the corresponding list reports: the Invitee model already leaves set-aside guests out of counts.
+    async getEventCounts(eventId, organizerId, role) {
+        const event = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId, role);
+        if (!event)
+            throw new Error('EVENT_NOT_FOUND');
+        const [sessions, invitees, assignments] = await Promise.all([
+            Session_1.Session.countDocuments({ eventId }),
+            Invitee_1.Invitee.countDocuments({ eventId }),
+            SystemUserAssignment_1.SystemUserAssignment.countDocuments({ eventId }),
+        ]);
+        return { sessions, invitees, assignments };
     }
     // Read model for detail screens: resolves the related category, subcategory and template for display
     async getEventDetails(eventId, organizerId, role) {
@@ -346,8 +381,8 @@ class EventService {
         if (!confirmTitle || confirmTitle.trim() !== String(event.title).trim()) {
             throw new Error('CONFIRMATION_REQUIRED');
         }
-        // 5. Atomic Deletion of Event-Specific Operational Data
-        // DO NOT DELETE GLOBAL USERS (User model)!
+        // 5. Delete the event's operational data. Not a transaction (it can be far larger than one should be), so the "cleared" mark is
+        // written last: an interrupted purge is finished by repeating it. Accounts and the audit trail are kept.
         const eventObjId = new mongoose_1.default.Types.ObjectId(eventId);
         const [sessionRes, inviteeRes, invitationRes, checkInRes, assignmentRes] = await Promise.all([
             Session_1.Session.deleteMany({ eventId: eventObjId }),
@@ -355,6 +390,14 @@ class EventService {
             Invitation_1.Invitation.deleteMany({ eventId: eventObjId }),
             CheckIn_1.CheckIn.deleteMany({ eventId: eventObjId }),
             SystemUserAssignment_1.SystemUserAssignment.deleteMany({ eventId: eventObjId }),
+        ]);
+        // Everything else that names the event's guests or their passes goes with them
+        await Promise.all([
+            CredentialEvent_1.CredentialEvent.deleteMany({ eventId: eventObjId }),
+            PassNotice_1.PassNotice.deleteMany({ eventId: eventObjId }),
+            CancellationNotice_1.CancellationNotice.deleteMany({ eventId: eventObjId }),
+            InviteeSet_1.InviteeSet.deleteMany({ eventId: eventObjId }),
+            Notification_1.Notification.deleteMany({ entityType: 'Event', entityId: eventObjId }),
         ]);
         event.operationalDataCleared = true;
         await event.save();
