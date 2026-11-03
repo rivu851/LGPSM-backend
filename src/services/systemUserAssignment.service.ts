@@ -1,5 +1,5 @@
 import { systemUserAssignmentRepository } from '../repositories/systemUserAssignment.repository';
-import { ISystemUserAssignment } from '../models/SystemUserAssignment';
+import { ISystemUserAssignment, SystemUserAssignment } from '../models/SystemUserAssignment';
 import { Event } from '../models/Event';
 import { User, Role } from '../models/User';
 import { Session } from '../models/Session';
@@ -81,6 +81,31 @@ export const systemUserAssignmentService = {
     }
 
     return await systemUserAssignmentRepository.findByEventId(eventId);
+  },
+
+  /**
+   * Staff of this event's organizer who are already assigned to another of that organizer's events running at the same time
+   * (the two time ranges overlap). Used to warn before the same person is put on two events at once; nothing is blocked.
+   */
+  async overlapsForEvent(eventId: string, actorId: string) {
+    const event: any = await findAccessibleEvent(eventId, actorId);
+    if (!event) throw new Error('EVENT_NOT_FOUND');
+    const start = event.schedule?.start, end = event.schedule?.end;
+    if (!start || !end) return [];
+    const others: any[] = await Event.find({
+      organizerId: event.organizerId,
+      _id: { $ne: event._id },
+      status: { $ne: 'CANCELLED' },
+      'schedule.start': { $lt: end },
+      'schedule.end': { $gt: start }
+    }).select('title schedule').lean();
+    if (!others.length) return [];
+    const byId = new Map(others.map((e) => [String(e._id), e]));
+    const assignments: any[] = await SystemUserAssignment.find({ eventId: { $in: others.map((e) => e._id) } }).select('userId eventId').lean();
+    return assignments.map((a) => {
+      const e = byId.get(String(a.eventId))!;
+      return { userId: String(a.userId), eventId: String(e._id), title: e.title, start: e.schedule.start, end: e.schedule.end };
+    });
   },
 
   async getAssignmentsByUser(userId: string, actor: { userId: string; role: Role }) {

@@ -77,6 +77,7 @@ const InviteeSchema = new mongoose_1.Schema({
     },
     companyName: { type: String, trim: true },
     professionalIdentity: { type: String, trim: true, maxlength: 100 },
+    secondaryIdentity: { type: String, trim: true, maxlength: 100 },
     company: { type: String, trim: true },
     sessionAccess: { type: [SessionAccessSchema], default: [] },
     qrTokenHash: { type: String },

@@ -32,6 +32,8 @@ export interface IInvitee extends Document {
   companyName?: string;
   /** e.g. "Employee ID: 4521" (Add Invitee "Professional Identity"); can be printed on the card */
   professionalIdentity?: string;
+  /** A second custom detail, when both card lines carry one */
+  secondaryIdentity?: string;
   company?: string;
   sessionAccess: ISessionAccess[];
   qrTokenHash?: string;
@@ -94,6 +96,7 @@ const InviteeSchema: Schema = new Schema(
     },
     companyName: { type: String, trim: true },
     professionalIdentity: { type: String, trim: true, maxlength: 100 },
+    secondaryIdentity: { type: String, trim: true, maxlength: 100 },
     company: { type: String, trim: true },
     sessionAccess: { type: [SessionAccessSchema], default: [] },
     qrTokenHash: { type: String },

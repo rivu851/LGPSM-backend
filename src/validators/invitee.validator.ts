@@ -15,6 +15,7 @@ export const createInviteeSchema = z.object({
     companyName: z.string().optional(),
     company: z.string().optional(),
     professionalIdentity: z.string().trim().max(100).optional(),
+    secondaryIdentity: z.string().trim().max(100).optional(),
     dietaryPreference: z.string().optional(),
     sessionAccess: z.array(z.object({
       sessionId: z.string(),
@@ -34,6 +35,7 @@ export const updateInviteeSchema = z.object({
     companyName: z.string().optional(),
     company: z.string().optional(),
     professionalIdentity: z.string().trim().max(100).optional(),
+    secondaryIdentity: z.string().trim().max(100).optional(),
     dietaryPreference: z.string().optional(),
     rsvpStatus: z.enum(['PENDING', 'ACCEPTED', 'DECLINED']).optional(),
     sessionAccess: z.array(z.object({

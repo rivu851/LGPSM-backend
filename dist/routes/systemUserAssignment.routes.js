@@ -22,6 +22,8 @@ exports.eventAssignmentRoutes = (0, express_1.Router)({ mergeParams: true });
 exports.eventAssignmentRoutes.use(authenticate_1.authenticate);
 exports.eventAssignmentRoutes.post('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), validate(systemUserAssignment_validator_1.createAssignmentSchema), (0, auditAction_1.auditAction)({ action: 'STAFF_ASSIGN', entityType: 'SystemUserAssignment', eventParam: 'eventId' }), systemUserAssignment_controller_1.systemUserAssignmentController.createAssignment);
 exports.eventAssignmentRoutes.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), systemUserAssignment_controller_1.systemUserAssignmentController.getAssignmentsByEvent);
+// staff already assigned to another of the organizer's events that overlaps this one in time
+exports.eventAssignmentRoutes.get('/overlaps', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), systemUserAssignment_controller_1.systemUserAssignmentController.getOverlaps);
 exports.assignmentRoutes = (0, express_1.Router)();
 exports.assignmentRoutes.use(authenticate_1.authenticate);
 exports.assignmentRoutes.patch('/:assignmentId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), validate(systemUserAssignment_validator_1.updateAssignmentSchema), (0, auditAction_1.auditAction)({ action: 'STAFF_ASSIGNMENT_UPDATE', entityType: 'SystemUserAssignment', entityParam: 'assignmentId', eventOf: 'SystemUserAssignment' }), systemUserAssignment_controller_1.systemUserAssignmentController.updateAssignment);

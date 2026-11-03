@@ -22,6 +22,8 @@ eventAssignmentRoutes.use(authenticate);
 
 eventAssignmentRoutes.post('/', authorizeRoles(Role.ORGANIZER, Role.ADMIN), validate(createAssignmentSchema), auditAction({ action: 'STAFF_ASSIGN', entityType: 'SystemUserAssignment', eventParam: 'eventId' }), systemUserAssignmentController.createAssignment);
 eventAssignmentRoutes.get('/', authorizeRoles(Role.ORGANIZER, Role.ADMIN), systemUserAssignmentController.getAssignmentsByEvent);
+// staff already assigned to another of the organizer's events that overlaps this one in time
+eventAssignmentRoutes.get('/overlaps', authorizeRoles(Role.ORGANIZER, Role.ADMIN), systemUserAssignmentController.getOverlaps);
 
 export const assignmentRoutes = Router();
 assignmentRoutes.use(authenticate);

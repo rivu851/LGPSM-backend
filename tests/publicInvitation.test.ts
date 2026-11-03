@@ -5,6 +5,8 @@ import app from '../src/app';
 import { Event } from '../src/models/Event';
 import { Invitee, InvitationStatus, RsvpStatus } from '../src/models/Invitee';
 import { generateSecureToken, hashToken } from '../src/utils/invitation.util';
+import { User, Role } from '../src/models/User';
+import { generateAccessToken } from '../src/utils/token';
 
 describe('Public Invitation & RSVP Endpoints', () => {
   let mongoServer: MongoMemoryServer;
@@ -198,6 +200,8 @@ describe('Public Invitation & RSVP Endpoints', () => {
   });
 
   describe('required food preference', () => {
+    let organizer: any;
+    beforeEach(async () => { await User.deleteMany({}); organizer = await User.create({ fullName: 'Org', email: 'org.answers@example.com', role: Role.ORGANIZER, isActive: true }); });
     const rsvp = (body: object) => request(app).post(`/api/v1/public/invitations/${rawToken}/rsvp`).send(body);
     const food = (body: object) => request(app).post(`/api/v1/public/invitations/${rawToken}/food`).send(body);
 
@@ -231,6 +235,17 @@ describe('Public Invitation & RSVP Endpoints', () => {
       const ok = await food({ dietarySelections: [{ title: 'Meal', value: 'Veg' }, { title: 'T-shirt size', value: 'M' }] });
       expect(ok.statusCode).toBe(200);
       expect((await Invitee.findById(inviteeId))!.dietarySelections!.map((x: any) => `${x.title}=${x.value}`)).toEqual(['Meal=Veg', 'T-shirt size=M']);
+    });
+
+    it('the organizer\'s invitee list carries each answer under its question, and a changed answer replaces the old one', async () => {
+      const options = [{ title: 'Meal', options: ['Veg', 'Non-Veg'] }, { title: 'Drink', options: ['Coffee', 'Tea'] }];
+      await Event.updateOne({ _id: eventId }, { 'rsvp.enabled': false, dietaryPreference: { enabled: true, title: 'Meal', options } });
+      await Event.updateOne({ _id: eventId }, { organizerId: organizer._id });
+      const answers = async () => (await request(app).get(`/api/v1/events/${eventId}/invitees`).set({ Authorization: `Bearer ${generateAccessToken(String(organizer._id), Role.ORGANIZER)}` })).body.data[0].dietarySelections.map((x: any) => `${x.title}=${x.value}`);
+      await food({ dietarySelections: [{ title: 'Meal', value: 'Non-Veg' }, { title: 'Drink', value: 'Coffee' }] });
+      expect(await answers()).toEqual(['Meal=Non-Veg', 'Drink=Coffee']);
+      await food({ dietarySelections: [{ title: 'Meal', value: 'Veg' }, { title: 'Drink', value: 'Tea' }] });
+      expect(await answers()).toEqual(['Meal=Veg', 'Drink=Tea']);
     });
 
     it('the food route is only for events without RSVP, with food enabled, and not cancelled', async () => {

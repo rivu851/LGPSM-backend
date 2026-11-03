@@ -171,7 +171,7 @@ export const inviteeService = {
     const invitee = await this.getInviteeById(inviteeId, organizerId); // Ensures ownership
 
     // A Locked list keeps who was on it: its guests' details are not rewritten (session access has its own route)
-    const DETAIL_FIELDS = ['name', 'email', 'mobile', 'companyName', 'company', 'professionalIdentity'] as const;
+    const DETAIL_FIELDS = ['name', 'email', 'mobile', 'companyName', 'company', 'professionalIdentity', 'secondaryIdentity'] as const;
     const changes = DETAIL_FIELDS.some((f) => (data as any)[f] !== undefined && String((data as any)[f] ?? '') !== String((invitee as any)[f] ?? ''));
     if (changes && (await this.inLockedUploadedSet(invitee))) throw new Error('SET_LOCKED');
 
@@ -374,7 +374,7 @@ export const inviteeService = {
     }
 
     // Header matching (same rules as the frontend preview in utils/inviteeSheet.ts)
-    let nameColIdx = -1, emailColIdx = -1, mobileColIdx = -1, companyColIdx = -1, identityColIdx = -1;
+    let nameColIdx = -1, emailColIdx = -1, mobileColIdx = -1, companyColIdx = -1, identityColIdx = -1, secondIdentityColIdx = -1;
     const sessionColMap = new Map<number, string>();
     const firstRowCols = nonBlankRows[0].map((c: any) => cleanCellValue(c).toLowerCase());
     const isHeaderPresent = firstRowCols.some(
@@ -384,7 +384,9 @@ export const inviteeService = {
       firstRowCols.forEach((colStr: string, colIdx: number) => {
         if (!colStr) return;
         const customIdentity = String((event as any).cardInfo?.identityLabel || '').trim().toLowerCase();
-        if (colStr.includes('identity') || colStr.includes('designation') || (customIdentity && colStr === customIdentity)) identityColIdx = colIdx;
+        const customSecond = String((event as any).cardInfo?.secondaryIdentityLabel || '').trim().toLowerCase();
+        if (colStr === 'second identity' || (customSecond && colStr === customSecond)) secondIdentityColIdx = colIdx;
+        else if (colStr.includes('identity') || colStr.includes('designation') || (customIdentity && colStr === customIdentity)) identityColIdx = colIdx;
         else if (colStr.includes('company') || colStr.includes('organization') || colStr.includes('organisation')) companyColIdx = colIdx;
         else if (colStr.includes('name')) nameColIdx = colIdx;
         else if (colStr.includes('email') || colStr.includes('mail')) emailColIdx = colIdx;
@@ -435,6 +437,7 @@ export const inviteeService = {
       const mobile = cell(row, mobileColIdx);
       const company = cell(row, companyColIdx);
       const professionalIdentity = cell(row, identityColIdx).slice(0, 100);
+      const secondaryIdentity = cell(row, secondIdentityColIdx).slice(0, 100);
 
       if (!name) { results.rejected++; results.errors.push({ row: rowNum, error: 'Name is required' }); continue; }
       if (name.length < 2 || name.length > 100) { results.rejected++; results.errors.push({ row: rowNum, error: `Invalid name '${name}' (must be 2-100 characters)` }); continue; }
@@ -510,6 +513,7 @@ export const inviteeService = {
           else if (existingCompany !== company) kept.push(`company '${existingCompany}'`);
         }
         if (professionalIdentity && !existing.professionalIdentity) existing.professionalIdentity = professionalIdentity;
+        if (secondaryIdentity && !(existing as any).secondaryIdentity) (existing as any).secondaryIdentity = secondaryIdentity;
         if (kept.length) results.notices.push({ row: rowNum, message: `Matches ${existing.name}; kept the existing ${kept.join(', ')}` });
         existing.sessionAccess = [...access.entries()].map(([sessionId, allowed]) => ({ sessionId: new mongoose.Types.ObjectId(sessionId), allowed })) as any;
         if (!dryRun) await existing.save();
@@ -523,6 +527,7 @@ export const inviteeService = {
           companyName: company || undefined,
           company: company || undefined,
           professionalIdentity: professionalIdentity || undefined,
+          secondaryIdentity: secondaryIdentity || undefined,
           sessionAccess: rowAccess.map((a) => ({ sessionId: new mongoose.Types.ObjectId(a.sessionId), allowed: a.allowed })),
           invitationStatus: InvitationStatus.PENDING,
           rsvpStatus: RsvpStatus.PENDING
@@ -624,11 +629,14 @@ export const inviteeService = {
     }
 
     if (dryRun) {
-      const lockedKept = existingInvitees.filter((inv) => lockedSets.has(setKeyOf(inv))).length;
+      const lockedGuests = existingInvitees.filter((inv) => lockedSets.has(setKeyOf(inv)));
+      const lockedKept = lockedGuests.length;
+      // of those, the ones who were really invited; the rest sit in a sent list that is kept whole
+      const lockedInvitedKept = lockedGuests.filter(hasHistory).length;
       (results as any).dryRun = true;
       (results as any).preview = {
         totalRows: results.totalRows, validNew: results.imported, duplicateRows: results.duplicateCount, matchedExistingGuests: matchedIds.size, alreadyInvited: results.alreadyInvited,
-        existingActive: existingInvitees.length, lockedGuestsKept: lockedKept, failedKept: results.failedKept, unknownKept: results.unknownKept,
+        existingActive: existingInvitees.length, lockedGuestsKept: lockedKept, lockedInvitedKept, lockedNotInvitedKept: lockedKept - lockedInvitedKept, failedKept: results.failedKept, unknownKept: results.unknownKept,
         wouldSetAside: results.archived, preservedSets: results.preservedSets, rejectedRows: results.rejected, errors: results.errors.slice(0, 20)
       };
       return results;

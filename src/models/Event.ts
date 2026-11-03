@@ -123,7 +123,8 @@ const EventSchema: Schema = new Schema(
     cardInfo: {
       primary: { type: String, enum: [...CARD_INFO_FIELDS, null] },
       secondary: { type: String, enum: [...CARD_INFO_FIELDS, null] },
-      identityLabel: { type: String, trim: true, maxlength: 40 }
+      identityLabel: { type: String, trim: true, maxlength: 40 },
+      secondaryIdentityLabel: { type: String, trim: true, maxlength: 40 }
     },
     media: {
       logoKey: { type: String },

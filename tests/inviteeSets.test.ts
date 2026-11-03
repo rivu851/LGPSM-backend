@@ -203,6 +203,17 @@ describe('invitee lists: Replace and Append', () => {
     expect((await Invitee.findOne({ email: 'bea@x.com' }))!.professionalIdentity).toBe('BC-77');
   });
 
+  it('keeps two custom details apart when both card lines carry one', async () => {
+    await Event.updateOne({ _id: event._id }, { cardInfo: { primary: 'PROFESSIONAL_IDENTITY', secondary: 'SECONDARY_IDENTITY', identityLabel: 'Badge Code', secondaryIdentityLabel: 'Table No' } });
+    await upload([['Name', 'Email', 'Badge Code', 'Table No'], ['Bea B', 'bea@x.com', 'BC-77', 'T-5']], 'REPLACE', 'two.xlsx');
+    const bea: any = await Invitee.findOne({ email: 'bea@x.com' });
+    expect([bea.professionalIdentity, bea.secondaryIdentity]).toEqual(['BC-77', 'T-5']);
+    // the web preview writes the second detail under its standard heading
+    await upload([['Name', 'Email', 'Professional Identity', 'Second Identity'], ['Cal C', 'cal@x.com', 'BC-78', 'T-6']], 'APPEND', 'rebuilt.xlsx');
+    const cal: any = await Invitee.findOne({ email: 'cal@x.com' });
+    expect([cal.professionalIdentity, cal.secondaryIdentity]).toEqual(['BC-78', 'T-6']);
+  });
+
   it('rejects an unknown mode and other organizers cannot read the lists', async () => {
     expect((await upload([HEAD, ['Alice A', 'a@x.com', '']], 'WIPE' as any)).status).toBe(400);
     const other = await User.create({ fullName: 'Other', email: 'other.sets@example.com', role: Role.ORGANIZER });

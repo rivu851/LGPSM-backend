@@ -29,4 +29,10 @@ describe('custom detail title', () => {
     expect(cardGuestLines(null, { primary: 'INVITEE_NAME', secondary: 'PROFESSIONAL_IDENTITY', identityLabel: 'Designation' }).companyName).toBe('Designation');
     expect(cardGuestLines(null, { primary: 'INVITEE_NAME', secondary: 'PROFESSIONAL_IDENTITY' }).companyName).toBe('Employee ID');
   });
+
+  it('prints the second custom detail on its own line, and its own title on previews', () => {
+    const info: any = { primary: 'PROFESSIONAL_IDENTITY', secondary: 'SECONDARY_IDENTITY', identityLabel: 'Badge', secondaryIdentityLabel: 'Table' };
+    expect(cardGuestLines({ professionalIdentity: 'B1', secondaryIdentity: 'T9' }, info)).toEqual({ name: 'B1', companyName: 'T9' });
+    expect(cardGuestLines(null, info)).toEqual({ name: 'Badge', companyName: 'Table' });
+  });
 });

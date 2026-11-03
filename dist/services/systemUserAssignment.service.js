@@ -5,6 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.systemUserAssignmentService = void 0;
 const systemUserAssignment_repository_1 = require("../repositories/systemUserAssignment.repository");
+const SystemUserAssignment_1 = require("../models/SystemUserAssignment");
+const Event_1 = require("../models/Event");
 const User_1 = require("../models/User");
 const Session_1 = require("../models/Session");
 const user_service_1 = require("./user.service");
@@ -75,6 +77,33 @@ exports.systemUserAssignmentService = {
             throw new Error('EVENT_NOT_FOUND');
         }
         return await systemUserAssignment_repository_1.systemUserAssignmentRepository.findByEventId(eventId);
+    },
+    /**
+     * Staff of this event's organizer who are already assigned to another of that organizer's events running at the same time
+     * (the two time ranges overlap). Used to warn before the same person is put on two events at once; nothing is blocked.
+     */
+    async overlapsForEvent(eventId, actorId) {
+        const event = await findAccessibleEvent(eventId, actorId);
+        if (!event)
+            throw new Error('EVENT_NOT_FOUND');
+        const start = event.schedule?.start, end = event.schedule?.end;
+        if (!start || !end)
+            return [];
+        const others = await Event_1.Event.find({
+            organizerId: event.organizerId,
+            _id: { $ne: event._id },
+            status: { $ne: 'CANCELLED' },
+            'schedule.start': { $lt: end },
+            'schedule.end': { $gt: start }
+        }).select('title schedule').lean();
+        if (!others.length)
+            return [];
+        const byId = new Map(others.map((e) => [String(e._id), e]));
+        const assignments = await SystemUserAssignment_1.SystemUserAssignment.find({ eventId: { $in: others.map((e) => e._id) } }).select('userId eventId').lean();
+        return assignments.map((a) => {
+            const e = byId.get(String(a.eventId));
+            return { userId: String(a.userId), eventId: String(e._id), title: e.title, start: e.schedule.start, end: e.schedule.end };
+        });
     },
     async getAssignmentsByUser(userId, actor) {
         const assignments = await systemUserAssignment_repository_1.systemUserAssignmentRepository.findByUserId(userId);

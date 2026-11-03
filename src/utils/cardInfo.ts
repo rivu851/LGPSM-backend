@@ -1,13 +1,15 @@
 // "Additional Info" on the invitation card (Figma Event_Add event-5 / Event_Edit event-4: "Customize Information"):
 // the organiser picks which guest detail goes on the card's two guest lines. Every card design already prints a
 // main guest line and a smaller line under it, so the choice is applied by filling those two lines.
-export const CARD_INFO_FIELDS = ['INVITEE_NAME', 'COMPANY_NAME', 'PROFESSIONAL_IDENTITY'] as const;
+export const CARD_INFO_FIELDS = ['INVITEE_NAME', 'COMPANY_NAME', 'PROFESSIONAL_IDENTITY', 'SECONDARY_IDENTITY'] as const;
 export type CardInfoField = (typeof CARD_INFO_FIELDS)[number];
 export interface CardInfo {
   primary?: CardInfoField | null;
   secondary?: CardInfoField | null;
   /** The organizer's own title for the custom detail, shown on previews instead of "Employee ID" */
   identityLabel?: string | null;
+  /** The same for a second custom detail, when both card lines carry one */
+  secondaryIdentityLabel?: string | null;
 }
 
 // What the previews print before there is a real guest (the labels the design shows)
@@ -15,6 +17,7 @@ const SAMPLE: Record<CardInfoField, string> = {
   INVITEE_NAME: 'Invitee Name',
   COMPANY_NAME: 'Company Name',
   PROFESSIONAL_IDENTITY: 'Employee ID',
+  SECONDARY_IDENTITY: 'Employee ID',
 };
 
 interface GuestDetails {
@@ -22,6 +25,7 @@ interface GuestDetails {
   companyName?: string;
   company?: string;
   professionalIdentity?: string;
+  secondaryIdentity?: string;
 }
 
 /**
@@ -38,9 +42,13 @@ export function cardGuestLines(guest: GuestDetails | null, cardInfo?: CardInfo |
   }
   const value = (field?: CardInfoField | null): string => {
     if (!field) return '';
-    if (!guest) return field === 'PROFESSIONAL_IDENTITY' && cardInfo?.identityLabel?.trim() ? cardInfo.identityLabel.trim() : SAMPLE[field];
+    if (!guest) {
+      const title = field === 'PROFESSIONAL_IDENTITY' ? cardInfo?.identityLabel : field === 'SECONDARY_IDENTITY' ? cardInfo?.secondaryIdentityLabel : null;
+      return title?.trim() || SAMPLE[field];
+    }
     if (field === 'INVITEE_NAME') return (guest.name || '').trim();
     if (field === 'COMPANY_NAME') return (guest.companyName || guest.company || '').trim();
+    if (field === 'SECONDARY_IDENTITY') return (guest.secondaryIdentity || '').trim();
     return (guest.professionalIdentity || '').trim();
   };
   return { name: value(cardInfo!.primary), companyName: value(cardInfo!.secondary) };

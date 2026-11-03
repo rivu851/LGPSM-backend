@@ -44,6 +44,16 @@ export const systemUserAssignmentController = {
     }
   },
 
+  async getOverlaps(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await systemUserAssignmentService.overlapsForEvent(req.params.eventId as string, (req as any).user.userId);
+      res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      if (error.message === 'EVENT_NOT_FOUND') res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
+      else next(error);
+    }
+  },
+
   async getMyAssignments(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = (req as any).user.userId;

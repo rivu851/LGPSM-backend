@@ -69,6 +69,8 @@ describe('Replace preview', () => {
       validNew: 2,            // Nia and Ned
       existingActive: 8,
       lockedGuestsKept: 2,    // Sam and Pat: the whole sent list is kept
+      lockedInvitedKept: 1,   // Sam was invited
+      lockedNotInvitedKept: 1, // Pat was not, but sits in the sent list
       failedKept: 1,          // Fiona
       unknownKept: 1,         // Uma
       wouldSetAside: 4,       // Ivan, Ute, Dee, Dan: never attempted, in open lists, not in the file
