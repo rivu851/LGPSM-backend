@@ -1,0 +1,7 @@
+allowBuilds:
+  '@parcel/watcher': true
+  bcrypt: true
+  esbuild: true
+  mongodb-memory-server: false
+  pnpm: set this to true or false
+  unrs-resolver: true

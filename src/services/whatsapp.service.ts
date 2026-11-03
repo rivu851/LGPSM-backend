@@ -67,7 +67,7 @@ export const whatsappService = {
 
     const formData = new FormData();
     formData.append('messaging_product', 'whatsapp');
-    const blob = new Blob([qrBuffer], { type: 'image/png' });
+    const blob = new Blob([new Uint8Array(qrBuffer)], { type: 'image/png' });
     formData.append('file', blob, 'invitation-qr.png');
 
     const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/media`;
