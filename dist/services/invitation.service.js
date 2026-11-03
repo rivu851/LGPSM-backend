@@ -190,6 +190,8 @@ function channelsForInvitee(channel, invitee) {
         whatsapp: whatsapp_service_1.whatsappService.normalizePhoneNumber(invitee.mobile).length >= 10,
     };
 }
+// Rendered sample cards by event, oldest dropped first (see previewInvitationCard)
+const sampleCards = new Map();
 exports.invitationService = {
     async publicInvitationCard(rawToken) {
         if (!rawToken || typeof rawToken !== 'string')
@@ -840,6 +842,14 @@ exports.invitationService = {
         }
         if (!event)
             throw new Error('EVENT_NOT_FOUND');
+        // The sample card (no guest) is the same for everyone who may see this event, so it is rendered once and kept briefly. The key
+        // carries the event's last update; the short life covers edits to the template or organization that do not touch the event.
+        const sampleKey = !inviteeId ? `${event._id}:${event.updatedAt?.getTime?.() ?? 0}:${event.templateId ?? ''}` : null;
+        if (sampleKey) {
+            const hit = sampleCards.get(sampleKey);
+            if (hit && hit.until > Date.now())
+                return { png: hit.png, qr: 'SAMPLE' };
+        }
         // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
         const cardContext = await (0, context_1.loadCardContext)(event);
         const cardDesign = cardContext.cardDesign;
@@ -884,6 +894,11 @@ exports.invitationService = {
             cardDesign,
             designSpec: cardContext.designSpec
         });
+        if (sampleKey && !issuedToken) {
+            if (sampleCards.size >= 200)
+                sampleCards.delete(sampleCards.keys().next().value);
+            sampleCards.set(sampleKey, { png, until: Date.now() + 5 * 60 * 1000 });
+        }
         return { png, qr: issuedToken ? 'ISSUED' : 'SAMPLE' };
     }
 };

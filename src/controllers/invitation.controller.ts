@@ -115,6 +115,8 @@ export const invitationController = {
       res.setHeader('Content-Type', shaped.contentType);
       // ISSUED: the QR is the guest's current check-in pass; SAMPLE: placeholder, not valid for check-in
       res.setHeader('X-Invitation-Qr', qr);
+      // a sample card may be reused by the browser for a minute; a guest's own pass never is
+      res.setHeader('Cache-Control', qr === 'SAMPLE' ? 'private, max-age=60' : 'private, no-store');
       res.setHeader('Content-Disposition', `inline; filename="invitation-card-preview.${shaped.contentType === 'image/webp' ? 'webp' : 'png'}"`);
       return res.status(200).send(shaped.body);
     } catch (error: any) {

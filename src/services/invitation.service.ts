@@ -202,6 +202,9 @@ export function channelsForInvitee(channel: DeliveryChannel, invitee: { email?: 
   };
 }
 
+// Rendered sample cards by event, oldest dropped first (see previewInvitationCard)
+const sampleCards = new Map<string, { png: Buffer; until: number }>();
+
 export const invitationService = {
   async publicInvitationCard(rawToken: string): Promise<Buffer> {
     if (!rawToken || typeof rawToken !== 'string') throw new Error('INVALID_TOKEN');
@@ -888,6 +891,13 @@ export const invitationService = {
       event = await Event.findOne({ _id: eventId, organizerId });
     }
     if (!event) throw new Error('EVENT_NOT_FOUND');
+    // The sample card (no guest) is the same for everyone who may see this event, so it is rendered once and kept briefly. The key
+    // carries the event's last update; the short life covers edits to the template or organization that do not touch the event.
+    const sampleKey = !inviteeId ? `${event._id}:${(event as any).updatedAt?.getTime?.() ?? 0}:${(event as any).templateId ?? ''}` : null;
+    if (sampleKey) {
+      const hit = sampleCards.get(sampleKey);
+      if (hit && hit.until > Date.now()) return { png: hit.png, qr: 'SAMPLE' as const };
+    }
     // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
     const cardContext = await loadCardContext(event);
     const cardDesign = cardContext.cardDesign;
@@ -937,6 +947,10 @@ export const invitationService = {
       cardDesign,
       designSpec: cardContext.designSpec
     });
+    if (sampleKey && !issuedToken) {
+      if (sampleCards.size >= 200) sampleCards.delete(sampleCards.keys().next().value as string);
+      sampleCards.set(sampleKey, { png, until: Date.now() + 5 * 60 * 1000 });
+    }
     return { png, qr: issuedToken ? ('ISSUED' as const) : ('SAMPLE' as const) };
   }
 };
