@@ -24,7 +24,7 @@ export interface CardContentInput {
 const fmt = (d: Date, options: Intl.DateTimeFormatOptions) =>
   new Intl.DateTimeFormat('en-US', { timeZone: env.APP_TIMEZONE, ...options }).format(d).replace(/[  ]/g, ' ');
 
-function parts(d: Date) {
+export function parts(d: Date) {
   return {
     day: fmt(d, { day: '2-digit' }),
     dayNumber: Number(fmt(d, { day: 'numeric' })),
@@ -44,13 +44,13 @@ export function ordinal(n: number): string {
   return `${n}${({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] || 'th'}`;
 }
 
-const toDate = (v?: string | Date | null): Date | null => {
+export const toDate = (v?: string | Date | null): Date | null => {
   if (!v) return null;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
-const sameDay = (a: Date, b: Date) => fmt(a, { dateStyle: 'short' }) === fmt(b, { dateStyle: 'short' });
+export const sameDay = (a: Date, b: Date) => fmt(a, { dateStyle: 'short' }) === fmt(b, { dateStyle: 'short' });
 
 /** "2nd Nov 2026" for one day, "2nd - 5th Nov 2026" across days of a month, "28th Oct to 2nd Nov 2026" across months. The year is always shown (both years when the range crosses one). */
 export function shortDateRange(start: Date | null, end: Date | null): string {
@@ -117,7 +117,7 @@ function weddingSubline(text: string): string {
   return 'are getting married';
 }
 
-function addressLine(input: CardContentInput): string {
+export function addressLine(input: CardContentInput): string {
   if (input.isVirtual) return 'Online event';
   const venue = (input.venue || '').trim();
   const sub = (input.locationSub || '').trim();
@@ -125,12 +125,25 @@ function addressLine(input: CardContentInput): string {
   return sub && !venue.toLowerCase().includes(sub.toLowerCase()) ? `${venue}, ${sub}` : venue;
 }
 
-/** A short place name for tight spots: the city when known, otherwise the last parts of the address. */
+/**
+ * The place line for designs with a compact address slot. The organizer's Event Location is already short (it is capped for the
+ * card), so it is printed exactly as written, whatever separators it holds; the slot wraps it. The city is only a fallback when
+ * no location was given. (It used to keep just the last two comma-separated parts, which cut "Tollygunge, West Bengal, Kolkata,
+ * India" down to "Kolkata, India".)
+ */
 function shortPlace(input: CardContentInput): string {
   if (input.isVirtual) return 'Online event';
-  if (input.locationSub && input.locationSub.trim()) return input.locationSub.trim();
-  const segments = (input.venue || '').split(',').map((s) => s.trim()).filter(Boolean);
-  return segments.slice(-2).join(', ');
+  return (input.venue || '').trim() || (input.locationSub || '').trim();
+}
+
+/** "Saturday, 6:00 PM – 9:00 PM" on one day; "Friday, 6:00 PM – Sunday, 9:00 AM" across days. Just the start when there is no end. */
+function timeRange(start: Date, end: Date | null, lower = false): string {
+  const c = (t: string) => (lower ? t.toLowerCase() : t);
+  const s = parts(start);
+  if (!end || end.getTime() <= start.getTime()) return `${s.weekday}, ${c(s.time)}`;
+  const e = parts(end);
+  // across days the end goes in the card's footer ("Ends …"): the slot is too small to carry two dates
+  return sameDay(start, end) ? `${s.weekday}, ${c(s.time)} – ${c(e.time)}` : `${s.weekday}, ${c(s.time)}`;
 }
 
 /** Text for every slot of the design. Slots with nothing to say are left out and stay empty on the card. */
@@ -166,7 +179,7 @@ export function buildTemplateTexts(input: CardContentInput): Record<string, stri
       return {
         names: deriveSubject(input.title, WEDDING_WORDS),
         subline: weddingSubline(kind),
-        timeLine: p ? `${p.weekday}, ${p.time}` : '',
+        timeLine: start ? timeRange(start, end) : '',
         day: p?.day || '',
         month: p?.month2 || '',
         year: p?.year2 || '',
@@ -179,7 +192,7 @@ export function buildTemplateTexts(input: CardContentInput): Record<string, stri
         subline: 'of our beloved child',
         honoree: deriveSubject(input.title, RICE_WORDS),
         scanLabel,
-        timeLine: p ? `${p.weekday}, ${p.time.toLowerCase()}` : '',
+        timeLine: start ? timeRange(start, end, true) : '',
         day: p?.day || '',
         month: p?.month2 || '',
         year: p?.year2 || '',
@@ -195,8 +208,9 @@ export function buildTemplateTexts(input: CardContentInput): Record<string, stri
         // the year rides with the month ("November 2026"): the design has no separate slot for it, and a card without a year can be mistaken for another year's
         month: p ? `${p.monthLong} ${p.year}` : '',
         weekday: p?.weekday || '',
-        day: p?.day || '',
-        time: p ? `At ${p.time}` : '',
+        day: p && end && !sameDay(start!, end) ? `${p.day} – ${parts(end).day}` : p?.day || '',
+        // "At 11:00 AM", or "11:00 AM – 3:00 PM" when the event ends the same day (the slot is small, so the "At" makes way for the end time)
+        time: p ? (end && end > start! && sameDay(start!, end) ? `${p.time} – ${parts(end).time}` : `At ${p.time}`) : '',
         address: addressLine(input),
       };
   }

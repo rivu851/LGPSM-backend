@@ -1,3 +1,4 @@
+import { createUploadedTemplate, UploadError } from '../services/cardTemplates/uploadedTemplate';
 import { Request, Response } from 'express';
 import { templateService } from '../services/template.service';
 import { installDefaultTemplates, planDefaultTemplates } from '../services/cardTemplates/defaultTemplates';
@@ -15,6 +16,18 @@ export const templateController = {
       return res.status(201).json({ success: true, data: template });
     } catch (error: any) {
       return res.status(400).json({ error: 'Bad Request', message: error.message });
+    }
+  },
+
+  // An organizer's (or admin's) own uploaded design becomes a template only they can use
+  async uploadTemplate(req: Request, res: Response) {
+    try {
+      const template = await createUploadedTemplate({ userId: (req as any).user.userId }, req.body);
+      return res.status(201).json({ success: true, data: template });
+    } catch (error: any) {
+      if (error instanceof UploadError) return res.status(error.status).json({ success: false, message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'The template could not be saved. Please try again.' });
     }
   },
 

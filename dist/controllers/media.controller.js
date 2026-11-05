@@ -6,7 +6,8 @@ const Media_1 = require("../models/Media");
 const User_1 = require("../models/User");
 // Which roles may upload each kind of image
 const UPLOAD_ROLES = {
-    [Media_1.MediaPurpose.TEMPLATE]: [User_1.Role.ADMIN],
+    // organizers upload the finished design of their own template; admins the designers' template images
+    [Media_1.MediaPurpose.TEMPLATE]: [User_1.Role.ADMIN, User_1.Role.ORGANIZER],
     [Media_1.MediaPurpose.EVENT_LOGO]: [User_1.Role.ADMIN, User_1.Role.ORGANIZER],
     [Media_1.MediaPurpose.ORGANIZATION_LOGO]: [User_1.Role.ADMIN, User_1.Role.ORGANIZER],
     [Media_1.MediaPurpose.AVATAR]: [User_1.Role.ADMIN, User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER]

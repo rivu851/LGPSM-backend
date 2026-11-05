@@ -37,14 +37,20 @@ exports.Category = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const SubcategorySchema = new mongoose_1.Schema({
     name: { type: String, required: true },
-    isActive: { type: Boolean, default: true }
+    isActive: { type: Boolean, default: true },
+    ownerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
 const CategorySchema = new mongoose_1.Schema({
-    name: { type: String, required: true, unique: true },
+    name: { type: String, required: true },
     description: { type: String },
     subcategories: { type: [SubcategorySchema], default: [] },
-    isActive: { type: Boolean, default: true }
+    isActive: { type: Boolean, default: true },
+    ownerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }
 }, {
     timestamps: true
 });
+// A name is unique across the platform's own list, and unique per organizer among their own custom categories.
+// (Databases created before custom categories hold a plain unique index on name: scripts/migrate-category-uniqueness.js replaces it.)
+CategorySchema.index({ name: 1 }, { unique: true, partialFilterExpression: { ownerId: { $exists: false } }, name: 'name_platform_unique' });
+CategorySchema.index({ ownerId: 1, name: 1 }, { unique: true, partialFilterExpression: { ownerId: { $exists: true } }, name: 'owner_name_unique' });
 exports.Category = mongoose_1.default.model('Category', CategorySchema);

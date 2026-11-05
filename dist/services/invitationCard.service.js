@@ -11,6 +11,8 @@ const assetPath_1 = require("../utils/assetPath");
 const renderer_1 = require("./cardTemplates/renderer");
 const content_1 = require("./cardTemplates/content");
 const specRenderer_1 = require("./cardTemplates/specRenderer");
+const infoFooter_1 = require("./cardTemplates/infoFooter");
+const coverage_1 = require("./cardTemplates/coverage");
 const CARD_WIDTH = 1536;
 const CARD_HEIGHT = 2048;
 // The LGPSM logo ships with the app (src/assets/branding), so it is found wherever the server runs.
@@ -280,6 +282,23 @@ async function buildClassicSVG(data) {
 </svg>
 `;
 }
+/**
+ * The details block under the artwork. Whatever the template's artwork already prints (its coverage) is left alone; everything
+ * else the event has to say (dates, times, place, guest lines) is composed here, and the contact line always closes the card.
+ */
+function withInfoFooter(png, data, covered, style) {
+    return (0, infoFooter_1.appendInfoFooter)(png, (0, coverage_1.detailRows)({
+        title: data.event.title,
+        startIso: data.event.startIso,
+        endIso: data.event.endIso,
+        venue: data.event.venue,
+        locationSub: data.event.locationSub,
+        isVirtual: data.event.isVirtual,
+        contactNumber: data.event.contactNumber,
+        guestName: data.invitee.name,
+        guestMeta: data.invitee.companyName
+    }, covered), style);
+}
 const dataUrlToBuffer = (dataUrl) => {
     const match = dataUrl ? /^data:[^;]+;base64,(.+)$/.exec(dataUrl) : null;
     return match ? Buffer.from(match[1], 'base64') : undefined;
@@ -347,12 +366,25 @@ exports.invitationCardService = {
         return buildClassicSVG(data);
     },
     async generateInvitationCardPNG(data) {
-        if (data.designSpec)
-            return renderFromSpec(data.designSpec, data);
+        if (data.designSpec) {
+            const png = await renderFromSpec(data.designSpec, data);
+            const spec = data.designSpec;
+            return withInfoFooter(png, data, (0, coverage_1.coverageOfSpec)(spec), { ink: spec.palette.text, accent: spec.palette.primary });
+        }
         if ((0, renderer_1.isTemplateDesign)(data.cardDesign)) {
-            return renderFromTemplate(data.cardDesign, data);
+            let png = await renderFromTemplate(data.cardDesign, data);
+            let covered = (0, coverage_1.coverageOfDesign)(data.cardDesign);
+            // a design with no place for the guest's name gets a band for it inside the card, in large type, rather than a line at the bottom
+            if (!covered.guest && data.invitee.name) {
+                const banded = await (0, infoFooter_1.insertGuestBand)(png, data.cardDesign, data.invitee.name, data.invitee.companyName, infoFooter_1.FOOTER_STYLES[data.cardDesign]);
+                if (banded !== png) {
+                    png = banded;
+                    covered = { ...covered, guest: true, meta: true };
+                }
+            }
+            return withInfoFooter(png, data, covered, infoFooter_1.FOOTER_STYLES[data.cardDesign]);
         }
         const svgString = await this.generateInvitationCardSVG(data);
-        return (0, sharp_1.default)(Buffer.from(svgString)).png({ quality: 100 }).toBuffer();
+        return withInfoFooter(await (0, sharp_1.default)(Buffer.from(svgString)).png({ quality: 100 }).toBuffer(), data, (0, coverage_1.coverageOfDesign)('CLASSIC'), infoFooter_1.FOOTER_STYLES.CLASSIC);
     }
 };

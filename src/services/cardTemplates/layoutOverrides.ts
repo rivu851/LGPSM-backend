@@ -17,7 +17,8 @@ const SLOT_OVERRIDES: Record<string, Record<string, Partial<TextSlotLayout>>> = 
   // These slots were drawn for one line, with the next element right below; a second line is centred on the designed line, so
   // it spilled over the neighbours ("Please join us…", "Birthday Party", "of our beloved child", the wedding sub-line and the
   // address pin). They stay on one line, shrinking to the slot's minimum size and ending in "…" only as a last resort.
-  BIRTHDAY: { honoree: { maxLines: 1 } },
+  // the day (or "05 – 19" for a multi-day event) sits between the weekday and the time, so it may only use the gap between them
+  BIRTHDAY: { honoree: { maxLines: 1 }, day: { maxWidth: 118, minSize: 22 }, time: { maxWidth: 112, minSize: 10 } },
   WEDDING: { names: { maxLines: 1 }, subline: { maxLines: 1 }, address: { maxLines: 1 } },
   RICE_CEREMONY: { honoree: { maxLines: 1 } },
 };

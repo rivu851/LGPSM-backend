@@ -46,6 +46,7 @@ function buildFormalInvitationEmailHTML(params: {
   const venue = escapeHtml(params.venue);
   const dietaryPreference = params.dietaryPreference ? escapeHtml(params.dietaryPreference) : undefined;
   const invitationUrl = escapeHtml(params.invitationUrl);
+  const cardViewUrl = escapeHtml(`${params.invitationUrl}${params.invitationUrl.includes('?') ? '&' : '?'}view=card`);
   
   return `
     <!DOCTYPE html>
@@ -74,8 +75,14 @@ function buildFormalInvitationEmailHTML(params: {
               ${cardCid ? `
               <!-- PERSONALIZED INVITATION CARD EMBED -->
               <tr>
-                <td align="center" style="padding: 20px 20px 10px 20px; background-color: #1A1919;">
-                  <img src="cid:${cardCid}" alt="Personalized Invitation Card" style="width: 100%; max-width: 600px; height: auto; border-radius: 8px; display: block; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" />
+                <td align="center" style="padding: 20px 20px 10px 20px; background-color: #FFFFFF;">
+                  <!-- tapping the card opens it full screen on the invitation page, where the QR scans reliably -->
+                  <a href="${cardViewUrl}" target="_blank" style="display: block; text-decoration: none;">
+                    <img src="cid:${cardCid}" alt="Personalized Invitation Card" style="width: 100%; max-width: 600px; height: auto; border-radius: 8px; display: block; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" />
+                  </a>
+                  <p style="margin: 10px 0 4px 0; font-size: 12px; line-height: 1.5; color: #6B7280; text-align: center;">
+                    Tap the card to open it full screen for scanning at the entrance.
+                  </p>
                 </td>
               </tr>
               ` : ''}
@@ -256,7 +263,8 @@ export const invitationService = {
         subcategoryName: cardContext.subcategoryName,
         isVirtual: (event as any).format === 'VIRTUAL',
         description: (event as any).description,
-        organizerName: cardContext.organizerName
+        organizerName: cardContext.organizerName,
+        contactNumber: (event as any).contactNumber
       },
       sessions: assignedSessions,
       qrDataUrl,
@@ -381,7 +389,8 @@ export const invitationService = {
             subcategoryName: cardContext.subcategoryName,
             isVirtual: (event as any).format === 'VIRTUAL',
             description: (event as any).description,
-            organizerName: cardContext.organizerName
+            organizerName: cardContext.organizerName,
+            contactNumber: (event as any).contactNumber
           },
           sessions: assignedSessions,
           qrDataUrl,
@@ -672,7 +681,8 @@ export const invitationService = {
             subcategoryName: cardContext.subcategoryName,
             isVirtual: (event as any).format === 'VIRTUAL',
             description: (event as any).description,
-            organizerName: cardContext.organizerName
+            organizerName: cardContext.organizerName,
+            contactNumber: (event as any).contactNumber
           },
           sessions: assignedSessions,
           qrDataUrl,
@@ -939,7 +949,8 @@ export const invitationService = {
             subcategoryName: cardContext.subcategoryName,
             isVirtual: (event as any).format === 'VIRTUAL',
             description: (event as any).description,
-            organizerName: cardContext.organizerName
+            organizerName: cardContext.organizerName,
+            contactNumber: (event as any).contactNumber
       },
       sessions: assignedSessions,
       qrDataUrl,

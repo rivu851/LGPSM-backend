@@ -5,7 +5,8 @@ import { Role } from '../models/User';
 
 // Which roles may upload each kind of image
 const UPLOAD_ROLES: Record<MediaPurpose, Role[]> = {
-  [MediaPurpose.TEMPLATE]: [Role.ADMIN],
+  // organizers upload the finished design of their own template; admins the designers' template images
+  [MediaPurpose.TEMPLATE]: [Role.ADMIN, Role.ORGANIZER],
   [MediaPurpose.EVENT_LOGO]: [Role.ADMIN, Role.ORGANIZER],
   [MediaPurpose.ORGANIZATION_LOGO]: [Role.ADMIN, Role.ORGANIZER],
   [MediaPurpose.AVATAR]: [Role.ADMIN, Role.ORGANIZER, Role.SYSTEM_USER]

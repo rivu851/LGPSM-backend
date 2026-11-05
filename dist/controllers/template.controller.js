@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.templateController = void 0;
+const uploadedTemplate_1 = require("../services/cardTemplates/uploadedTemplate");
 const template_service_1 = require("../services/template.service");
 const defaultTemplates_1 = require("../services/cardTemplates/defaultTemplates");
 const preview_1 = require("../services/cardTemplates/preview");
@@ -16,6 +17,19 @@ exports.templateController = {
         }
         catch (error) {
             return res.status(400).json({ error: 'Bad Request', message: error.message });
+        }
+    },
+    // An organizer's (or admin's) own uploaded design becomes a template only they can use
+    async uploadTemplate(req, res) {
+        try {
+            const template = await (0, uploadedTemplate_1.createUploadedTemplate)({ userId: req.user.userId }, req.body);
+            return res.status(201).json({ success: true, data: template });
+        }
+        catch (error) {
+            if (error instanceof uploadedTemplate_1.UploadError)
+                return res.status(error.status).json({ success: false, message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'The template could not be saved. Please try again.' });
         }
     },
     async getTemplates(req, res) {

@@ -12,6 +12,25 @@ export const categoryController = {
     }
   },
 
+  async createCustomCategory(req: Request, res: Response) {
+    try {
+      return res.status(201).json({ success: true, data: await categoryService.createCustomCategory(req.user!.userId, req.body.name) });
+    } catch (error: any) {
+      if (error?.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+      return res.status(400).json({ success: false, message: error.message });
+    }
+  },
+
+  async addCustomSubcategory(req: Request, res: Response) {
+    try {
+      return res.status(201).json({ success: true, data: await categoryService.addCustomSubcategory(req.user!.userId, req.params.id as string, req.body.name) });
+    } catch (error: any) {
+      if (error?.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+      if (error.message === 'CATEGORY_NOT_FOUND') return res.status(404).json({ success: false, message: 'Category not found' });
+      return res.status(400).json({ success: false, message: error.message });
+    }
+  },
+
   async addSubcategory(req: Request, res: Response) {
     try {
       const category = await categoryService.addSubcategory(req.params.id as string, req.body.name);
@@ -26,7 +45,7 @@ export const categoryController = {
   async getCategories(req: Request, res: Response) {
     try {
       const activeOnly = req.query.activeOnly !== 'false';
-      const categories = await categoryService.getCategories(activeOnly);
+      const categories = await categoryService.getCategories(activeOnly, req.user?.userId);
       return res.status(200).json({ success: true, data: categories });
     } catch (error: any) {
       console.error('Request failed:', error?.message);
@@ -36,7 +55,7 @@ export const categoryController = {
 
   async getCategoryById(req: Request, res: Response) {
     try {
-      const category = await categoryService.getCategoryById(req.params.id as string);
+      const category = await categoryService.getCategoryById(req.params.id as string, req.user?.userId);
       return res.status(200).json({ success: true, data: category });
     } catch (error: any) {
       if (error.message === 'CATEGORY_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Category not found' });

@@ -7,6 +7,8 @@ import { renderTemplateCard, isTemplateDesign, TemplateDesign } from './cardTemp
 import { buildTemplateTexts, photoInitials, buildSpecTexts } from './cardTemplates/content';
 import type { DesignSpec } from './cardTemplates/designSpec';
 import { renderDesignSpec } from './cardTemplates/specRenderer';
+import { appendInfoFooter, insertGuestBand, FOOTER_STYLES, FooterStyle } from './cardTemplates/infoFooter';
+import { coverageOfDesign, coverageOfSpec, Coverage, detailRows } from './cardTemplates/coverage';
 
 export interface CardSessionData {
   id?: string;
@@ -43,6 +45,8 @@ export interface InvitationCardData {
     isVirtual?: boolean;
     description?: string;
     organizerName?: string;
+    /** The organizer's contact number: printed at the bottom of every card as "For more details contact …" */
+    contactNumber?: string;
   };
   sessions: CardSessionData[];
   /** Preview of a template/event being set up: the designers' sample photo may stand in for a missing event image */
@@ -334,6 +338,24 @@ async function buildClassicSVG(data: InvitationCardData): Promise<string> {
 `;
 }
 
+/**
+ * The details block under the artwork. Whatever the template's artwork already prints (its coverage) is left alone; everything
+ * else the event has to say (dates, times, place, guest lines) is composed here, and the contact line always closes the card.
+ */
+function withInfoFooter(png: Buffer, data: InvitationCardData, covered: Coverage, style: FooterStyle): Promise<Buffer> {
+  return appendInfoFooter(png, detailRows({
+    title: data.event.title,
+    startIso: data.event.startIso,
+    endIso: data.event.endIso,
+    venue: data.event.venue,
+    locationSub: data.event.locationSub,
+    isVirtual: data.event.isVirtual,
+    contactNumber: data.event.contactNumber,
+    guestName: data.invitee.name,
+    guestMeta: data.invitee.companyName
+  }, covered), style);
+}
+
 const dataUrlToBuffer = (dataUrl?: string): Buffer | undefined => {
   const match = dataUrl ? /^data:[^;]+;base64,(.+)$/.exec(dataUrl) : null;
   return match ? Buffer.from(match[1], 'base64') : undefined;
@@ -406,11 +428,22 @@ export const invitationCardService = {
   },
 
   async generateInvitationCardPNG(data: InvitationCardData): Promise<Buffer> {
-    if (data.designSpec) return renderFromSpec(data.designSpec, data);
+    if (data.designSpec) {
+      const png = await renderFromSpec(data.designSpec, data);
+      const spec = data.designSpec;
+      return withInfoFooter(png, data, coverageOfSpec(spec), { ink: spec.palette.text, accent: spec.palette.primary });
+    }
     if (isTemplateDesign(data.cardDesign)) {
-      return renderFromTemplate(data.cardDesign, data);
+      let png = await renderFromTemplate(data.cardDesign, data);
+      let covered = coverageOfDesign(data.cardDesign);
+      // a design with no place for the guest's name gets a band for it inside the card, in large type, rather than a line at the bottom
+      if (!covered.guest && data.invitee.name) {
+        const banded = await insertGuestBand(png, data.cardDesign, data.invitee.name, data.invitee.companyName, FOOTER_STYLES[data.cardDesign]);
+        if (banded !== png) { png = banded; covered = { ...covered, guest: true, meta: true }; }
+      }
+      return withInfoFooter(png, data, covered, FOOTER_STYLES[data.cardDesign]);
     }
     const svgString = await this.generateInvitationCardSVG(data);
-    return sharp(Buffer.from(svgString)).png({ quality: 100 }).toBuffer();
+    return withInfoFooter(await sharp(Buffer.from(svgString)).png({ quality: 100 }).toBuffer(), data, coverageOfDesign('CLASSIC'), FOOTER_STYLES.CLASSIC);
   }
 };

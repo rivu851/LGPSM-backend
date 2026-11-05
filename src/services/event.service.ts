@@ -1,3 +1,4 @@
+import { canUseCategory } from './category.service';
 import { eventRepository, EventFilter, Pagination } from '../repositories/event.repository';
 import { IEvent, Event, EventStatus } from '../models/Event';
 import { Category } from '../models/Category';
@@ -75,6 +76,9 @@ export class EventService {
     let categoryExists = categoryId && mongoose.Types.ObjectId.isValid(categoryId) 
       ? await Category.findById(categoryId) 
       : null;
+
+    // another organizer's custom category is treated as missing
+    if (categoryExists && !(await canUseCategory(String(categoryId), eventData.subcategoryId ? String(eventData.subcategoryId) : undefined, String(organizerId)))) categoryExists = null;
 
     if (categoryId && !categoryExists) {
       const err: any = new Error('CATEGORY_NOT_FOUND');
@@ -219,7 +223,7 @@ export class EventService {
     // Validate references if they are being updated
     if (updateData.categoryId && updateData.categoryId !== existingEvent.categoryId.toString()) {
       const categoryExists = await Category.findById(updateData.categoryId);
-      if (!categoryExists) throw new Error('CATEGORY_NOT_FOUND');
+      if (!categoryExists || !(await canUseCategory(String(updateData.categoryId), updateData.subcategoryId ? String(updateData.subcategoryId) : undefined, String(existingEvent.organizerId)))) throw new Error('CATEGORY_NOT_FOUND');
     }
 
     if (updateData.templateId && updateData.templateId !== existingEvent.templateId?.toString()) {

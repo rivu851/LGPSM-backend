@@ -21,6 +21,7 @@ export interface TemplatePreviewInput {
   guestName?: string;
   companyName?: string;
   cardInfo?: CardInfo;
+  contactNumber?: string;
 }
 
 /**
@@ -55,6 +56,7 @@ export async function renderTemplatePreview(templateId: string | null, input: Te
       categoryName: input.categoryName,
       subcategoryName: input.subcategoryName,
       isVirtual: input.isVirtual,
+      contactNumber: input.contactNumber,
       photoBase64: input.logoKey ? await resolveImageKeyBase64(input.logoKey) : undefined
     },
     sessions: [],

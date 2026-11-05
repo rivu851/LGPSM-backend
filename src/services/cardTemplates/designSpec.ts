@@ -155,10 +155,12 @@ export const designSpecSchema = z
       .strict()
       .refine((c) => c.width / c.height >= 0.4 && c.width / c.height <= 2.5, 'Unsupported aspect ratio'),
     background: fillSchema,
+    /** An organizer's own uploaded design, painted full-bleed behind everything else (an uploaded image only, never a URL) */
+    backgroundMedia: z.string().regex(/^media:[0-9a-fA-F]{24}$/).optional(),
     palette: z.object({ background: hex, primary: hex, accent: hex, text: hex }).strict(),
     elements: z.array(elementSchema).min(1).max(MAX_ELEMENTS),
     /** Where the design came from; informational only, never used for rendering */
-    meta: z.object({ generator: z.enum(['STITCH', 'MANUAL']).default('MANUAL'), archetype: z.string().max(40).optional(), styleNotes: z.array(z.string().max(80)).max(8).optional() }).strict().default({ generator: 'MANUAL' })
+    meta: z.object({ generator: z.enum(['STITCH', 'MANUAL', 'UPLOAD']).default('MANUAL'), archetype: z.string().max(40).optional(), styleNotes: z.array(z.string().max(80)).max(8).optional() }).strict().default({ generator: 'MANUAL' })
   })
   .strict()
   .superRefine((spec, ctx) => {
@@ -169,7 +171,8 @@ export const designSpecSchema = z
     if (spec.kind === 'POSTER' && qrs.some((q) => q.type === 'qr' && q.purpose === 'INVITATION'))
       ctx.addIssue({ code: 'custom', message: 'A poster has no personal guest QR code', path: ['elements'] });
     if (spec.kind === 'INVITATION' && qrs.length === 0) ctx.addIssue({ code: 'custom', message: 'An invitation needs a QR code for check-in', path: ['elements'] });
-    if (!spec.elements.some((e) => e.type === 'text' && e.role === 'title')) ctx.addIssue({ code: 'custom', message: 'A design needs an event title', path: ['elements'] });
+    // an uploaded design already carries its own title in the artwork
+    if (spec.meta.generator !== 'UPLOAD' && !spec.elements.some((e) => e.type === 'text' && e.role === 'title')) ctx.addIssue({ code: 'custom', message: 'A design needs an event title', path: ['elements'] });
     for (const q of qrs) {
       if (q.type !== 'qr') continue;
       if (q.x < 0 || q.y < 0 || q.x + q.size > spec.canvas.width || q.y + q.size > spec.canvas.height)

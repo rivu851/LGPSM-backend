@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { resolveImageKeyBase64 } from '../../utils/resolveImageBase64';
 import { DesignSpec, SpecElement, SpecTextElement, STATIC_LABELS, TextRole } from './designSpec';
 import { ensureCardFonts, fontStack, measureText } from './fonts';
 
@@ -309,6 +310,19 @@ export async function renderDesignSpec(input: SpecRenderInput): Promise<SpecRend
   const bg = new SvgChunk(s);
   const fill = bg.fill(spec.background, { x: 0, y: 0, w: spec.canvas.width, h: spec.canvas.height });
   bg.add(`<rect width="${width}" height="${height}" ${fill}/>`);
+  // an uploaded design goes straight over the plain background, under everything else
+  if (spec.backgroundMedia) {
+    const data = await resolveImageKeyBase64(spec.backgroundMedia);
+    const comma = data.indexOf(',');
+    if (comma > 0) {
+      try {
+        const image = await sharp(Buffer.from(data.slice(comma + 1), 'base64'), { failOn: 'none', limitInputPixels: 40_000_000 }).rotate().resize(width, height, { fit: 'cover', position: 'centre' }).png().toBuffer();
+        layers.unshift({ input: image, left: 0, top: 0 });
+      } catch {
+        warnings.push('The uploaded design could not be read');
+      }
+    } else warnings.push('The uploaded design could not be loaded');
+  }
   const png = await sharp(bg.toSvg(width, height)).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
   return { png, width, height, warnings };
 }

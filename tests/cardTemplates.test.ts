@@ -81,7 +81,7 @@ describe('card wording', () => {
 
   it('writes a birthday card for a birthday', () => {
     const t = buildTemplateTexts({ design: 'BIRTHDAY', title: 'Moloy Birthday Celebration!!!', subcategoryName: 'Birthday', venue: '24, Shanti Pally', locationSub: 'Kolkata', ...when });
-    expect(t).toMatchObject({ intro: 'Please Join us to celebrate', honoree: 'Moloy', heading: 'Birthday Party', month: 'November 2026', weekday: 'Monday', day: '02', time: 'At 10:00 AM', address: '24, Shanti Pally, Kolkata' });
+    expect(t).toMatchObject({ intro: 'Please Join us to celebrate', honoree: 'Moloy', heading: 'Birthday Party', month: 'November 2026', weekday: 'Monday', day: '02 – 05', time: 'At 10:00 AM', address: '24, Shanti Pally, Kolkata' });
   });
 
   it('keeps "Birthday Party" unless the subcategory is more specific', () => {
@@ -108,7 +108,7 @@ describe('card wording', () => {
     const v1 = buildTemplateTexts({ design: 'CORPORATE_V1', title: 'Excellence Awards', invitee: { name: 'Mr. Harsh', employeeId: '51470A', companyName: 'Acme' }, venue: 'Hall 3', ...when });
     expect(v1).toMatchObject({ title: 'Excellence Awards', inviteeName: 'Mr. Harsh', inviteeMeta: 'Employee ID #51470A', datePill: 'Event Dates: 2nd - 5th November, 2026', address: 'Hall 3' });
     const v2 = buildTemplateTexts({ design: 'CORPORATE_V2', title: 'Leadership Summit', invitee: { name: 'Subhendu', companyName: 'XYZ Ltd' }, venue: 'Salt Lake Stadium, Sector V, Kolkata', ...when });
-    expect(v2).toMatchObject({ inviteeName: 'Subhendu', inviteeMeta: 'XYZ Ltd', datePill: '2nd - 5th Nov 2026', address: 'Sector V, Kolkata' });
+    expect(v2).toMatchObject({ inviteeName: 'Subhendu', inviteeMeta: 'XYZ Ltd', datePill: '2nd - 5th Nov 2026', address: 'Salt Lake Stadium, Sector V, Kolkata' });
   });
 
   it('says "Online event" for a virtual event and leaves missing details empty instead of inventing them', () => {
@@ -283,7 +283,9 @@ describe('end to end: an event with no template still gets a card for its type',
     const { png, qr } = await invitationService.previewInvitationCard(String(event._id), String(organizerId));
     expect(qr).toBe('SAMPLE');
     const meta = await sharp(png).metadata();
-    expect([meta.width, meta.height]).toEqual([786, 1364]);
+    // the artwork is 786x1364; the guest lines (and contact line when set) are added below it, never over it
+    expect(meta.width).toBe(786);
+    expect(meta.height).toBeGreaterThanOrEqual(1364);
   });
 
   it("honours an explicit template's design over the event type", async () => {

@@ -107,7 +107,7 @@ describe('Media', () => {
     const fake = await request(app).post('/api/v1/media/upload').set(bearer(adminToken)).field('purpose', 'TEMPLATE').attach('file', Buffer.from('not an image'), { filename: 'x.png', contentType: 'image/png' });
     expect(fake.status).toBe(400);
     const role = await request(app).post('/api/v1/media/upload').set(bearer(organizerToken)).field('purpose', 'TEMPLATE').attach('file', png, { filename: 'card.png', contentType: 'image/png' });
-    expect(role.status).toBe(403);
+    expect(role.status).toBe(201); // organizers upload their own template designs
   });
 });
 

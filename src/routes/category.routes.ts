@@ -3,7 +3,7 @@ import { categoryController } from '../controllers/category.controller';
 import { authenticate } from '../middlewares/authenticate';
 import { authorizeRoles } from '../middlewares/authorizeRoles';
 import { Role } from '../models/User';
-import { addSubcategorySchema, createCategorySchema, updateCategorySchema } from '../validators/category.validator';
+import { addSubcategorySchema, createCategorySchema, customCategorySchema, customSubcategorySchema, updateCategorySchema } from '../validators/category.validator';
 
 const router = Router();
 
@@ -16,9 +16,15 @@ const validate = (schema: any) => (req: Request, res: Response, next: NextFuncti
   next();
 };
 
-// Public/Auth endpoints
-router.get('/', categoryController.getCategories);
-router.get('/:id', categoryController.getCategoryById);
+// Anyone can read the platform's list; a signed-in organizer also gets their own custom categories
+const withViewer = (req: Request, res: Response, next: NextFunction) => (req.headers.authorization ? authenticate(req, res, next) : next());
+
+// Organizers' own categories and subcategories (visible to them only)
+router.post('/custom', authenticate, authorizeRoles(Role.ORGANIZER), validate(customCategorySchema), categoryController.createCustomCategory);
+router.post('/:id/custom-subcategories', authenticate, authorizeRoles(Role.ORGANIZER), validate(customSubcategorySchema), categoryController.addCustomSubcategory);
+
+router.get('/', withViewer, categoryController.getCategories);
+router.get('/:id', withViewer, categoryController.getCategoryById);
 
 // Admin-only endpoints
 router.post('/', authenticate, authorizeRoles(Role.ADMIN), validate(createCategorySchema), categoryController.createCategory);

@@ -33,6 +33,8 @@ router.get('/:id', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, U
 // Admins manage every template. Organizers manage only their own AI templates (the controller scopes them to the
 // owner), and with a narrower body: they cannot change ownership, visibility to others or the render engine.
 router.post('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN), validate(template_validator_1.createTemplateSchema), template_controller_1.templateController.createTemplate);
+// "Upload your own template": the uploader's own design as the card, usable only by them
+router.post('/upload', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), validate(template_validator_1.uploadTemplateSchema), template_controller_1.templateController.uploadTemplate);
 // Before any body is validated: admins pass; an organizer must own the template. The designers' templates answer 403
 // (as before), another organizer's private template answers 404 so its id reveals nothing.
 const requireOwnerOrAdmin = async (req, res, next) => {

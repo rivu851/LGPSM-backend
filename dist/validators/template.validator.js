@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.previewTemplateCardSchema = exports.saveVariantSchema = exports.changeGenerationSchema = exports.createGenerationSchema = exports.MOODS = exports.renderTemplateForEventSchema = exports.updateOwnTemplateSchema = exports.updateTemplateSchema = exports.createTemplateSchema = void 0;
+exports.previewTemplateCardSchema = exports.saveVariantSchema = exports.changeGenerationSchema = exports.createGenerationSchema = exports.MOODS = exports.renderTemplateForEventSchema = exports.updateOwnTemplateSchema = exports.updateTemplateSchema = exports.uploadTemplateSchema = exports.createTemplateSchema = void 0;
 const zod_1 = require("zod");
 const mediaKey_1 = require("../utils/mediaKey");
 const Template_1 = require("../models/Template");
@@ -17,6 +17,13 @@ exports.createTemplateSchema = zod_1.z.object({
     isSystemTemplate: zod_1.z.boolean().optional(),
     isPublished: zod_1.z.boolean().optional()
 });
+// "Upload your own template": a name, the event type it is for, and the uploaded design (an image this person uploaded)
+exports.uploadTemplateSchema = zod_1.z.object({
+    name: zod_1.z.string().trim().min(2).max(100),
+    categoryId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
+    subcategoryId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
+    imageKey: zod_1.z.string().refine((k) => /^media:[0-9a-fA-F]{24}$/.test(k), 'Upload the design as an image first')
+}).strict();
 exports.updateTemplateSchema = exports.createTemplateSchema.partial();
 // An organizer editing their own AI template: a name, whether it is available for their events, and (re-validated
 // in full) its design. Everything that decides who owns or can see it stays out of reach.
@@ -85,6 +92,7 @@ exports.previewTemplateCardSchema = zod_1.z
     logoKey: zod_1.z.string().regex(/^media:[0-9a-fA-F]{24}$/, 'Only an uploaded image can be previewed').optional(),
     guestName: zod_1.z.string().max(100).optional(),
     companyName: zod_1.z.string().max(100).optional(),
+    contactNumber: zod_1.z.string().trim().max(30).optional(),
     cardInfo: zod_1.z.object({ primary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(), secondary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(), identityLabel: zod_1.z.string().trim().max(40).nullable().optional(), secondaryIdentityLabel: zod_1.z.string().trim().max(40).nullable().optional() }).strict().optional()
 })
     .strict();

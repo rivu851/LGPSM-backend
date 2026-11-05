@@ -124,8 +124,8 @@ app.use('/api/v1/assignments/:assignmentId', requireObjectIdParam('assignmentId'
 app.use('/api/v1/tickets/:id', requireObjectIdParam('id'));
 app.use('/api/v1/reports/events/:eventId', requireObjectIdParam('eventId'));
 app.use('/api/v1/notifications/:id', requireObjectIdParam('id', ['read-all', 'clear-all']));
-app.use('/api/v1/categories/:id', requireObjectIdParam('id'));
-app.use('/api/v1/templates/:id', requireObjectIdParam('id', ['defaults', 'preview']));
+app.use('/api/v1/categories/:id', requireObjectIdParam('id', ['custom']));
+app.use('/api/v1/templates/:id', requireObjectIdParam('id', ['defaults', 'preview', 'upload']));
 app.use('/api/users/:id', requireObjectIdParam('id', ['profile', 'me']));
 app.use('/api/v1/orders/:id', requireObjectIdParam('id'));
 app.use('/api/v1/invoices/:id', requireObjectIdParam('id'));

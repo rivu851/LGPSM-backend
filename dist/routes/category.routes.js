@@ -15,9 +15,13 @@ const validate = (schema) => (req, res, next) => {
     req.body = result.data;
     next();
 };
-// Public/Auth endpoints
-router.get('/', category_controller_1.categoryController.getCategories);
-router.get('/:id', category_controller_1.categoryController.getCategoryById);
+// Anyone can read the platform's list; a signed-in organizer also gets their own custom categories
+const withViewer = (req, res, next) => (req.headers.authorization ? (0, authenticate_1.authenticate)(req, res, next) : next());
+// Organizers' own categories and subcategories (visible to them only)
+router.post('/custom', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER), validate(category_validator_1.customCategorySchema), category_controller_1.categoryController.createCustomCategory);
+router.post('/:id/custom-subcategories', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER), validate(category_validator_1.customSubcategorySchema), category_controller_1.categoryController.addCustomSubcategory);
+router.get('/', withViewer, category_controller_1.categoryController.getCategories);
+router.get('/:id', withViewer, category_controller_1.categoryController.getCategoryById);
 // Admin-only endpoints
 router.post('/', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN), validate(category_validator_1.createCategorySchema), category_controller_1.categoryController.createCategory);
 router.patch('/:id', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN), validate(category_validator_1.updateCategorySchema), category_controller_1.categoryController.updateCategory);

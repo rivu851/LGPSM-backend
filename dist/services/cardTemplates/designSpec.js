@@ -146,10 +146,12 @@ exports.designSpecSchema = zod_1.z
         .strict()
         .refine((c) => c.width / c.height >= 0.4 && c.width / c.height <= 2.5, 'Unsupported aspect ratio'),
     background: fillSchema,
+    /** An organizer's own uploaded design, painted full-bleed behind everything else (an uploaded image only, never a URL) */
+    backgroundMedia: zod_1.z.string().regex(/^media:[0-9a-fA-F]{24}$/).optional(),
     palette: zod_1.z.object({ background: hex, primary: hex, accent: hex, text: hex }).strict(),
     elements: zod_1.z.array(exports.elementSchema).min(1).max(exports.MAX_ELEMENTS),
     /** Where the design came from; informational only, never used for rendering */
-    meta: zod_1.z.object({ generator: zod_1.z.enum(['STITCH', 'MANUAL']).default('MANUAL'), archetype: zod_1.z.string().max(40).optional(), styleNotes: zod_1.z.array(zod_1.z.string().max(80)).max(8).optional() }).strict().default({ generator: 'MANUAL' })
+    meta: zod_1.z.object({ generator: zod_1.z.enum(['STITCH', 'MANUAL', 'UPLOAD']).default('MANUAL'), archetype: zod_1.z.string().max(40).optional(), styleNotes: zod_1.z.array(zod_1.z.string().max(80)).max(8).optional() }).strict().default({ generator: 'MANUAL' })
 })
     .strict()
     .superRefine((spec, ctx) => {
@@ -162,7 +164,8 @@ exports.designSpecSchema = zod_1.z
         ctx.addIssue({ code: 'custom', message: 'A poster has no personal guest QR code', path: ['elements'] });
     if (spec.kind === 'INVITATION' && qrs.length === 0)
         ctx.addIssue({ code: 'custom', message: 'An invitation needs a QR code for check-in', path: ['elements'] });
-    if (!spec.elements.some((e) => e.type === 'text' && e.role === 'title'))
+    // an uploaded design already carries its own title in the artwork
+    if (spec.meta.generator !== 'UPLOAD' && !spec.elements.some((e) => e.type === 'text' && e.role === 'title'))
         ctx.addIssue({ code: 'custom', message: 'A design needs an event title', path: ['elements'] });
     for (const q of qrs) {
         if (q.type !== 'qr')

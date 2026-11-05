@@ -38,7 +38,8 @@ describe('live card preview for the Add Event form', () => {
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.headers['x-invitation-qr']).toBe('SAMPLE'); // never a real check-in pass
     const meta = await sharp(res.body).metadata();
-    expect([meta.width, meta.height]).toEqual([786, 1364]);
+    expect(meta.width).toBe(786);
+    expect(meta.height).toBeGreaterThanOrEqual(1364); // the contact and guest lines extend the card below the artwork
   });
 
   it('can send a small WebP copy for on-screen use, and ignores nonsense options', async () => {

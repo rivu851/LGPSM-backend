@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.eventService = exports.EventService = void 0;
 exports.normalizeLocation = normalizeLocation;
+const category_service_1 = require("./category.service");
 const event_repository_1 = require("../repositories/event.repository");
 const Event_1 = require("../models/Event");
 const Category_1 = require("../models/Category");
@@ -81,6 +82,9 @@ class EventService {
         let categoryExists = categoryId && mongoose_1.default.Types.ObjectId.isValid(categoryId)
             ? await Category_1.Category.findById(categoryId)
             : null;
+        // another organizer's custom category is treated as missing
+        if (categoryExists && !(await (0, category_service_1.canUseCategory)(String(categoryId), eventData.subcategoryId ? String(eventData.subcategoryId) : undefined, String(organizerId))))
+            categoryExists = null;
         if (categoryId && !categoryExists) {
             const err = new Error('CATEGORY_NOT_FOUND');
             err.statusCode = 400;
@@ -220,7 +224,7 @@ class EventService {
         // Validate references if they are being updated
         if (updateData.categoryId && updateData.categoryId !== existingEvent.categoryId.toString()) {
             const categoryExists = await Category_1.Category.findById(updateData.categoryId);
-            if (!categoryExists)
+            if (!categoryExists || !(await (0, category_service_1.canUseCategory)(String(updateData.categoryId), updateData.subcategoryId ? String(updateData.subcategoryId) : undefined, String(existingEvent.organizerId))))
                 throw new Error('CATEGORY_NOT_FOUND');
         }
         if (updateData.templateId && updateData.templateId !== existingEvent.templateId?.toString()) {

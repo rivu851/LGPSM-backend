@@ -651,7 +651,8 @@ describe('real events: rendering, QR codes and exports', () => {
     for (const [to, , , attachments] of mails) {
       const card: Buffer = attachments.find((a: any) => a.filename === 'invitation-card.png').content;
       const meta = await sharp(card).metadata();
-      expect([meta.width, meta.height]).toEqual([1080, 1920]); // the custom design, not a Figma card (786 x 1364) or the classic one (1536 x 2048)
+      expect(meta.width).toBe(1080); // the custom design, not a Figma card (786 wide) or the classic one (1536 wide)
+      expect(meta.height).toBeGreaterThanOrEqual(1920); // plus the details block under the artwork
       const url = await decodeQr(card);
       expect(url).toMatch(/^lgpsm-pass:[a-f0-9]{64}$/); // the QR carries the admission credential, not the invitation link
       decoded.push(url!);

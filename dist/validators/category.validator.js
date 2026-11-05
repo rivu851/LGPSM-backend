@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.addSubcategorySchema = exports.updateCategorySchema = exports.createCategorySchema = void 0;
+exports.addSubcategorySchema = exports.customSubcategorySchema = exports.customCategorySchema = exports.updateCategorySchema = exports.createCategorySchema = void 0;
 const zod_1 = require("zod");
 exports.createCategorySchema = zod_1.z.object({
     name: zod_1.z.string().min(2, 'Name must be at least 2 characters').max(100),
@@ -19,6 +19,12 @@ exports.updateCategorySchema = exports.createCategorySchema.extend({
         isActive: zod_1.z.boolean().optional()
     })).optional()
 }).partial();
+exports.customCategorySchema = zod_1.z.object({
+    name: zod_1.z.string().trim().min(2, 'Name must be at least 2 characters').max(60, 'Keep the name to 60 characters')
+});
+exports.customSubcategorySchema = zod_1.z.object({
+    name: zod_1.z.string().trim().min(1, 'Subcategory name is required').max(60, 'Keep the name to 60 characters')
+});
 exports.addSubcategorySchema = zod_1.z.object({
     name: zod_1.z.string().trim().min(1, 'Subcategory name is required').max(100)
 });

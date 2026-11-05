@@ -14,6 +14,28 @@ exports.categoryController = {
             return res.status(400).json({ success: false, error: 'Bad Request', message: error.message });
         }
     },
+    async createCustomCategory(req, res) {
+        try {
+            return res.status(201).json({ success: true, data: await category_service_1.categoryService.createCustomCategory(req.user.userId, req.body.name) });
+        }
+        catch (error) {
+            if (error?.statusCode)
+                return res.status(error.statusCode).json({ success: false, message: error.message });
+            return res.status(400).json({ success: false, message: error.message });
+        }
+    },
+    async addCustomSubcategory(req, res) {
+        try {
+            return res.status(201).json({ success: true, data: await category_service_1.categoryService.addCustomSubcategory(req.user.userId, req.params.id, req.body.name) });
+        }
+        catch (error) {
+            if (error?.statusCode)
+                return res.status(error.statusCode).json({ success: false, message: error.message });
+            if (error.message === 'CATEGORY_NOT_FOUND')
+                return res.status(404).json({ success: false, message: 'Category not found' });
+            return res.status(400).json({ success: false, message: error.message });
+        }
+    },
     async addSubcategory(req, res) {
         try {
             const category = await category_service_1.categoryService.addSubcategory(req.params.id, req.body.name);
@@ -30,7 +52,7 @@ exports.categoryController = {
     async getCategories(req, res) {
         try {
             const activeOnly = req.query.activeOnly !== 'false';
-            const categories = await category_service_1.categoryService.getCategories(activeOnly);
+            const categories = await category_service_1.categoryService.getCategories(activeOnly, req.user?.userId);
             return res.status(200).json({ success: true, data: categories });
         }
         catch (error) {
@@ -40,7 +62,7 @@ exports.categoryController = {
     },
     async getCategoryById(req, res) {
         try {
-            const category = await category_service_1.categoryService.getCategoryById(req.params.id);
+            const category = await category_service_1.categoryService.getCategoryById(req.params.id, req.user?.userId);
             return res.status(200).json({ success: true, data: category });
         }
         catch (error) {

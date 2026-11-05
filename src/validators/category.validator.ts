@@ -19,6 +19,14 @@ export const updateCategorySchema = createCategorySchema.extend({
   })).optional()
 }).partial();
 
+export const customCategorySchema = z.object({
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(60, 'Keep the name to 60 characters')
+});
+
+export const customSubcategorySchema = z.object({
+  name: z.string().trim().min(1, 'Subcategory name is required').max(60, 'Keep the name to 60 characters')
+});
+
 export const addSubcategorySchema = z.object({
   name: z.string().trim().min(1, 'Subcategory name is required').max(100)
 });

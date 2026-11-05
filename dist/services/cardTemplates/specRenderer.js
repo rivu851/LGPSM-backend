@@ -7,6 +7,7 @@ exports.adjustForEmptyGuestLines = adjustForEmptyGuestLines;
 exports.outputSize = outputSize;
 exports.renderDesignSpec = renderDesignSpec;
 const sharp_1 = __importDefault(require("sharp"));
+const resolveImageBase64_1 = require("../../utils/resolveImageBase64");
 const designSpec_1 = require("./designSpec");
 const fonts_1 = require("./fonts");
 // Draws a DesignSpec (see designSpec.ts) with the event's real content, using the same engine and bundled fonts as
@@ -274,6 +275,22 @@ async function renderDesignSpec(input) {
     const bg = new SvgChunk(s);
     const fill = bg.fill(spec.background, { x: 0, y: 0, w: spec.canvas.width, h: spec.canvas.height });
     bg.add(`<rect width="${width}" height="${height}" ${fill}/>`);
+    // an uploaded design goes straight over the plain background, under everything else
+    if (spec.backgroundMedia) {
+        const data = await (0, resolveImageBase64_1.resolveImageKeyBase64)(spec.backgroundMedia);
+        const comma = data.indexOf(',');
+        if (comma > 0) {
+            try {
+                const image = await (0, sharp_1.default)(Buffer.from(data.slice(comma + 1), 'base64'), { failOn: 'none', limitInputPixels: 40_000_000 }).rotate().resize(width, height, { fit: 'cover', position: 'centre' }).png().toBuffer();
+                layers.unshift({ input: image, left: 0, top: 0 });
+            }
+            catch {
+                warnings.push('The uploaded design could not be read');
+            }
+        }
+        else
+            warnings.push('The uploaded design could not be loaded');
+    }
     const png = await (0, sharp_1.default)(bg.toSvg(width, height)).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
     return { png, width, height, warnings };
 }
