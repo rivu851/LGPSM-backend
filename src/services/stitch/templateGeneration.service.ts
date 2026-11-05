@@ -6,6 +6,7 @@ import { env } from '../../config/env';
 import { Media, MediaPurpose } from '../../models/Media';
 import { Template, ITemplate } from '../../models/Template';
 import { Category } from '../../models/Category';
+import { canUseCategory } from '../category.service';
 import { TemplateGenerationJob, ITemplateGenerationJob, IJobVariant, JobMode } from '../../models/TemplateGenerationJob';
 import { Role } from '../../models/User';
 import { CANVAS_PRESETS, CanvasPresetId, DesignSpec, safeParseDesignSpec } from '../cardTemplates/designSpec';
@@ -525,7 +526,8 @@ export const templateGenerationService = {
       return { template: target, alreadySaved: false, replaced: true };
     }
     if (input.categoryId) {
-      if (!(await Category.exists({ _id: input.categoryId }))) throw new GenerationError('INVALID_REQUEST', 400, 'Category not found');
+      // an organizer's custom category is theirs alone; an admin saves to the platform's list
+      if (!(await Category.exists({ _id: input.categoryId })) || !(await canUseCategory(String(input.categoryId), input.subcategoryId ? String(input.subcategoryId) : undefined, actor.userId))) throw new GenerationError('INVALID_REQUEST', 400, 'Category not found');
     }
 
     const claimed = new mongoose.Types.ObjectId();

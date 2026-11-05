@@ -31,6 +31,26 @@ export const categoryController = {
     }
   },
 
+  async deleteCustomCategory(req: Request, res: Response) {
+    try {
+      return res.status(200).json({ success: true, data: await categoryService.deleteCustomCategory(req.user!.userId, req.params.id as string) });
+    } catch (error: any) {
+      if (error.message === 'CATEGORY_NOT_FOUND') return res.status(404).json({ success: false, message: 'Category not found' });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+    }
+  },
+
+  async deleteCustomSubcategory(req: Request, res: Response) {
+    try {
+      return res.status(200).json({ success: true, data: await categoryService.deleteCustomSubcategory(req.user!.userId, req.params.id as string, req.params.subId as string) });
+    } catch (error: any) {
+      if (error.message === 'CATEGORY_NOT_FOUND') return res.status(404).json({ success: false, message: 'Subcategory not found' });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+    }
+  },
+
   async addSubcategory(req: Request, res: Response) {
     try {
       const category = await categoryService.addSubcategory(req.params.id as string, req.body.name);

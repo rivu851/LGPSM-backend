@@ -25,6 +25,8 @@ export interface ITemplate extends Document {
   kind: TemplateKind;
   /** Organizer (or admin) who created an AI template; absent on the designers' system templates */
   ownerId?: mongoose.Types.ObjectId;
+  /** The admin's template this is a copy of, when an admin gave an organizer's event a design they uploaded */
+  copiedFromId?: mongoose.Types.ObjectId;
   /** Validated, versioned design for cardDesign CUSTOM; never contains markup, scripts or URLs */
   designSpec?: Record<string, any>;
   source?: { provider: 'STITCH'; jobId?: mongoose.Types.ObjectId; projectId?: string; screenId?: string };
@@ -45,6 +47,7 @@ const TemplateSchema: Schema = new Schema(
     cardDesign: { type: String, enum: CARD_DESIGNS, default: 'CLASSIC' },
     kind: { type: String, enum: TEMPLATE_KINDS, default: 'INVITATION' },
     ownerId: { type: Schema.Types.ObjectId, ref: 'User', index: true },
+    copiedFromId: { type: Schema.Types.ObjectId, ref: 'Template' },
     designSpec: { type: Schema.Types.Mixed },
     source: {
       type: new Schema({ provider: { type: String, enum: ['STITCH'] }, jobId: { type: Schema.Types.ObjectId }, projectId: { type: String }, screenId: { type: String } }, { _id: false })

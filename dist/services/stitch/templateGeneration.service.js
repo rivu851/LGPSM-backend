@@ -23,6 +23,7 @@ const env_1 = require("../../config/env");
 const Media_1 = require("../../models/Media");
 const Template_1 = require("../../models/Template");
 const Category_1 = require("../../models/Category");
+const category_service_1 = require("../category.service");
 const TemplateGenerationJob_1 = require("../../models/TemplateGenerationJob");
 const User_1 = require("../../models/User");
 const designSpec_1 = require("../cardTemplates/designSpec");
@@ -485,7 +486,8 @@ exports.templateGenerationService = {
             return { template: target, alreadySaved: false, replaced: true };
         }
         if (input.categoryId) {
-            if (!(await Category_1.Category.exists({ _id: input.categoryId })))
+            // an organizer's custom category is theirs alone; an admin saves to the platform's list
+            if (!(await Category_1.Category.exists({ _id: input.categoryId })) || !(await (0, category_service_1.canUseCategory)(String(input.categoryId), input.subcategoryId ? String(input.subcategoryId) : undefined, actor.userId)))
                 throw new GenerationError('INVALID_REQUEST', 400, 'Category not found');
         }
         const claimed = new mongoose_1.default.Types.ObjectId();

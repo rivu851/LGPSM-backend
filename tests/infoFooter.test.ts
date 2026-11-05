@@ -31,7 +31,7 @@ describe('card info footer', () => {
   });
 });
 
-import { coverageOfDesign, coverageOfSpec, detailRows, whenText } from '../src/services/cardTemplates/coverage';
+import { contactForCard, coverageOfDesign, coverageOfSpec, detailRows, whenText } from '../src/services/cardTemplates/coverage';
 const ev = { title: 'Summit', startIso: '2026-11-05T05:30:00Z', endIso: '2026-11-19T09:30:00Z', venue: 'Hall 1, Kolkata', contactNumber: '123', guestName: 'Guest', guestMeta: 'Acme' };
 describe('coverage: only what the artwork lacks is added', () => {
   it('a design with nothing printed gets everything, in reading order', () => {
@@ -66,9 +66,33 @@ describe('guest band inside the artwork', () => {
     expect(out.width).toBe(786);
     expect(out.height!).toBeGreaterThan(1364);
   });
+  it('a second line on its own still goes inside the card', async () => {
+    const out = await sharp(await insertGuestBand(await art(), 'WEDDING', '', 'Acme Pvt Ltd', { ink: '#202020', accent: '#6B5B3E' })).metadata();
+    expect(out.height!).toBeGreaterThan(1364);
+  });
   it('leaves the card alone with no name, or a design without a place to cut', async () => {
     const png = await art();
-    expect(await insertGuestBand(png, 'WEDDING', '  ', 'Acme', { ink: '#000', accent: '#000' })).toBe(png);
+    expect(await insertGuestBand(png, 'WEDDING', '  ', '', { ink: '#000', accent: '#000' })).toBe(png);
     expect(await insertGuestBand(png, 'CORPORATE_V1', 'Name', undefined, { ink: '#000', accent: '#000' })).toBe(png);
+  });
+});
+
+describe('the contact number on the card', () => {
+  it('carries the +91 the form shows', () => {
+    expect(contactForCard('9007000891')).toBe('+91 90070 00891');
+    expect(contactForCard('09007000891')).toBe('+91 90070 00891');
+    expect(contactForCard('919007000891')).toBe('+91 90070 00891');
+    expect(contactForCard(' 90070 00891 ')).toBe('+91 90070 00891');
+    expect(contactForCard('123456789')).toBe('+91 123456789');
+  });
+  it('leaves a number typed with its own country code as typed, and nothing stays nothing', () => {
+    expect(contactForCard('+44 20 7946 0958')).toBe('+44 20 7946 0958');
+    expect(contactForCard('')).toBe('');
+    expect(contactForCard(undefined)).toBe('');
+    expect(contactForCard('  ')).toBe('');
+  });
+  it('is what the footer row prints', () => {
+    const rows = detailRows({ contactNumber: '9007000891' }, coverageOfDesign('CLASSIC'));
+    expect(rows).toEqual([{ kind: 'contact', text: '+91 90070 00891' }]);
   });
 });

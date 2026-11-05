@@ -20,6 +20,8 @@ const withViewer = (req, res, next) => (req.headers.authorization ? (0, authenti
 // Organizers' own categories and subcategories (visible to them only)
 router.post('/custom', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER), validate(category_validator_1.customCategorySchema), category_controller_1.categoryController.createCustomCategory);
 router.post('/:id/custom-subcategories', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER), validate(category_validator_1.customSubcategorySchema), category_controller_1.categoryController.addCustomSubcategory);
+router.delete('/custom/:id', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER), category_controller_1.categoryController.deleteCustomCategory);
+router.delete('/:id/custom-subcategories/:subId', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER), category_controller_1.categoryController.deleteCustomSubcategory);
 router.get('/', withViewer, category_controller_1.categoryController.getCategories);
 router.get('/:id', withViewer, category_controller_1.categoryController.getCategoryById);
 // Admin-only endpoints

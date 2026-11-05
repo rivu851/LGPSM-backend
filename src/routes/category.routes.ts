@@ -22,6 +22,8 @@ const withViewer = (req: Request, res: Response, next: NextFunction) => (req.hea
 // Organizers' own categories and subcategories (visible to them only)
 router.post('/custom', authenticate, authorizeRoles(Role.ORGANIZER), validate(customCategorySchema), categoryController.createCustomCategory);
 router.post('/:id/custom-subcategories', authenticate, authorizeRoles(Role.ORGANIZER), validate(customSubcategorySchema), categoryController.addCustomSubcategory);
+router.delete('/custom/:id', authenticate, authorizeRoles(Role.ORGANIZER), categoryController.deleteCustomCategory);
+router.delete('/:id/custom-subcategories/:subId', authenticate, authorizeRoles(Role.ORGANIZER), categoryController.deleteCustomSubcategory);
 
 router.get('/', withViewer, categoryController.getCategories);
 router.get('/:id', withViewer, categoryController.getCategoryById);

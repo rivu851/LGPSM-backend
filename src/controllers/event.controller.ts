@@ -22,7 +22,7 @@ export const eventController = {
           const targets = await eventService.resolveOrganizerTargets(organizerIds);
           const eventsCreated = [];
           for (const orgId of targets) {
-            const event = await eventService.createEvent(orgId, { ...req.body, organizerId: orgId });
+            const event = await eventService.createEvent(orgId, { ...req.body, organizerId: orgId }, authUser.userId);
             eventsCreated.push(event);
           }
           const primaryEvent = eventsCreated[0];

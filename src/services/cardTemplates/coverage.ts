@@ -66,6 +66,20 @@ export interface DetailInput {
 export type DetailKind = 'title' | 'when' | 'where' | 'name' | 'meta' | 'contact';
 export interface DetailRow { kind: DetailKind; text: string }
 
+/**
+ * The contact number as it goes on the card. The Add Event form shows a fixed +91 in front of the field and stores only what was
+ * typed, so the country code is added here: "9007000891" -> "+91 90070 00891". A number typed with its own "+" is left as typed.
+ */
+export function contactForCard(raw?: string): string {
+  const typed = (raw || '').trim().replace(/\s+/g, ' ');
+  if (!typed || typed.startsWith('+')) return typed;
+  let digits = typed.replace(/\D/g, '');
+  if (!digits) return typed;
+  if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
+  else if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+  return digits.length === 10 ? `+91 ${digits.slice(0, 5)} ${digits.slice(5)}` : `+91 ${digits}`;
+}
+
 const short = (d: Date) => { const p = parts(d); return `${p.weekday.slice(0, 3)}, ${p.dayNumber} ${p.monthShort} ${p.year}`; };
 
 /**
@@ -102,6 +116,6 @@ export function detailRows(input: DetailInput, covered: Coverage): DetailRow[] {
   if (!covered.location) add('where', addressLine({ design: 'CORPORATE_V1', title: '', venue: input.venue, locationSub: input.locationSub, isVirtual: input.isVirtual }));
   if (!covered.guest) add('name', input.guestName);
   if (!covered.meta) add('meta', input.guestMeta);
-  add('contact', input.contactNumber);
+  add('contact', contactForCard(input.contactNumber));
   return rows;
 }

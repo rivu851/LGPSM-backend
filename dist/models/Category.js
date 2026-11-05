@@ -49,8 +49,8 @@ const CategorySchema = new mongoose_1.Schema({
 }, {
     timestamps: true
 });
-// A name is unique across the platform's own list, and unique per organizer among their own custom categories.
-// (Databases created before custom categories hold a plain unique index on name: scripts/migrate-category-uniqueness.js replaces it.)
-CategorySchema.index({ name: 1 }, { unique: true, partialFilterExpression: { ownerId: { $exists: false } }, name: 'name_platform_unique' });
-CategorySchema.index({ ownerId: 1, name: 1 }, { unique: true, partialFilterExpression: { ownerId: { $exists: true } }, name: 'owner_name_unique' });
+// Names are unique per owner. The platform's own categories have no owner, so they share the "no owner" slot and stay unique
+// among themselves, and each organizer's custom ones are unique among that organizer's.
+// (Databases from before custom categories hold a plain unique index on name: scripts/migrate-category-uniqueness.js replaces it.)
+CategorySchema.index({ ownerId: 1, name: 1 }, { unique: true, name: 'owner_scoped_name_unique' });
 exports.Category = mongoose_1.default.model('Category', CategorySchema);

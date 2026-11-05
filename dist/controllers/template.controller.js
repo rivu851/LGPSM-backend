@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.templateController = void 0;
+const category_service_1 = require("../services/category.service");
 const uploadedTemplate_1 = require("../services/cardTemplates/uploadedTemplate");
 const template_service_1 = require("../services/template.service");
 const defaultTemplates_1 = require("../services/cardTemplates/defaultTemplates");
@@ -128,6 +129,9 @@ exports.templateController = {
     },
     async updateTemplate(req, res) {
         try {
+            if (isOrganizer(req) && req.body.categoryId && !(await (0, category_service_1.canUseCategory)(req.body.categoryId, req.body.subcategoryId, req.user.userId))) {
+                return res.status(400).json({ success: false, message: 'That category was not found.' });
+            }
             const template = isOrganizer(req)
                 ? await template_service_1.templateService.updateOwnTemplate(req.params.id, req.user.userId, req.body)
                 : await template_service_1.templateService.updateTemplate(req.params.id, req.body);

@@ -1,3 +1,4 @@
+import { canUseCategory } from '../services/category.service';
 import { createUploadedTemplate, UploadError } from '../services/cardTemplates/uploadedTemplate';
 import { Request, Response } from 'express';
 import { templateService } from '../services/template.service';
@@ -121,6 +122,9 @@ export const templateController = {
 
   async updateTemplate(req: Request, res: Response) {
     try {
+      if (isOrganizer(req) && req.body.categoryId && !(await canUseCategory(req.body.categoryId, req.body.subcategoryId, (req as any).user.userId))) {
+        return res.status(400).json({ success: false, message: 'That category was not found.' });
+      }
       const template = isOrganizer(req)
         ? await templateService.updateOwnTemplate(req.params.id as string, (req as any).user.userId, req.body)
         : await templateService.updateTemplate(req.params.id as string, req.body);

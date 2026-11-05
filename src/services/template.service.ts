@@ -67,6 +67,21 @@ export const templateService = {
     return template;
   },
 
+  /**
+   * `ownerId`'s own template handed to `organizerId` as their own copy (one copy per organizer, however many events use it).
+   * Null when `ownerId` does not own an active template with this id. Deleting the original later does not affect the copy.
+   */
+  async copyOwnTemplateFor(templateId: string, ownerId: string, organizerId: string): Promise<string | null> {
+    if (!mongoose.Types.ObjectId.isValid(templateId)) return null;
+    const source: any = await Template.findOne({ _id: templateId, ownerId, isActive: { $ne: false } }).lean();
+    if (!source) return null;
+    const existing = await Template.findOne({ ownerId: organizerId, copiedFromId: source._id, isActive: { $ne: false } }).select('_id').lean();
+    if (existing) return String(existing._id);
+    const { _id, createdAt, updatedAt, __v, ...rest } = source;
+    const copy = await Template.create({ ...rest, ownerId: organizerId, copiedFromId: _id, isSystemTemplate: false, isPublished: true });
+    return String(copy._id);
+  },
+
   /** May an event owned by `organizerId` use this template? Legacy/system templates always; an owned template only by its owner. */
   async isUsableByOrganizer(templateId: string, organizerId: string): Promise<boolean> {
     if (!mongoose.Types.ObjectId.isValid(templateId)) return false;

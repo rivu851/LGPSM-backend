@@ -177,7 +177,7 @@ async function insertGuestBand(png, design, nameText, metaText, style) {
     const meta = clean(metaText);
     const layout = layoutOverrides_1.LAYOUTS[design];
     const label = layout?.texts?.scanLabel;
-    if (!name || !layout || !label)
+    if ((!name && !meta) || !layout || !label)
         return png;
     await (0, fonts_1.ensureCardFonts)();
     const info = await (0, sharp_1.default)(png).metadata();
@@ -190,11 +190,11 @@ async function insertGuestBand(png, design, nameText, metaText, style) {
     if (cut < 4 || cut >= height - 4)
         return png;
     const maxWidth = 250 * k;
-    const nameFit = await wrapFit(name, 700, 24 * k, 13 * k, maxWidth, 1);
-    const metaFit = meta ? await wrapFit(meta, 700, 15 * k, 10 * k, maxWidth, 1) : null;
+    const nameFit = name ? await wrapFit(name, 700, 24 * k, 13 * k, maxWidth, 1) : null;
+    const metaFit = meta ? await wrapFit(meta, 700, nameFit ? 15 * k : 20 * k, 10 * k, maxWidth, 1) : null;
     const pad = 8 * k;
-    const baselineName = pad + nameFit.size;
-    const baselineMeta = baselineName + (metaFit ? 5 * k + metaFit.size : 0);
+    const baselineName = pad + (nameFit?.size ?? 0);
+    const baselineMeta = baselineName + (metaFit ? (nameFit ? 5 * k : 0) + metaFit.size : 0);
     const band = Math.ceil(baselineMeta + pad + 4 * k);
     // the row just above the cut is empty background: stretched, it carries the card's colour (and its frame edges) through the band
     // a textured background (paper, confetti) would show as streaks when stretched, so it is smoothed; flat designs keep their crisp frame edges
@@ -206,7 +206,7 @@ async function insertGuestBand(png, design, nameText, metaText, style) {
     const dark = luminance(hexOf(sample[0], sample[1], sample[2])) < 0.3;
     const family = escapeXml((0, fonts_1.fontStack)(FAMILY));
     const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${band}" viewBox="0 0 ${width} ${band}">` +
-        `<text x="${width / 2}" y="${baselineName}" text-anchor="middle" font-family="${family}" font-weight="700" font-size="${nameFit.size}" fill="${dark ? '#FFFFFF' : style.ink}">${escapeXml(nameFit.lines[0])}</text>` +
+        (nameFit ? `<text x="${width / 2}" y="${baselineName}" text-anchor="middle" font-family="${family}" font-weight="700" font-size="${nameFit.size}" fill="${dark ? '#FFFFFF' : style.ink}">${escapeXml(nameFit.lines[0])}</text>` : '') +
         (metaFit ? `<text x="${width / 2}" y="${baselineMeta}" text-anchor="middle" font-family="${family}" font-weight="700" font-size="${metaFit.size}" fill="${dark ? '#FFE2C2' : style.accent}">${escapeXml(metaFit.lines[0])}</text>` : '') +
         '</svg>');
     const upper = await (0, sharp_1.default)(png).extract({ left: 0, top: 0, width, height: cut }).png().toBuffer();

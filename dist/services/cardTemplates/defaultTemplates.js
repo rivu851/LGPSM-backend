@@ -26,7 +26,7 @@ const same = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLow
 const findCategory = (cats, name) => cats.find((c) => same(c.name, name));
 /** What installing would do, without changing anything. */
 async function planDefaultTemplates() {
-    const categories = await Category_1.Category.find({}).select('name subcategories').lean();
+    const categories = await Category_1.Category.find({ ownerId: null }).select('name subcategories').lean();
     const templates = await Template_1.Template.find({ isActive: { $ne: false } }).select('cardDesign categoryId subcategoryId').lean();
     const plan = { templatesToCreate: [], templatesPresent: [], categoriesToCreate: [], subcategoriesToCreate: [] };
     const plannedCategories = new Set();
@@ -85,7 +85,7 @@ async function installDefaultTemplates(ownerId) {
         if (!plan.templatesToCreate.some((t) => t.name === spec.name))
             continue;
         // category (with the subcategory it needs), created only when absent
-        let category = await Category_1.Category.findOne({ name: new RegExp(`^${spec.category.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') });
+        let category = await Category_1.Category.findOne({ ownerId: null, name: new RegExp(`^${spec.category.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') });
         if (!category) {
             category = await Category_1.Category.create({ name: spec.category, isActive: true, subcategories: spec.subcategory ? [{ name: spec.subcategory, isActive: true }] : [] });
         }

@@ -68,7 +68,7 @@ export class EventService {
    * - Subsequent changes to the platform's global price rate (by Super Admin) do NOT modify existing
    *   or historical event rates.
    */
-  async createEvent(organizerId: string, rawEventData: any): Promise<IEvent> {
+  async createEvent(organizerId: string, rawEventData: any, adminActorId?: string): Promise<IEvent> {
     // The owner is always the authenticated caller (or, for admins, the id the controller passes in)
     const eventData: any = pickEventFields(rawEventData, ['startDate', 'endDate']);
     // Resolve Category
@@ -87,7 +87,8 @@ export class EventService {
     }
 
     if (!categoryExists) {
-      let defaultCat = await Category.findOne({ name: 'General' });
+      // the platform's own General, never an organizer's private category that happens to share the name
+      let defaultCat = await Category.findOne({ name: 'General', ownerId: null });
       if (!defaultCat) {
         defaultCat = await Category.create({ name: 'General', isActive: true });
       }
@@ -98,7 +99,10 @@ export class EventService {
     if (eventData.templateId && mongoose.Types.ObjectId.isValid(eventData.templateId)) {
       // a template another organizer owns is treated like a missing one
       if (!(await templateService.isUsableByOrganizer(String(eventData.templateId), String(organizerId)))) {
-        delete eventData.templateId;
+        // An admin creating this event for an organizer may have picked a design they uploaded themselves: the organizer gets their own copy
+        const copyId = adminActorId ? await templateService.copyOwnTemplateFor(String(eventData.templateId), adminActorId, String(organizerId)) : null;
+        if (copyId) eventData.templateId = copyId;
+        else delete eventData.templateId;
       }
     } else {
       delete eventData.templateId;
@@ -195,7 +199,7 @@ export class EventService {
   async getEventDetails(eventId: string, organizerId: string, role?: Role) {
     const event = await this.getEventById(eventId, organizerId, role);
     await event.populate([
-      { path: 'categoryId', select: 'name subcategories' },
+      { path: 'categoryId', select: 'name subcategories ownerId' },
       { path: 'templateId', select: 'name previewImageKey isActive' },
       { path: 'organizerId', select: 'fullName email profile.organizationName profile.logoKey' },
     ]);
@@ -204,7 +208,7 @@ export class EventService {
     const category: any = json.categoryId;
     if (json.subcategoryId && category && Array.isArray(category.subcategories)) {
       const sub = category.subcategories.find((s: any) => String(s._id) === String(json.subcategoryId));
-      if (sub) json.subcategory = { _id: sub._id, name: sub.name };
+      if (sub) json.subcategory = { _id: sub._id, name: sub.name, isCustom: !!sub.ownerId };
     }
     if (category && typeof category === 'object') delete category.subcategories;
     return json;
@@ -221,13 +225,22 @@ export class EventService {
     if (await this.invitationsStarted(existingEvent._id as any)) throw new Error('EVENT_LOCKED');
 
     // Validate references if they are being updated
-    if (updateData.categoryId && updateData.categoryId !== existingEvent.categoryId.toString()) {
-      const categoryExists = await Category.findById(updateData.categoryId);
-      if (!categoryExists || !(await canUseCategory(String(updateData.categoryId), updateData.subcategoryId ? String(updateData.subcategoryId) : undefined, String(existingEvent.organizerId)))) throw new Error('CATEGORY_NOT_FOUND');
+    const categoryChanged = !!updateData.categoryId && updateData.categoryId !== existingEvent.categoryId?.toString();
+    const subcategoryChanged = !!updateData.subcategoryId && updateData.subcategoryId !== existingEvent.subcategoryId?.toString();
+    if (categoryChanged || subcategoryChanged) {
+      // judged for the event's owner, whoever is editing: another organizer's custom category or subcategory counts as missing
+      const nextCategoryId = String(updateData.categoryId || existingEvent.categoryId);
+      const categoryExists = await Category.findById(nextCategoryId);
+      if (!categoryExists || !(await canUseCategory(nextCategoryId, updateData.subcategoryId ? String(updateData.subcategoryId) : undefined, String(existingEvent.organizerId)))) throw new Error('CATEGORY_NOT_FOUND');
     }
 
     if (updateData.templateId && updateData.templateId !== existingEvent.templateId?.toString()) {
-      if (!(await templateService.isUsableByOrganizer(String(updateData.templateId), String(existingEvent.organizerId)))) throw new Error('TEMPLATE_NOT_FOUND');
+      if (!(await templateService.isUsableByOrganizer(String(updateData.templateId), String(existingEvent.organizerId)))) {
+        // An admin editing an organizer's event may pick a design they uploaded themselves: the organizer gets their own copy
+        const copyId = role === Role.ADMIN ? await templateService.copyOwnTemplateFor(String(updateData.templateId), organizerId, String(existingEvent.organizerId)) : null;
+        if (!copyId) throw new Error('TEMPLATE_NOT_FOUND');
+        updateData.templateId = copyId;
+      }
     }
 
     // The check-in window is validated against the schedule that will be in force after this update

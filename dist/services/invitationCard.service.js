@@ -375,7 +375,7 @@ exports.invitationCardService = {
             let png = await renderFromTemplate(data.cardDesign, data);
             let covered = (0, coverage_1.coverageOfDesign)(data.cardDesign);
             // a design with no place for the guest's name gets a band for it inside the card, in large type, rather than a line at the bottom
-            if (!covered.guest && data.invitee.name) {
+            if (!covered.guest && (data.invitee.name || data.invitee.companyName)) {
                 const banded = await (0, infoFooter_1.insertGuestBand)(png, data.cardDesign, data.invitee.name, data.invitee.companyName, infoFooter_1.FOOTER_STYLES[data.cardDesign]);
                 if (banded !== png) {
                     png = banded;

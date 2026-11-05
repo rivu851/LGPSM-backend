@@ -55,6 +55,7 @@ const TemplateSchema = new mongoose_1.Schema({
     cardDesign: { type: String, enum: exports.CARD_DESIGNS, default: 'CLASSIC' },
     kind: { type: String, enum: exports.TEMPLATE_KINDS, default: 'INVITATION' },
     ownerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', index: true },
+    copiedFromId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Template' },
     designSpec: { type: mongoose_1.Schema.Types.Mixed },
     source: {
         type: new mongoose_1.Schema({ provider: { type: String, enum: ['STITCH'] }, jobId: { type: mongoose_1.Schema.Types.ObjectId }, projectId: { type: String }, screenId: { type: String } }, { _id: false })

@@ -18,6 +18,9 @@ export interface TemplateListOptions {
   kind?: 'INVITATION' | 'POSTER';
 }
 
+// A template only needs its category's name. The subcategory list is left out: it can hold other organizers' private subcategories.
+const CATEGORY_FIELDS = 'name description isActive';
+
 function listQuery(categoryId: string | undefined, viewer: TemplateViewer, options: TemplateListOptions) {
   const query: any = { isActive: true };
   if (categoryId) query.categoryId = categoryId;
@@ -44,7 +47,7 @@ export const templateRepository = {
   },
 
   async findAll(categoryId: string | undefined, viewer: TemplateViewer, options: TemplateListOptions = {}): Promise<ITemplate[]> {
-    let cursor = Template.find(listQuery(categoryId, viewer, options)).populate('categoryId').sort({ createdAt: -1, _id: -1 });
+    let cursor = Template.find(listQuery(categoryId, viewer, options)).populate('categoryId', CATEGORY_FIELDS).sort({ createdAt: -1, _id: -1 });
     if (options.skip) cursor = cursor.skip(options.skip);
     if (options.limit) cursor = cursor.limit(options.limit);
     return await cursor;
@@ -55,7 +58,7 @@ export const templateRepository = {
   },
 
   async findById(id: string): Promise<ITemplate | null> {
-    return await Template.findById(id).populate('categoryId');
+    return await Template.findById(id).populate('categoryId', CATEGORY_FIELDS);
   },
 
   async update(id: string, updateData: Partial<ITemplate>): Promise<ITemplate | null> {

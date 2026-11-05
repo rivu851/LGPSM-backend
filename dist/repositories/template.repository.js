@@ -6,6 +6,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.templateRepository = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const Template_1 = require("../models/Template");
+// A template only needs its category's name. The subcategory list is left out: it can hold other organizers' private subcategories.
+const CATEGORY_FIELDS = 'name description isActive';
 function listQuery(categoryId, viewer, options) {
     const query = { isActive: true };
     if (categoryId)
@@ -33,7 +35,7 @@ exports.templateRepository = {
         return await Template_1.Template.create(data);
     },
     async findAll(categoryId, viewer, options = {}) {
-        let cursor = Template_1.Template.find(listQuery(categoryId, viewer, options)).populate('categoryId').sort({ createdAt: -1, _id: -1 });
+        let cursor = Template_1.Template.find(listQuery(categoryId, viewer, options)).populate('categoryId', CATEGORY_FIELDS).sort({ createdAt: -1, _id: -1 });
         if (options.skip)
             cursor = cursor.skip(options.skip);
         if (options.limit)
@@ -44,7 +46,7 @@ exports.templateRepository = {
         return await Template_1.Template.countDocuments(listQuery(categoryId, viewer, options));
     },
     async findById(id) {
-        return await Template_1.Template.findById(id).populate('categoryId');
+        return await Template_1.Template.findById(id).populate('categoryId', CATEGORY_FIELDS);
     },
     async update(id, updateData) {
         return await Template_1.Template.findByIdAndUpdate(id, updateData, { new: true });

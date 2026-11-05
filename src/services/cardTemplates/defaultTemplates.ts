@@ -41,7 +41,7 @@ const findCategory = <T extends { name: string }>(cats: T[], name: string) => ca
 
 /** What installing would do, without changing anything. */
 export async function planDefaultTemplates(): Promise<DefaultTemplatePlan> {
-  const categories = await Category.find({}).select('name subcategories').lean();
+  const categories = await Category.find({ ownerId: null }).select('name subcategories').lean();
   const templates = await Template.find({ isActive: { $ne: false } }).select('cardDesign categoryId subcategoryId').lean();
   const plan: DefaultTemplatePlan = { templatesToCreate: [], templatesPresent: [], categoriesToCreate: [], subcategoriesToCreate: [] };
   const plannedCategories = new Set<string>();
@@ -108,7 +108,7 @@ export async function installDefaultTemplates(ownerId: string): Promise<InstallR
     if (!plan.templatesToCreate.some((t) => t.name === spec.name)) continue;
 
     // category (with the subcategory it needs), created only when absent
-    let category = await Category.findOne({ name: new RegExp(`^${spec.category.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') });
+    let category = await Category.findOne({ ownerId: null, name: new RegExp(`^${spec.category.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') });
     if (!category) {
       category = await Category.create({ name: spec.category, isActive: true, subcategories: spec.subcategory ? [{ name: spec.subcategory, isActive: true }] : [] });
     }
