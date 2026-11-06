@@ -67,6 +67,50 @@ describe('production hardening', () => {
   afterAll(async () => { await mongoose.disconnect(); await mongo.stop(); });
 
   describe('H1 guest records: only the guest-detail fields can be written through the API', () => {
+    it('allows guest emails to overlap account emails without affecting account access', async () => {
+      const ev = await mkEvent();
+      const guestForStaff = await request(app).post(`/api/v1/events/${ev._id}/invitees`).set(auth(tOrg)).send({
+        name: 'Staff Guest',
+        email: 'staff@x.test',
+      });
+      expect(guestForStaff.status).toBe(201);
+      expect((await User.findById(staff._id))?.email).toBe('staff@x.test');
+      expect((await request(app).post('/api/auth/login').send({
+        email: 'staff@x.test',
+        password: PASSWORD,
+        role: Role.SYSTEM_USER,
+      })).status).toBe(200);
+
+      const otherEvent = await mkEvent();
+      const guestEmail = 'shared.guest@x.test';
+      const guestForNewStaff = await request(app).post(`/api/v1/events/${otherEvent._id}/invitees`).set(auth(tOrg)).send({
+        name: 'New Staff Guest',
+        email: guestEmail,
+      });
+      expect(guestForNewStaff.status).toBe(201);
+      const newStaff = await request(app).post('/api/users').set(auth(tOrg)).send({
+        fullName: 'Shared Email Staff',
+        email: guestEmail,
+        password: PASSWORD,
+        role: Role.SYSTEM_USER,
+      });
+      expect(newStaff.status).toBe(201);
+      expect((await User.findById(newStaff.body.data._id))?.email).toBe(guestEmail);
+      expect((await request(app).post('/api/auth/login').send({
+        email: guestEmail,
+        password: PASSWORD,
+        role: Role.SYSTEM_USER,
+      })).status).toBe(200);
+
+      const adminEmail = await request(app).post('/api/users').set(auth(tOrg)).send({
+        fullName: 'Admin Email Staff',
+        email: 'admin@x.test',
+        password: PASSWORD,
+        role: Role.SYSTEM_USER,
+      });
+      expect(adminEmail.status).toBe(400);
+    });
+
     it('create ignores credential, delivery, RSVP and archive fields in the body', async () => {
       const ev = await mkEvent();
       const res = await request(app).post(`/api/v1/events/${ev._id}/invitees`).set(auth(tOrg)).send({

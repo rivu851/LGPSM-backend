@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { optionalPhoneSchema } from './phone.validator';
 
 // Collapse whitespace / strip control characters so stored text is predictable and can't smuggle
 // terminal or header-injection characters into notification emails.
@@ -10,14 +11,6 @@ const multiLine = (v: string) =>
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-
-// Accepts "+91 98765-43210", "(022) 1234 5678" … and stores "+919876543210" style digits.
-// 7–15 digits (E.164 maximum); anything else is rejected rather than guessed at.
-const normalisePhone = (v: string) => {
-  const trimmed = v.trim();
-  const digits = trimmed.replace(/\D/g, '');
-  return (trimmed.startsWith('+') ? '+' : '') + digits;
-};
 
 export const MAX_LINKS_PER_MESSAGE = 2;
 export const countLinks = (text: string) => (text.match(/https?:\/\/|www\./gi) || []).length;
@@ -32,11 +25,7 @@ export const submitContactSchema = z.object({
       .string({ message: 'Email is required' })
       .transform((v) => singleLine(v).toLowerCase())
       .pipe(z.string().max(254, 'Email is too long').email('Enter a valid email address')),
-    phone: z
-      .string()
-      .optional()
-      .transform((v) => (v === undefined || v.trim() === '' ? undefined : normalisePhone(v)))
-      .refine((v) => v === undefined || /^\+?\d{7,15}$/.test(v), { message: 'Enter a valid phone number (7–15 digits)' }),
+    phone: optionalPhoneSchema.transform((v) => v || undefined),
     message: z
       .string({ message: 'Message is required' })
       .transform(multiLine)

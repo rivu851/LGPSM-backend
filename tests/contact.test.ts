@@ -20,7 +20,7 @@ const URL = '/api/v1/public/contact';
 const valid = () => ({
   name: 'Riya Sharma',
   email: 'riya@example.com',
-  phone: '+91 98765-43210',
+  phone: '919876543210',
   message: 'Hello, I would like to know more about your event invitation plans.'
 });
 
@@ -64,6 +64,7 @@ describe('Public contact form API', () => {
       ['too-short message', { ...valid(), message: 'too short' }, /at least 10/i],
       ['too-long message', { ...valid(), message: 'x'.repeat(2001) }, /at most 2000/i],
       ['bad phone', { ...valid(), phone: '12ab' }, /valid phone/i],
+      ['formatted phone', { ...valid(), phone: '+91 98765-43210' }, /valid phone/i],
       ['phone with too few digits', { ...valid(), phone: '12345' }, /valid phone/i],
       ['link-stuffed message', { ...valid(), message: 'Visit http://a.example http://b.example http://c.example now please' }, /remove links/i]
     ])('rejects %s with 400 and a field-level detail', async (_label, body, messageRe) => {
@@ -84,18 +85,18 @@ describe('Public contact form API', () => {
         body: {
           name: '  Riya   Sharma  ',
           email: '  RIYA@Example.COM ',
-          phone: ' +91 (98765) 43210 ',
+          phone: '9876543210',
           message: '  Line one   \r\n\r\n\r\n\r\nLine\u0000 two  '
         }
       }).body;
       expect(parsed.name).toBe('Riya Sharma');
       expect(parsed.email).toBe('riya@example.com');
-      expect(parsed.phone).toBe('+919876543210');
+      expect(parsed.phone).toBe('9876543210');
       expect(parsed.message).toBe('Line one\n\nLine two');
     });
 
     it('treats an empty phone as not provided', async () => {
-      const res = await request(app).post(URL).send({ ...valid(), phone: '   ' });
+      const res = await request(app).post(URL).send({ ...valid(), phone: '' });
       expect(res.status).toBe(201);
       const doc = await ContactMessage.findById(res.body.data.id);
       expect(doc!.phone).toBeUndefined();
@@ -119,7 +120,7 @@ describe('Public contact form API', () => {
       expect(doc).toMatchObject({
         name: 'Riya Sharma',
         email: 'riya@example.com',
-        phone: '+919876543210',
+        phone: '919876543210',
         status: 'NEW',
         userAgent: 'jest-agent'
       });

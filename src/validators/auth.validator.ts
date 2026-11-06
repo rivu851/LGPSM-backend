@@ -1,10 +1,11 @@
 import { z } from 'zod';
+import { optionalPhoneSchema } from './phone.validator';
 
 export const registerSchema = z.object({
   fullName: z.string().trim().min(2, 'Full name must be at least 2 characters').max(120, 'Full name is too long'),
   email: z.string().email('Invalid email format'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
-  phone: z.string().optional(),
+  phone: optionalPhoneSchema,
   role: z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
   // How the organizer will send invitations (asked at signup); the send screen starts with this choice
   invitationChannel: z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
@@ -16,7 +17,7 @@ export const registerSchema = z.object({
 // for Zod refine failures, only the raw field-error tree.
 export const loginSchema = z.object({
   email: z.string().email('Invalid email format').optional(),
-  phone: z.string().min(4, 'Invalid mobile number').optional(),
+  phone: optionalPhoneSchema,
   password: z.string().min(1, 'Password is required'),
   role: z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });

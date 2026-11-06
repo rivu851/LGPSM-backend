@@ -1,17 +1,12 @@
 import { z } from 'zod';
 import { InvitationStatus, RsvpStatus } from '../models/Invitee';
-
-const mobileValidation = z.string().optional().or(z.literal('')).refine(val => {
-  if (!val || !val.trim()) return true;
-  const digits = val.replace(/\D/g, '');
-  return digits.length >= 7 && digits.length <= 15;
-}, { message: 'Mobile number must contain between 7 and 15 digits' });
+import { optionalPhoneSchema } from './phone.validator';
 
 export const createInviteeSchema = z.object({
   body: z.object({
     name: z.string().trim().min(1, 'Name is required').max(100, 'Name must be 100 characters or less'),
     email: z.string().trim().toLowerCase().email('Invalid email address').optional().or(z.literal('')),
-    mobile: mobileValidation,
+    mobile: optionalPhoneSchema,
     companyName: z.string().trim().max(200, 'Company must be 200 characters or less').optional(),
     company: z.string().trim().max(200, 'Company must be 200 characters or less').optional(),
     professionalIdentity: z.string().trim().max(100).optional(),
@@ -31,7 +26,7 @@ export const updateInviteeSchema = z.object({
   body: z.object({
     name: z.string().trim().min(1).max(100).optional(),
     email: z.string().trim().toLowerCase().email('Invalid email address').optional().or(z.literal('')),
-    mobile: mobileValidation,
+    mobile: optionalPhoneSchema,
     companyName: z.string().trim().max(200, 'Company must be 200 characters or less').optional(),
     company: z.string().trim().max(200, 'Company must be 200 characters or less').optional(),
     professionalIdentity: z.string().trim().max(100).optional(),
