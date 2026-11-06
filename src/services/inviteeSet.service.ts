@@ -183,6 +183,31 @@ export const inviteeSetService = {
     return { sets: out, archivedCount, hasSent: out.some((s) => s.locked) };
   },
 
+  /**
+   * Removes every invitee list of an event that has not been used yet. Used when the organizer changes which guest details go on
+   * the card ("Additional Information") after downloading the Excel sample: the lists were filled in for the old columns.
+   * Refused once anything has happened to the event's guests (an invitation attempt, an access pass, an answer or a check-in),
+   * because removing them would erase history; refused for a closed or cancelled event.
+   */
+  async clearUnused(actor: Actor, eventId: string): Promise<{ deletedInvitees: number; deletedLists: number }> {
+    const event = await manageableEvent(actor, eventId);
+    if (event.status === EventStatus.COMPLETED || event.status === EventStatus.CANCELLED) throw fail(409, 'This event is closed, so its invitee lists cannot be changed.', 'EVENT_CLOSED');
+    const eid = new mongoose.Types.ObjectId(eventId);
+    const [attempt, checkIn, credential, answered, passed] = await Promise.all([
+      Invitation.exists({ eventId: eid }),
+      CheckIn.exists({ eventId: eid }),
+      CredentialEvent.exists({ eventId: eid }),
+      Invitee.exists({ eventId: eid, rsvpStatus: { $ne: RsvpStatus.PENDING } }).setOptions({ includeArchived: true } as any),
+      Invitee.exists({ eventId: eid, qrTokenHash: { $exists: true, $ne: null } }).setOptions({ includeArchived: true } as any)
+    ]);
+    if (attempt || checkIn || credential || answered || passed) {
+      throw fail(409, 'Invitations were already sent for this event, so its invitee lists cannot be deleted.', 'HAS_HISTORY');
+    }
+    const invitees = await Invitee.deleteMany({ eventId: eid }).setOptions({ includeArchived: true } as any);
+    const lists = await InviteeSet.deleteMany({ eventId: eid });
+    return { deletedInvitees: invitees.deletedCount || 0, deletedLists: lists.deletedCount || 0 };
+  },
+
   /** The guests currently in one list, with each guest's delivery state. No tokens, no credentials. */
   async members(actor: Actor, eventId: string, setId: string, page = 1, limit = 50, q = '') {
     await manageableEvent(actor, eventId);

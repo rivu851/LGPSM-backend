@@ -184,6 +184,31 @@ exports.inviteeSetService = {
         const archivedCount = [...asideBySet.values()].reduce((a, b) => a + b, 0);
         return { sets: out, archivedCount, hasSent: out.some((s) => s.locked) };
     },
+    /**
+     * Removes every invitee list of an event that has not been used yet. Used when the organizer changes which guest details go on
+     * the card ("Additional Information") after downloading the Excel sample: the lists were filled in for the old columns.
+     * Refused once anything has happened to the event's guests (an invitation attempt, an access pass, an answer or a check-in),
+     * because removing them would erase history; refused for a closed or cancelled event.
+     */
+    async clearUnused(actor, eventId) {
+        const event = await manageableEvent(actor, eventId);
+        if (event.status === Event_1.EventStatus.COMPLETED || event.status === Event_1.EventStatus.CANCELLED)
+            throw fail(409, 'This event is closed, so its invitee lists cannot be changed.', 'EVENT_CLOSED');
+        const eid = new mongoose_1.default.Types.ObjectId(eventId);
+        const [attempt, checkIn, credential, answered, passed] = await Promise.all([
+            Invitation_1.Invitation.exists({ eventId: eid }),
+            CheckIn_1.CheckIn.exists({ eventId: eid }),
+            CredentialEvent_1.CredentialEvent.exists({ eventId: eid }),
+            Invitee_1.Invitee.exists({ eventId: eid, rsvpStatus: { $ne: Invitee_1.RsvpStatus.PENDING } }).setOptions({ includeArchived: true }),
+            Invitee_1.Invitee.exists({ eventId: eid, qrTokenHash: { $exists: true, $ne: null } }).setOptions({ includeArchived: true })
+        ]);
+        if (attempt || checkIn || credential || answered || passed) {
+            throw fail(409, 'Invitations were already sent for this event, so its invitee lists cannot be deleted.', 'HAS_HISTORY');
+        }
+        const invitees = await Invitee_1.Invitee.deleteMany({ eventId: eid }).setOptions({ includeArchived: true });
+        const lists = await InviteeSet_1.InviteeSet.deleteMany({ eventId: eid });
+        return { deletedInvitees: invitees.deletedCount || 0, deletedLists: lists.deletedCount || 0 };
+    },
     /** The guests currently in one list, with each guest's delivery state. No tokens, no credentials. */
     async members(actor, eventId, setId, page = 1, limit = 50, q = '') {
         await manageableEvent(actor, eventId);

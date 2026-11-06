@@ -73,6 +73,12 @@ export const inviteeController = {
     } catch (error) { sendSetError(res, next, error); }
   },
 
+  async clearUnusedLists(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.status(200).json({ success: true, data: await inviteeSetService.clearUnused((req as any).user, req.params.eventId as string) });
+    } catch (error) { sendSetError(res, next, error); }
+  },
+
   async getSetMembers(req: Request, res: Response, next: NextFunction) {
     try {
       const data = await inviteeSetService.members((req as any).user, req.params.eventId as string, req.params.setId as string, parseInt(req.query.page as string) || 1, parseInt(req.query.limit as string) || 50, typeof req.query.q === 'string' ? req.query.q : '');

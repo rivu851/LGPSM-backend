@@ -19,9 +19,10 @@ describe('an admin adding and listing staff for one organizer', () => {
     const admin = await mk('admin', Role.ADMIN); const a = await mk('orga', Role.ORGANIZER); const b = await mk('orgb', Role.ORGANIZER);
     expect((await add(admin, { fullName: 'Staff A', email: 'sa@x.com', organizerId: String(a._id) })).status).toBeLessThan(300);
     expect((await add(admin, { fullName: 'Staff B', email: 'sb@x.com', organizerId: String(b._id) })).status).toBeLessThan(300);
-    expect((await add(admin, { fullName: 'Staff Admin', email: 'sx@x.com' })).status).toBeLessThan(300);
+    // a system user always belongs to an organizer: an admin who does not say which one is refused
+    expect((await add(admin, { fullName: 'Staff Admin', email: 'sx@x.com' })).status).toBe(400);
     const names = async (q: string) => (await request(app).get(`/api/users?role=SYSTEM_USER${q}`).set(auth(admin))).body.data.map((u: any) => u.fullName).sort();
-    expect(await names('')).toEqual(['Staff A', 'Staff Admin', 'Staff B']);
+    expect(await names('')).toEqual(['Staff A', 'Staff B']);
     expect(await names(`&organizerId=${a._id}`)).toEqual(['Staff A']);
     expect(await names(`&organizerId=${b._id}`)).toEqual(['Staff B']);
     // the organizer sees the same staff on their own

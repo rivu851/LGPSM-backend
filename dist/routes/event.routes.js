@@ -23,6 +23,9 @@ const validate = (schema) => (req, res, next) => {
 router.use(authenticate_1.authenticate);
 // Cleanup route - ADMIN ONLY
 router.post('/:eventId/cleanup', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN), (0, auditAction_1.auditAction)({ action: 'EVENT_PURGE', entityType: 'Event', entityParam: 'eventId', critical: true, describe: 'Permanent deletion of event operational data', meta: (_r, b) => ({ cleanedCounts: b?.cleanedCounts }) }), event_controller_1.eventController.cleanupEventData);
+// "Delete event" (past events only): the event and all of its data are removed for good. The owning organizer or an admin; the
+// title must be typed to confirm. Audited as critical: refused if the record of who deleted it cannot be written.
+router.post('/:eventId/delete', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), (0, auditAction_1.auditAction)({ action: 'EVENT_DELETE', entityType: 'Event', entityParam: 'eventId', critical: true, describe: 'Event deleted permanently (with all of its data)' }), event_controller_1.eventController.deleteEventPermanently);
 // Close (complete) an event without deleting anything - ADMIN or the owning ORGANIZER
 // Change when guests may be admitted (allowed after invitations went out; audited, fails closed)
 router.patch('/:eventId/admission', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(event_validator_1.updateAdmissionSchema), (0, auditAction_1.auditAction)({ action: 'EVENT_ADMISSION_UPDATE', entityType: 'Event', entityParam: 'eventId', critical: true, describe: 'Check-in window changed', meta: (req) => ({ opensAt: req.body?.opensAt, closesAt: req.body?.closesAt }) }), event_controller_1.eventController.updateAdmission);

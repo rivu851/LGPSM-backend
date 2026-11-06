@@ -88,6 +88,12 @@ const EventSchema = new mongoose_1.Schema({
         options: { type: [mongoose_1.Schema.Types.Mixed], default: [] }
     },
     templateId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Template' },
+    cardDisplay: {
+        title: { type: Boolean },
+        qr: { type: Boolean },
+        dateTime: { type: Boolean },
+        location: { type: Boolean }
+    },
     cardInfo: {
         primary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] },
         secondary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] },

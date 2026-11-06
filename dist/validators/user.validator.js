@@ -28,7 +28,8 @@ exports.createUserSchema = zod_1.z.object({
     organizerId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
     profile: zod_1.z.object({
         organizationName: zod_1.z.string().max(150).optional(),
-        logoKey: zod_1.z.string().max(200).optional()
+        logoKey: zod_1.z.string().max(200).optional(),
+        invitationChannel: zod_1.z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional()
     }).strict().optional()
 }).strict();
 exports.updateUserSchema = zod_1.z.object({
@@ -39,7 +40,8 @@ exports.updateUserSchema = zod_1.z.object({
     isActive: zod_1.z.boolean().optional(),
     profile: zod_1.z.object({
         organizationName: zod_1.z.string().max(150).optional(),
-        logoKey: zod_1.z.string().max(200).optional()
+        logoKey: zod_1.z.string().max(200).optional(),
+        invitationChannel: zod_1.z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional()
     }).strict().optional()
 }).strict();
 exports.changePasswordSchema = zod_1.z.object({

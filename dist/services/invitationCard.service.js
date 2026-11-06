@@ -12,6 +12,7 @@ const renderer_1 = require("./cardTemplates/renderer");
 const content_1 = require("./cardTemplates/content");
 const specRenderer_1 = require("./cardTemplates/specRenderer");
 const infoFooter_1 = require("./cardTemplates/infoFooter");
+const cardDisplay_1 = require("../utils/cardDisplay");
 const coverage_1 = require("./cardTemplates/coverage");
 const CARD_WIDTH = 1536;
 const CARD_HEIGHT = 2048;
@@ -43,8 +44,9 @@ async function buildClassicSVG(data) {
     const width = CARD_WIDTH;
     const height = CARD_HEIGHT;
     // 1. Process QR Code
-    let qrImageHref = data.qrDataUrl || '';
-    if (!qrImageHref && data.invitationUrl) {
+    const show = (0, cardDisplay_1.cardDisplayOf)(data.cardDisplay);
+    let qrImageHref = show.qr ? data.qrDataUrl || '' : '';
+    if (show.qr && !qrImageHref && data.invitationUrl) {
         qrImageHref = await qrcode_1.default.toDataURL(data.invitationUrl, {
             errorCorrectionLevel: 'H',
             margin: 1,
@@ -54,7 +56,7 @@ async function buildClassicSVG(data) {
     // 2. Process Logo
     const logoHref = getLogoBase64();
     // 3. Process Event Title
-    const fullTitle = (data.event.title || '').trim();
+    const fullTitle = show.title ? (data.event.title || '').trim() : '';
     const titleWords = fullTitle.split(' ');
     let mainTitlePart = fullTitle;
     let yearPart = '';
@@ -63,12 +65,12 @@ async function buildClassicSVG(data) {
         mainTitlePart = titleWords.join(' ');
     }
     const subtitleText = data.event.subtitle || '';
-    const dateMain = data.event.date || '';
-    const dateSub = data.event.dayOfWeek || '';
-    const timeMain = data.event.startTime || '';
-    const timeSub = data.event.timeSub || 'ONWARDS';
-    const venueMain = data.event.venue || 'Venue to be announced';
-    const venueSub = data.event.locationSub || '';
+    const dateMain = show.dateTime ? data.event.date || '' : '';
+    const dateSub = show.dateTime ? data.event.dayOfWeek || '' : '';
+    const timeMain = show.dateTime ? data.event.startTime || '' : '';
+    const timeSub = show.dateTime ? data.event.timeSub || 'ONWARDS' : '';
+    const venueMain = show.location ? data.event.venue || 'Venue to be announced' : '';
+    const venueSub = show.location ? data.event.locationSub || '' : '';
     const inviteeName = data.invitee.name || 'Guest';
     const companyName = data.invitee.companyName || '';
     // 4. Process Sessions
@@ -287,6 +289,8 @@ async function buildClassicSVG(data) {
  * else the event has to say (dates, times, place, guest lines) is composed here, and the contact line always closes the card.
  */
 function withInfoFooter(png, data, covered, style) {
+    const show = (0, cardDisplay_1.cardDisplayOf)(data.cardDisplay);
+    const hidden = new Set([...(show.title ? [] : ['title']), ...(show.dateTime ? [] : ['when']), ...(show.location ? [] : ['where'])]);
     return (0, infoFooter_1.appendInfoFooter)(png, (0, coverage_1.detailRows)({
         title: data.event.title,
         startIso: data.event.startIso,
@@ -297,7 +301,7 @@ function withInfoFooter(png, data, covered, style) {
         contactNumber: data.event.contactNumber,
         guestName: data.invitee.name,
         guestMeta: data.invitee.companyName
-    }, covered), style);
+    }, covered).filter((row) => !hidden.has(row.kind)), style);
 }
 const dataUrlToBuffer = (dataUrl) => {
     const match = dataUrl ? /^data:[^;]+;base64,(.+)$/.exec(dataUrl) : null;
@@ -305,7 +309,7 @@ const dataUrlToBuffer = (dataUrl) => {
 };
 // The designers' templates (Figma): fixed artwork plus this event's content
 async function renderFromTemplate(design, data) {
-    const texts = (0, content_1.buildTemplateTexts)({
+    const allTexts = (0, content_1.buildTemplateTexts)({
         design,
         title: data.event.title || '',
         categoryName: data.event.categoryName,
@@ -317,8 +321,10 @@ async function renderFromTemplate(design, data) {
         isVirtual: data.event.isVirtual,
         invitee: data.invitee
     });
-    let qr = dataUrlToBuffer(data.qrDataUrl);
-    if (!qr && data.invitationUrl) {
+    const show = (0, cardDisplay_1.cardDisplayOf)(data.cardDisplay);
+    const texts = (0, cardDisplay_1.withoutHidden)(allTexts, show);
+    let qr = show.qr ? dataUrlToBuffer(data.qrDataUrl) : undefined;
+    if (show.qr && !qr && data.invitationUrl) {
         qr = await qrcode_1.default.toBuffer(data.invitationUrl, { errorCorrectionLevel: 'H', margin: 4, width: 480 });
     }
     const eventImage = dataUrlToBuffer(data.event.photoBase64);
@@ -329,13 +335,16 @@ async function renderFromTemplate(design, data) {
         photo: eventImage,
         // corporate designs show the host's logo where personal designs show a photo; fall back to the LGPSM logo
         logo: eventImage || dataUrlToBuffer(getLogoBase64()),
-        initials: (0, content_1.photoInitials)({ design, title: data.event.title || '' }, texts),
+        initials: (0, content_1.photoInitials)({ design, title: show.title ? data.event.title || '' : '' }, texts),
         useSamplePhoto: data.isPreview === true && !eventImage
     });
 }
 // A custom (AI-generated) design: the stored layout with this event's details and this guest's own QR code
-async function renderFromSpec(spec, data) {
-    const texts = (0, content_1.buildSpecTexts)({
+async function renderFromSpec(fullSpec, data) {
+    const show = (0, cardDisplay_1.cardDisplayOf)(data.cardDisplay);
+    // a hidden QR takes its own area and its "scan" caption with it
+    const spec = show.qr ? fullSpec : { ...fullSpec, elements: fullSpec.elements.filter((e) => e.type !== 'qr' && !(e.type === 'text' && e.role === 'label' && /scan/i.test(String(e.label || '')))) };
+    const allTexts = (0, content_1.buildSpecTexts)({
         title: data.event.title || '',
         description: data.event.description,
         startIso: data.event.startIso,
@@ -346,8 +355,9 @@ async function renderFromSpec(spec, data) {
         organizerName: data.event.organizerName,
         invitee: data.invitee
     });
-    let qr = dataUrlToBuffer(data.qrDataUrl);
-    if (!qr && data.invitationUrl)
+    const texts = (0, cardDisplay_1.withoutHidden)(allTexts, show);
+    let qr = show.qr ? dataUrlToBuffer(data.qrDataUrl) : undefined;
+    if (show.qr && !qr && data.invitationUrl)
         qr = await qrcode_1.default.toBuffer(data.invitationUrl, { errorCorrectionLevel: 'H', margin: 4, width: 480 });
     const eventImage = dataUrlToBuffer(data.event.photoBase64);
     const result = await (0, specRenderer_1.renderDesignSpec)({

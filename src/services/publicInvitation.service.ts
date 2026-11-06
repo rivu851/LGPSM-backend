@@ -100,7 +100,7 @@ export const publicInvitationService = {
       throw new Error('INVITATION_NOT_FOUND');
     }
 
-    const event = await Event.findById(invitee.eventId).select('title description format location contactNumber schedule admission status closedAt cancelledAt cancellationReason rsvp dietaryPreference organizerId templateId categoryId subcategoryId');
+    const event = await Event.findById(invitee.eventId).select('title description format location contactNumber cardDisplay schedule admission status closedAt cancelledAt cancellationReason rsvp dietaryPreference organizerId templateId categoryId subcategoryId');
     if (!event) throw new Error('INVITATION_NOT_FOUND');
 
     const [sessions, organizer] = await Promise.all([
@@ -152,6 +152,8 @@ export const publicInvitationService = {
         dietaryPreference: event.dietaryPreference
       },
       theme,
+      // false when the organizer chose not to print the QR on the cards: the page then shows the entry QR on its own
+      cardShowsQr: (event as any).cardDisplay?.qr !== false,
       // The guest's CURRENT pass: the page hides the pass image when it is revoked (never says "replaced" for a pass that has a successor)
       credential: { status: credentialStatus(invitee as any, event as any).status },
       invitee: {

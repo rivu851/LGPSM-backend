@@ -23,12 +23,13 @@ import { PassNotice } from '../models/PassNotice';
 import { CancellationNotice } from '../models/CancellationNotice';
 import { InviteeSet } from '../models/InviteeSet';
 import { Notification } from '../models/Notification';
+import { Media, MediaPurpose } from '../models/Media';
 
 // Client-writable event fields. Anything else in a request body (organizerId, status flags,
 // operationalDataCleared, pricing, ...) is server-controlled and is dropped before it reaches the database.
 const EVENT_WRITABLE_FIELDS = [
   'title', 'description', 'categoryId', 'subcategoryId', 'format', 'location', 'contactNumber',
-  'schedule', 'admission', 'rsvp', 'attendeeSettings', 'dietaryPreference', 'templateId', 'cardInfo', 'media'
+  'schedule', 'admission', 'rsvp', 'attendeeSettings', 'dietaryPreference', 'templateId', 'cardInfo', 'cardDisplay', 'media'
 ] as const;
 /**
  * Clients send a pin as [longitude, latitude]; the database keeps a GeoJSON Point (which the 2dsphere index needs).
@@ -201,7 +202,7 @@ export class EventService {
     await event.populate([
       { path: 'categoryId', select: 'name subcategories ownerId' },
       { path: 'templateId', select: 'name previewImageKey isActive' },
-      { path: 'organizerId', select: 'fullName email profile.organizationName profile.logoKey' },
+      { path: 'organizerId', select: 'fullName email profile.organizationName profile.logoKey profile.invitationChannel' },
     ]);
     const json: any = event.toJSON();
     // subcategoryId references an embedded subcategory of the category; expose its name alongside the id
@@ -383,6 +384,30 @@ export class EventService {
    * closing: the event must already be over (end time passed, or closed), the caller must retype the event title, and the
    * event record itself is kept so reports of what existed remain attributable.
    */
+  /**
+   * "Delete event" for an event that is over: the event itself and all of its data are removed for good (its guests, sessions,
+   * invitations, check-ins, staff assignments, passes and notices, and its uploaded image). The owning organizer or an admin,
+   * only after the event has ended, and only with the event title typed to confirm. The audit trail is kept, so who deleted
+   * what stays on record.
+   */
+  async deleteEventPermanently(eventId: string, actor: { userId: string; role: string }, confirmTitle?: string): Promise<{ title: string }> {
+    if (actor.role !== Role.ADMIN && actor.role !== Role.ORGANIZER) throw new Error('EVENT_NOT_FOUND');
+    const event = await findManageableEvent(eventId, actor.userId, actor.role);
+    if (!event) throw new Error('EVENT_NOT_FOUND');
+    // past = closed, or its end time has passed (a cancelled event that is over counts too)
+    const endAt = event.schedule?.end ? new Date(event.schedule.end).getTime() : NaN;
+    const isPast = event.status === EventStatus.COMPLETED || (!Number.isNaN(endAt) && endAt <= Date.now());
+    if (!isPast) throw new Error('EVENT_NOT_CLOSED');
+    if (!confirmTitle || confirmTitle.trim() !== String(event.title).trim()) throw new Error('CONFIRMATION_REQUIRED');
+    await purgeOperationalData(eventId);
+    const logoKey = (event as any).media?.logoKey;
+    if (typeof logoKey === 'string' && /^media:[0-9a-fA-F]{24}$/.test(logoKey)) {
+      await Media.deleteOne({ _id: logoKey.slice(6), purpose: MediaPurpose.EVENT_LOGO });
+    }
+    await Event.deleteOne({ _id: event._id });
+    return { title: String(event.title) };
+  }
+
   async cleanupEventOperationalData(eventId: string, actor: { userId: string; role: Role }, confirmTitle?: string): Promise<any> {
     // 1. Authorization: Only ADMIN
     if (actor.role !== Role.ADMIN) {
@@ -414,23 +439,7 @@ export class EventService {
 
     // 5. Delete the event's operational data. Not a transaction (it can be far larger than one should be), so the "cleared" mark is
     // written last: an interrupted purge is finished by repeating it. Accounts and the audit trail are kept.
-    const eventObjId = new mongoose.Types.ObjectId(eventId);
-
-    const [sessionRes, inviteeRes, invitationRes, checkInRes, assignmentRes] = await Promise.all([
-      Session.deleteMany({ eventId: eventObjId }),
-      Invitee.deleteMany({ eventId: eventObjId }),
-      Invitation.deleteMany({ eventId: eventObjId }),
-      CheckIn.deleteMany({ eventId: eventObjId }),
-      SystemUserAssignment.deleteMany({ eventId: eventObjId }),
-    ]);
-    // Everything else that names the event's guests or their passes goes with them
-    await Promise.all([
-      CredentialEvent.deleteMany({ eventId: eventObjId }),
-      PassNotice.deleteMany({ eventId: eventObjId }),
-      CancellationNotice.deleteMany({ eventId: eventObjId }),
-      InviteeSet.deleteMany({ eventId: eventObjId }),
-      Notification.deleteMany({ entityType: 'Event', entityId: eventObjId }),
-    ]);
+    const { sessionRes, inviteeRes, invitationRes, checkInRes, assignmentRes } = await purgeOperationalData(eventId);
 
     event.operationalDataCleared = true;
     await event.save();
@@ -447,6 +456,27 @@ export class EventService {
       }
     };
   }
+}
+
+/** Deletes everything an event's guests, sessions and passes are made of. Accounts and the audit trail are not touched. */
+async function purgeOperationalData(eventId: string) {
+  const eventObjId = new mongoose.Types.ObjectId(eventId);
+  const [sessionRes, inviteeRes, invitationRes, checkInRes, assignmentRes] = await Promise.all([
+    Session.deleteMany({ eventId: eventObjId }),
+    Invitee.deleteMany({ eventId: eventObjId }).setOptions({ includeArchived: true } as any),
+    Invitation.deleteMany({ eventId: eventObjId }),
+    CheckIn.deleteMany({ eventId: eventObjId }),
+    SystemUserAssignment.deleteMany({ eventId: eventObjId }),
+  ]);
+  // Everything else that names the event's guests or their passes goes with them
+  await Promise.all([
+    CredentialEvent.deleteMany({ eventId: eventObjId }),
+    PassNotice.deleteMany({ eventId: eventObjId }),
+    CancellationNotice.deleteMany({ eventId: eventObjId }),
+    InviteeSet.deleteMany({ eventId: eventObjId }),
+    Notification.deleteMany({ entityType: 'Event', entityId: eventObjId }),
+  ]);
+  return { sessionRes, inviteeRes, invitationRes, checkInRes, assignmentRes };
 }
 
 export const eventService = new EventService();

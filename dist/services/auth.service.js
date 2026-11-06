@@ -157,6 +157,7 @@ exports.authService = {
             role: User_1.Role.ORGANIZER,
             isActive: true,
             isEmailVerified: false,
+            profile: { invitationChannel: data.invitationChannel || 'BOTH' },
         });
         // Generate OTP, hash it, store the hash
         const otp = generateOtpPlaintext();

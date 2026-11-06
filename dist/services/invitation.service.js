@@ -4,7 +4,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.invitationService = exports.SKIPPED_IN_PROGRESS = exports.SKIPPED_PASS_REVOKED = exports.SKIPPED_EVENT_CANCELLED = exports.SKIPPED_ALREADY_INVITED = exports.SKIPPED_NO_CONTACT = void 0;
+exports.buildFormalInvitationEmailHTML = buildFormalInvitationEmailHTML;
 exports.channelsForInvitee = channelsForInvitee;
+const qrcode_1 = __importDefault(require("qrcode"));
 const invitationContent_1 = require("../utils/invitationContent");
 const alert_service_1 = require("./alert.service");
 const mongoose_1 = __importDefault(require("mongoose"));
@@ -152,7 +154,8 @@ function buildFormalInvitationEmailHTML(params) {
               <!-- Footer Section -->
               <tr>
                 <td style="background-color: #F9FAFB; padding: 20px 30px; text-align: center; border-top: 1px solid #E5E7EB; font-size: 11px; color: #9CA3AF;">
-                  <p style="margin: 0 0 4px 0;">Organized via <strong>LGPSM Platform</strong></p>
+                  ${params.organizerLogoCid ? `<img src="cid:${params.organizerLogoCid}" alt="${params.organizerName ? (0, html_1.escapeHtml)(params.organizerName) : 'Organizer'} logo" style="display: block; margin: 0 auto 8px auto; max-height: 56px; max-width: 180px; height: auto;" />` : ''}
+                  <p style="margin: 0 0 4px 0; font-size: 12px; color: #374151;">${params.organizerName ? `Organized by <strong>${(0, html_1.escapeHtml)(params.organizerName)}</strong>` : 'Organized via <strong>LGPSM Platform</strong>'}</p>
                   <p style="margin: 0;">If you have any questions, please contact the event organizer.</p>
                 </td>
               </tr>
@@ -197,10 +200,33 @@ function channelsForInvitee(channel, invitee) {
         whatsapp: whatsapp_service_1.whatsappService.normalizePhoneNumber(invitee.mobile).length >= 10,
     };
 }
+/** The organizer's logo for the bottom of invitation emails (null when none was uploaded or it cannot be read) */
+async function organizerBrand(organizerId) {
+    if (!organizerId)
+        return { logo: null };
+    const organizer = await User_1.User.findById(organizerId).select('fullName profile.organizationName profile.logoKey').lean();
+    const name = organizer?.profile?.organizationName?.trim() || organizer?.fullName?.trim() || undefined;
+    const dataUrl = await (0, resolveImageBase64_1.resolveImageKeyBase64)(organizer?.profile?.logoKey).catch(() => '');
+    const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl || '');
+    return { name, logo: match ? { contentType: match[1], content: Buffer.from(match[2], 'base64') } : null };
+}
 // Rendered sample cards by event, oldest dropped first (see previewInvitationCard)
 const sampleCards = new Map();
 exports.invitationService = {
     async publicInvitationCard(rawToken) {
+        const { event, invitee, admissionToken } = await this.publicPass(rawToken);
+        return this.renderPassCard(event, invitee, admissionToken);
+    },
+    /**
+     * The guest's entry QR on its own. Shown on the invitation page when the organizer chose not to print the QR on the card
+     * ("Select data to show on card"), so the guest still has a pass to show at the door. Same checks and same credential as the card.
+     */
+    async publicInvitationQr(rawToken) {
+        const { admissionToken } = await this.publicPass(rawToken);
+        return qrcode_1.default.toBuffer((0, qrPayload_1.admissionPayloadFor)(admissionToken), { errorCorrectionLevel: 'H', margin: 4, width: 640 });
+    },
+    /** The guest behind an invitation link, their event, and their current admission credential; refused like the card is */
+    async publicPass(rawToken) {
         if (!rawToken || typeof rawToken !== 'string')
             throw new Error('INVALID_TOKEN');
         // The link finds the guest; the pass drawn is their CURRENT admission credential, whichever pass the link was first sent with
@@ -224,7 +250,7 @@ exports.invitationService = {
         const admissionToken = (0, credentialTokens_1.readAdmissionToken)(invitee) ?? ((0, invitation_util_1.hashToken)(rawToken) === invitee.qrTokenHash ? rawToken : null);
         if (!admissionToken)
             throw new Error('INVITATION_NOT_FOUND');
-        return this.renderPassCard(event, invitee, admissionToken);
+        return { event, invitee, admissionToken };
     },
     /** Draws the guest's card with the QR for the ADMISSION credential `rawToken`. Used for the public card and for replacement notices. */
     async renderPassCard(event, invitee, rawToken) {
@@ -259,7 +285,8 @@ exports.invitationService = {
             qrDataUrl,
             invitationUrl,
             cardDesign: cardContext.cardDesign,
-            designSpec: cardContext.designSpec
+            designSpec: cardContext.designSpec,
+            cardDisplay: event.cardDisplay
         });
     },
     async sendInvitations(eventId, userOrOrganizerId, inviteeIds, channel) {
@@ -280,6 +307,8 @@ exports.invitationService = {
         // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
         const cardContext = await (0, context_1.loadCardContext)(event);
         const cardDesign = cardContext.cardDesign;
+        // the organizer's logo goes at the bottom of each invitation email (read once per send)
+        const brand = await organizerBrand(event.organizerId);
         // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
         // every invitee's card for this event.
         const eventPhotoBase64 = await (0, resolveImageBase64_1.resolveImageKeyBase64)(event.media?.logoKey);
@@ -370,7 +399,8 @@ exports.invitationService = {
                     qrDataUrl,
                     invitationUrl: (0, qrPayload_1.admissionPayloadFor)(rawToken), // the card's QR (fallback) is always the admission credential
                     cardDesign,
-                    designSpec: cardContext.designSpec
+                    designSpec: cardContext.designSpec,
+                    cardDisplay: event.cardDisplay
                 });
             }
             catch (err) {
@@ -395,6 +425,8 @@ exports.invitationService = {
                         cid,
                         cardCid,
                         isReminder: false,
+                        organizerLogoCid: brand.logo ? `organizer-logo-${invitee._id}` : undefined,
+                        organizerName: brand.name,
                     });
                     const attachments = [
                         {
@@ -408,7 +440,8 @@ exports.invitationService = {
                             content: qrBuffer,
                             cid,
                             contentType: 'image/png'
-                        }
+                        },
+                        ...(brand.logo ? [{ filename: 'organizer-logo', content: brand.logo.content, cid: `organizer-logo-${invitee._id}`, contentType: brand.logo.contentType }] : [])
                     ];
                     await (0, email_provider_1.sendEmail)(invitee.email, `Invitation: ${event.title}`, htmlContent, attachments);
                     emailSuccess = true;
@@ -559,6 +592,8 @@ exports.invitationService = {
         // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
         const cardContext = await (0, context_1.loadCardContext)(event);
         const cardDesign = cardContext.cardDesign;
+        // the organizer's logo goes at the bottom of each invitation email (read once per send)
+        const brand = await organizerBrand(event.organizerId);
         // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
         // every invitee's card for this event.
         const eventPhotoBase64 = await (0, resolveImageBase64_1.resolveImageKeyBase64)(event.media?.logoKey);
@@ -649,7 +684,8 @@ exports.invitationService = {
                         qrDataUrl,
                         invitationUrl: (0, qrPayload_1.admissionPayloadFor)(rawToken), // the card's QR (fallback) is always the admission credential
                         cardDesign,
-                        designSpec: cardContext.designSpec
+                        designSpec: cardContext.designSpec,
+                        cardDisplay: event.cardDisplay
                     });
                 }
                 catch (err) {
@@ -673,6 +709,8 @@ exports.invitationService = {
                             cid,
                             cardCid,
                             isReminder: true,
+                            organizerLogoCid: brand.logo ? `organizer-logo-${invitee._id}` : undefined,
+                            organizerName: brand.name,
                         });
                         const attachments = [
                             {
@@ -686,7 +724,8 @@ exports.invitationService = {
                                 content: qrBuffer,
                                 cid,
                                 contentType: 'image/png'
-                            }
+                            },
+                            ...(brand.logo ? [{ filename: 'organizer-logo', content: brand.logo.content, cid: `organizer-logo-${invitee._id}`, contentType: brand.logo.contentType }] : [])
                         ];
                         await (0, email_provider_1.sendEmail)(invitee.email, `Reminder: ${event.title}`, htmlContent, attachments);
                         emailSuccess = true;
@@ -863,6 +902,8 @@ exports.invitationService = {
         // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
         const cardContext = await (0, context_1.loadCardContext)(event);
         const cardDesign = cardContext.cardDesign;
+        // the organizer's logo goes at the bottom of each invitation email (read once per send)
+        const brand = await organizerBrand(event.organizerId);
         // Resolved once per event (not per invitee) — the same organizer-uploaded photo goes on
         // every invitee's card for this event.
         const eventPhotoBase64 = await (0, resolveImageBase64_1.resolveImageKeyBase64)(event.media?.logoKey);
@@ -903,7 +944,8 @@ exports.invitationService = {
             qrDataUrl,
             invitationUrl,
             cardDesign,
-            designSpec: cardContext.designSpec
+            designSpec: cardContext.designSpec,
+            cardDisplay: event.cardDisplay
         });
         if (sampleKey && !issuedToken) {
             if (sampleCards.size >= 200)

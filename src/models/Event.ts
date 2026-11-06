@@ -54,6 +54,8 @@ export interface IEvent extends Document {
   templateId?: mongoose.Types.ObjectId;
   /** Which guest details the card prints on its two guest lines ("Additional Info"); unset = name, then company */
   cardInfo?: CardInfo;
+  /** Which event details the cards print (see utils/cardDisplay.ts); absent = all */
+  cardDisplay?: { title?: boolean; qr?: boolean; dateTime?: boolean; location?: boolean };
   media: {
     logoKey?: string;
     bannerKey?: string;
@@ -120,6 +122,12 @@ const EventSchema: Schema = new Schema(
       options: { type: [Schema.Types.Mixed], default: [] }
     },
     templateId: { type: Schema.Types.ObjectId, ref: 'Template' },
+    cardDisplay: {
+      title: { type: Boolean },
+      qr: { type: Boolean },
+      dateTime: { type: Boolean },
+      location: { type: Boolean }
+    },
     cardInfo: {
       primary: { type: String, enum: [...CARD_INFO_FIELDS, null] },
       secondary: { type: String, enum: [...CARD_INFO_FIELDS, null] },

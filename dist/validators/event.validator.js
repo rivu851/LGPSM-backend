@@ -8,6 +8,7 @@ const cardInfo_1 = require("../utils/cardInfo");
 const Event_1 = require("../models/Event");
 const objectIdSchema = zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ObjectId format');
 // "Additional Info": a ticked line names the guest detail it prints; null leaves that line empty
+const cardDisplaySchema = zod_1.z.object({ title: zod_1.z.boolean().optional(), qr: zod_1.z.boolean().optional(), dateTime: zod_1.z.boolean().optional(), location: zod_1.z.boolean().optional() }).strict();
 const cardInfoSchema = zod_1.z.object({
     primary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(),
     secondary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(),
@@ -78,6 +79,7 @@ exports.createEventSchema = zod_1.z.object({
             thresholdLimit: zod_1.z.number().positive().optional()
         }).optional(),
         cardInfo: cardInfoSchema.optional(),
+        cardDisplay: cardDisplaySchema.optional(),
         dietaryPreference: dietaryPreferenceCreateSchema.optional(),
         templateId: objectIdSchema.optional(),
         media: zod_1.z.object({
@@ -126,6 +128,7 @@ exports.updateEventSchema = zod_1.z.object({
             thresholdLimit: zod_1.z.number().positive().optional()
         }).optional(),
         cardInfo: cardInfoSchema.optional(),
+        cardDisplay: cardDisplaySchema.optional(),
         dietaryPreference: dietaryPreferenceUpdateSchema.optional(),
         templateId: objectIdSchema.optional(),
         media: zod_1.z.object({

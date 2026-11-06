@@ -28,7 +28,8 @@ export const createUserSchema = z.object({
   organizerId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
   profile: z.object({
     organizationName: z.string().max(150).optional(),
-    logoKey: z.string().max(200).optional()
+    logoKey: z.string().max(200).optional(),
+    invitationChannel: z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional()
   }).strict().optional()
 }).strict();
 
@@ -40,7 +41,8 @@ export const updateUserSchema = z.object({
   isActive: z.boolean().optional(),
   profile: z.object({
     organizationName: z.string().max(150).optional(),
-    logoKey: z.string().max(200).optional()
+    logoKey: z.string().max(200).optional(),
+    invitationChannel: z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional()
   }).strict().optional()
 }).strict();
 

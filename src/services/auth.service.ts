@@ -130,6 +130,7 @@ export const authService = {
     password: string;
     phone?: string;
     role?: string;
+    invitationChannel?: 'EMAIL' | 'WHATSAPP' | 'BOTH';
   }) {
     const existingUser = await userRepository.findByEmail(data.email);
     if (existingUser) {
@@ -158,6 +159,7 @@ export const authService = {
       role: Role.ORGANIZER,
       isActive: true,
       isEmailVerified: false,
+      profile: { invitationChannel: data.invitationChannel || 'BOTH' },
     });
 
     // Generate OTP, hash it, store the hash

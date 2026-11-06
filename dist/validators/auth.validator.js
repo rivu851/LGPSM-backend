@@ -8,6 +8,8 @@ exports.registerSchema = zod_1.z.object({
     password: zod_1.z.string().min(8, 'Password must be at least 8 characters'),
     phone: zod_1.z.string().optional(),
     role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
+    // How the organizer will send invitations (asked at signup); the send screen starts with this choice
+    invitationChannel: zod_1.z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
 });
 // Mobile number is the primary identifier; email remains a valid alternative.
 // "At least one of the two" is enforced in authService.login(), not here —

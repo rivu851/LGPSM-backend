@@ -6,6 +6,8 @@ export const registerSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
   phone: z.string().optional(),
   role: z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
+  // How the organizer will send invitations (asked at signup); the send screen starts with this choice
+  invitationChannel: z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
 });
 
 // Mobile number is the primary identifier; email remains a valid alternative.

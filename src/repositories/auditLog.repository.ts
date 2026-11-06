@@ -38,6 +38,8 @@ export const auditLogRepository = {
     const logs = await AuditLog.find(query)
       .populate('actorId', 'fullName email role')
       .populate('eventId', 'title')
+      // the Reports "Action log" shows the organizer (organisation name and ID) the action belongs to
+      .populate('organizerId', 'fullName profile.organizationName')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);

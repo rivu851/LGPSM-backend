@@ -8,6 +8,7 @@ import { buildTemplateTexts, photoInitials, buildSpecTexts } from './cardTemplat
 import type { DesignSpec } from './cardTemplates/designSpec';
 import { renderDesignSpec } from './cardTemplates/specRenderer';
 import { appendInfoFooter, insertGuestBand, FOOTER_STYLES, FooterStyle } from './cardTemplates/infoFooter';
+import { CardDisplay, cardDisplayOf, withoutHidden } from '../utils/cardDisplay';
 import { coverageOfDesign, coverageOfSpec, Coverage, detailRows } from './cardTemplates/coverage';
 
 export interface CardSessionData {
@@ -48,6 +49,8 @@ export interface InvitationCardData {
     /** The organizer's contact number: printed at the bottom of every card as "For more details contact …" */
     contactNumber?: string;
   };
+  /** Which event details to print ("Select data to show on card"); absent = all */
+  cardDisplay?: Partial<CardDisplay> | null;
   sessions: CardSessionData[];
   /** Preview of a template/event being set up: the designers' sample photo may stand in for a missing event image */
   isPreview?: boolean;
@@ -89,8 +92,9 @@ async function buildClassicSVG(data: InvitationCardData): Promise<string> {
     const height = CARD_HEIGHT;
 
     // 1. Process QR Code
-    let qrImageHref = data.qrDataUrl || '';
-    if (!qrImageHref && data.invitationUrl) {
+    const show = cardDisplayOf(data.cardDisplay);
+    let qrImageHref = show.qr ? data.qrDataUrl || '' : '';
+    if (show.qr && !qrImageHref && data.invitationUrl) {
       qrImageHref = await QRCode.toDataURL(data.invitationUrl, {
         errorCorrectionLevel: 'H',
         margin: 1,
@@ -102,7 +106,7 @@ async function buildClassicSVG(data: InvitationCardData): Promise<string> {
     const logoHref = getLogoBase64();
 
     // 3. Process Event Title
-    const fullTitle = (data.event.title || '').trim();
+    const fullTitle = show.title ? (data.event.title || '').trim() : '';
     const titleWords = fullTitle.split(' ');
     let mainTitlePart = fullTitle;
     let yearPart = '';
@@ -112,12 +116,12 @@ async function buildClassicSVG(data: InvitationCardData): Promise<string> {
     }
 
     const subtitleText = data.event.subtitle || '';
-    const dateMain = data.event.date || '';
-    const dateSub = data.event.dayOfWeek || '';
-    const timeMain = data.event.startTime || '';
-    const timeSub = data.event.timeSub || 'ONWARDS';
-    const venueMain = data.event.venue || 'Venue to be announced';
-    const venueSub = data.event.locationSub || '';
+    const dateMain = show.dateTime ? data.event.date || '' : '';
+    const dateSub = show.dateTime ? data.event.dayOfWeek || '' : '';
+    const timeMain = show.dateTime ? data.event.startTime || '' : '';
+    const timeSub = show.dateTime ? data.event.timeSub || 'ONWARDS' : '';
+    const venueMain = show.location ? data.event.venue || 'Venue to be announced' : '';
+    const venueSub = show.location ? data.event.locationSub || '' : '';
     const inviteeName = data.invitee.name || 'Guest';
     const companyName = data.invitee.companyName || '';
 
@@ -343,6 +347,8 @@ async function buildClassicSVG(data: InvitationCardData): Promise<string> {
  * else the event has to say (dates, times, place, guest lines) is composed here, and the contact line always closes the card.
  */
 function withInfoFooter(png: Buffer, data: InvitationCardData, covered: Coverage, style: FooterStyle): Promise<Buffer> {
+  const show = cardDisplayOf(data.cardDisplay);
+  const hidden = new Set([...(show.title ? [] : ['title']), ...(show.dateTime ? [] : ['when']), ...(show.location ? [] : ['where'])]);
   return appendInfoFooter(png, detailRows({
     title: data.event.title,
     startIso: data.event.startIso,
@@ -353,7 +359,7 @@ function withInfoFooter(png: Buffer, data: InvitationCardData, covered: Coverage
     contactNumber: data.event.contactNumber,
     guestName: data.invitee.name,
     guestMeta: data.invitee.companyName
-  }, covered), style);
+  }, covered).filter((row) => !hidden.has(row.kind)), style);
 }
 
 const dataUrlToBuffer = (dataUrl?: string): Buffer | undefined => {
@@ -363,7 +369,7 @@ const dataUrlToBuffer = (dataUrl?: string): Buffer | undefined => {
 
 // The designers' templates (Figma): fixed artwork plus this event's content
 async function renderFromTemplate(design: TemplateDesign, data: InvitationCardData): Promise<Buffer> {
-  const texts = buildTemplateTexts({
+  const allTexts = buildTemplateTexts({
     design,
     title: data.event.title || '',
     categoryName: data.event.categoryName,
@@ -375,9 +381,11 @@ async function renderFromTemplate(design: TemplateDesign, data: InvitationCardDa
     isVirtual: data.event.isVirtual,
     invitee: data.invitee
   });
+  const show = cardDisplayOf(data.cardDisplay);
+  const texts = withoutHidden(allTexts, show);
 
-  let qr = dataUrlToBuffer(data.qrDataUrl);
-  if (!qr && data.invitationUrl) {
+  let qr = show.qr ? dataUrlToBuffer(data.qrDataUrl) : undefined;
+  if (show.qr && !qr && data.invitationUrl) {
     qr = await QRCode.toBuffer(data.invitationUrl, { errorCorrectionLevel: 'H', margin: 4, width: 480 });
   }
   const eventImage = dataUrlToBuffer(data.event.photoBase64);
@@ -389,14 +397,17 @@ async function renderFromTemplate(design: TemplateDesign, data: InvitationCardDa
     photo: eventImage,
     // corporate designs show the host's logo where personal designs show a photo; fall back to the LGPSM logo
     logo: eventImage || dataUrlToBuffer(getLogoBase64()),
-    initials: photoInitials({ design, title: data.event.title || '' }, texts),
+    initials: photoInitials({ design, title: show.title ? data.event.title || '' : '' }, texts),
     useSamplePhoto: data.isPreview === true && !eventImage
   });
 }
 
 // A custom (AI-generated) design: the stored layout with this event's details and this guest's own QR code
-async function renderFromSpec(spec: DesignSpec, data: InvitationCardData): Promise<Buffer> {
-  const texts = buildSpecTexts({
+async function renderFromSpec(fullSpec: DesignSpec, data: InvitationCardData): Promise<Buffer> {
+  const show = cardDisplayOf(data.cardDisplay);
+  // a hidden QR takes its own area and its "scan" caption with it
+  const spec: DesignSpec = show.qr ? fullSpec : { ...fullSpec, elements: fullSpec.elements.filter((e: any) => e.type !== 'qr' && !(e.type === 'text' && e.role === 'label' && /scan/i.test(String(e.label || '')))) } as DesignSpec;
+  const allTexts = buildSpecTexts({
     title: data.event.title || '',
     description: data.event.description,
     startIso: data.event.startIso,
@@ -407,8 +418,9 @@ async function renderFromSpec(spec: DesignSpec, data: InvitationCardData): Promi
     organizerName: data.event.organizerName,
     invitee: data.invitee
   });
-  let qr = dataUrlToBuffer(data.qrDataUrl);
-  if (!qr && data.invitationUrl) qr = await QRCode.toBuffer(data.invitationUrl, { errorCorrectionLevel: 'H', margin: 4, width: 480 });
+  const texts = withoutHidden(allTexts, show);
+  let qr = show.qr ? dataUrlToBuffer(data.qrDataUrl) : undefined;
+  if (show.qr && !qr && data.invitationUrl) qr = await QRCode.toBuffer(data.invitationUrl, { errorCorrectionLevel: 'H', margin: 4, width: 480 });
   const eventImage = dataUrlToBuffer(data.event.photoBase64);
   const result = await renderDesignSpec({
     spec,

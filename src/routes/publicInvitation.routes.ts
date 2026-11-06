@@ -22,6 +22,7 @@ const validate = (schema: ZodSchema) => (req: Request, res: Response, next: Next
 
 // GET /api/v1/public/invitations/:token
 router.get('/:token/card', publicInvitationController.getPublicInvitationCard);
+router.get('/:token/qr', publicInvitationController.getPublicInvitationQr);
 router.get('/:token', publicInvitationController.getPublicInvitation);
 
 // POST /api/v1/public/invitations/:token/rsvp

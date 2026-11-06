@@ -129,6 +129,30 @@ async function findManageableUser(actor, userId) {
     }
     return target;
 }
+/** A deleted (switched off) staff account added again by the same organizer: brought back with the new details and a new password */
+async function reactivateStaff(existing, data, ownerId) {
+    const phone = data.phone ? (0, whatsapp_service_1.normalizePhoneNumber)(data.phone) : undefined;
+    await assertPhoneAvailable(phone, String(existing._id));
+    const { hashPassword } = await Promise.resolve().then(() => __importStar(require('../utils/password')));
+    const generatedPassword = data.password ? null : generateTemporaryPassword();
+    const passwordHash = await hashPassword(data.password ?? generatedPassword);
+    const user = await user_repository_1.userRepository.updateById(String(existing._id), {
+        fullName: data.fullName,
+        ...(phone ? { phone } : {}),
+        passwordHash,
+        isActive: true,
+        createdBy: new mongoose_1.default.Types.ObjectId(ownerId)
+    });
+    if (generatedPassword) {
+        try {
+            await sendCredentialsEmail(data.email, data.fullName, data.role, generatedPassword);
+        }
+        catch (e) {
+            console.error('Credentials email failed:', e?.message);
+        }
+    }
+    return user;
+}
 exports.userService = {
     async getProfile(userId) {
         const user = await user_repository_1.userRepository.findById(userId);
@@ -192,12 +216,12 @@ exports.userService = {
             throw { statusCode: 403, message: 'Organizers can only create staff (SYSTEM_USER)' };
         }
         // Admins can create ORGANIZER and SYSTEM_USER (and admins if needed)
-        const existingUser = await user_repository_1.userRepository.findByEmail(data.email);
-        if (existingUser) {
-            throw { statusCode: 400, message: 'Email already in use' };
-        }
         // An admin adding staff for a particular organizer: the account belongs to that organizer, exactly as if they had added it
         let ownerId = actor.userId;
+        // a system user always belongs to an organizer: an admin must say which one (an organizer adds staff for themselves)
+        if (actor.role === User_1.Role.ADMIN && data.role === User_1.Role.SYSTEM_USER && !data.organizerId) {
+            throw { statusCode: 400, code: 'ORGANIZER_REQUIRED', message: 'Select the organizer this user is being added for.' };
+        }
         if (data.organizerId) {
             if (actor.role !== 'ADMIN' || data.role !== 'SYSTEM_USER')
                 throw { statusCode: 403, message: 'Only an administrator can add staff on behalf of an organizer' };
@@ -205,6 +229,25 @@ exports.userService = {
             if (!owner || owner.role !== User_1.Role.ORGANIZER || owner.isActive === false)
                 throw { statusCode: 404, message: 'Organizer not found' };
             ownerId = String(owner._id);
+        }
+        // An email belongs to one account on the whole platform. Being someone's invitee is not an account, so a guest's email is free.
+        const existingUser = await user_repository_1.userRepository.findByEmail(data.email);
+        if (existingUser) {
+            const sameOwner = String(existingUser.createdBy || '') === String(ownerId) || actor.role === User_1.Role.ADMIN;
+            // Staff that were deleted (deleted accounts are only switched off) come back when they are added again by the same organizer
+            if (existingUser.role === User_1.Role.SYSTEM_USER && data.role === User_1.Role.SYSTEM_USER && existingUser.isActive === false && sameOwner) {
+                return reactivateStaff(existingUser, data, ownerId);
+            }
+            const message = existingUser.role === User_1.Role.SYSTEM_USER
+                ? existingUser.isActive === false
+                    ? 'This email belongs to a deleted system user of another organizer, so it cannot be added here.'
+                    : String(existingUser.createdBy || '') === String(ownerId)
+                        ? 'This person is already one of your system users.'
+                        : 'This email is already used by a system user of another organizer.'
+                : existingUser.role === User_1.Role.ORGANIZER
+                    ? 'This email is already used by an organizer account.'
+                    : 'This email is already used by an administrator account.';
+            throw { statusCode: 400, message };
         }
         const phone = data.phone ? (0, whatsapp_service_1.normalizePhoneNumber)(data.phone) : undefined;
         await assertPhoneAvailable(phone);
@@ -324,6 +367,8 @@ exports.userService = {
         if (data.profile && actor.role === User_1.Role.ADMIN) {
             if (data.profile.organizationName !== undefined)
                 updatePayload['profile.organizationName'] = data.profile.organizationName;
+            if (data.profile.invitationChannel !== undefined)
+                updatePayload['profile.invitationChannel'] = data.profile.invitationChannel;
             if (data.profile.logoKey !== undefined)
                 updatePayload['profile.logoKey'] = data.profile.logoKey;
         }

@@ -6,6 +6,8 @@ import { EventFormat, EventStatus } from '../models/Event';
 
 const objectIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ObjectId format');
 // "Additional Info": a ticked line names the guest detail it prints; null leaves that line empty
+const cardDisplaySchema = z.object({ title: z.boolean().optional(), qr: z.boolean().optional(), dateTime: z.boolean().optional(), location: z.boolean().optional() }).strict();
+
 const cardInfoSchema = z.object({
   primary: z.enum(CARD_INFO_FIELDS).nullable(),
   secondary: z.enum(CARD_INFO_FIELDS).nullable(),
@@ -80,6 +82,7 @@ export const createEventSchema = z.object({
       thresholdLimit: z.number().positive().optional()
     }).optional(),
     cardInfo: cardInfoSchema.optional(),
+    cardDisplay: cardDisplaySchema.optional(),
     dietaryPreference: dietaryPreferenceCreateSchema.optional(),
     templateId: objectIdSchema.optional(),
     media: z.object({
@@ -129,6 +132,7 @@ export const updateEventSchema = z.object({
       thresholdLimit: z.number().positive().optional()
     }).optional(),
     cardInfo: cardInfoSchema.optional(),
+    cardDisplay: cardDisplaySchema.optional(),
     dietaryPreference: dietaryPreferenceUpdateSchema.optional(),
     templateId: objectIdSchema.optional(),
     media: z.object({

@@ -232,6 +232,21 @@ export const eventController = {
     }
   },
 
+  // "Delete event" for an event that is over: the owning organizer or an admin; removes the event and all of its data
+  async deleteEventPermanently(req: Request, res: Response, next: NextFunction) {
+    try {
+      const user = (req as any).user;
+      const confirmTitle = typeof req.body?.confirmTitle === 'string' ? req.body.confirmTitle : undefined;
+      const result = await eventService.deleteEventPermanently(req.params.eventId as string, { userId: user.userId, role: user.role }, confirmTitle);
+      res.status(200).json({ success: true, message: `"${result.title}" was deleted permanently.` });
+    } catch (error: any) {
+      if (error.message === 'EVENT_NOT_FOUND') res.status(404).json({ success: false, error: 'Not Found', message: 'Event not found or inaccessible' });
+      else if (error.message === 'EVENT_NOT_CLOSED') res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_NOT_CLOSED', message: 'Only an event that has ended can be deleted. Cancel it instead.' });
+      else if (error.message === 'CONFIRMATION_REQUIRED') res.status(400).json({ success: false, error: 'Bad Request', code: 'CONFIRMATION_REQUIRED', message: 'Type the event title exactly to confirm deletion.' });
+      else next(error);
+    }
+  },
+
   async cleanupEventData(req: Request, res: Response, next: NextFunction) {
     try {
       const actor = {

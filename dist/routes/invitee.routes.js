@@ -47,6 +47,8 @@ exports.eventInviteeRoutes.post('/', (0, authorizeRoles_1.authorizeRoles)(User_1
 exports.eventInviteeRoutes.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER), invitee_controller_1.inviteeController.getInvitees);
 // Access-pass history and message retry: the event's owner or an admin (never staff)
 exports.eventInviteeRoutes.get('/sets', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), invitee_controller_1.inviteeController.getInviteeSets);
+// Deletes the event's unused invitee lists (Additional Information changed after the Excel sample was downloaded)
+exports.eventInviteeRoutes.post('/sets/clear', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), (0, auditAction_1.auditAction)({ action: 'INVITEE_LISTS_CLEARED', entityType: 'Event', eventParam: 'eventId', describe: 'Unused invitee lists deleted after the card details changed', critical: true }), invitee_controller_1.inviteeController.clearUnusedLists);
 exports.eventInviteeRoutes.get('/sets/:setId/members', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), invitee_controller_1.inviteeController.getSetMembers);
 // Set-aside guests: the owner organizer and admins only, never System Users
 exports.eventInviteeRoutes.get('/set-aside', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), invitee_controller_1.inviteeController.getSetAside);

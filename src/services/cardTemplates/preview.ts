@@ -22,6 +22,7 @@ export interface TemplatePreviewInput {
   companyName?: string;
   cardInfo?: CardInfo;
   contactNumber?: string;
+  cardDisplay?: { title?: boolean; qr?: boolean; dateTime?: boolean; location?: boolean };
 }
 
 /**
@@ -64,6 +65,7 @@ export async function renderTemplatePreview(templateId: string | null, input: Te
     isPreview: true,
     qrDataUrl: await generateQRCodeDataURL(invitationUrl),
     invitationUrl,
+    cardDisplay: input.cardDisplay,
     cardDesign: spec?.ok ? 'CUSTOM' : cardDesign,
     designSpec: spec?.ok ? spec.spec : undefined
   });

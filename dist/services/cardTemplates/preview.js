@@ -51,6 +51,7 @@ async function renderTemplatePreview(templateId, input, isAdmin, userId) {
         isPreview: true,
         qrDataUrl: await (0, qr_util_1.generateQRCodeDataURL)(invitationUrl),
         invitationUrl,
+        cardDisplay: input.cardDisplay,
         cardDesign: spec?.ok ? 'CUSTOM' : cardDesign,
         designSpec: spec?.ok ? spec.spec : undefined
     });

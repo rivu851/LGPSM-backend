@@ -95,6 +95,26 @@ async function findManageableUser(actor: Actor, userId: string) {
   return target;
 }
 
+/** A deleted (switched off) staff account added again by the same organizer: brought back with the new details and a new password */
+async function reactivateStaff(existing: any, data: any, ownerId: string) {
+  const phone = data.phone ? normalizePhoneNumber(data.phone) : undefined;
+  await assertPhoneAvailable(phone, String(existing._id));
+  const { hashPassword } = await import('../utils/password');
+  const generatedPassword = data.password ? null : generateTemporaryPassword();
+  const passwordHash = await hashPassword(data.password ?? generatedPassword!);
+  const user = await userRepository.updateById(String(existing._id), {
+    fullName: data.fullName,
+    ...(phone ? { phone } : {}),
+    passwordHash,
+    isActive: true,
+    createdBy: new mongoose.Types.ObjectId(ownerId)
+  } as any);
+  if (generatedPassword) {
+    try { await sendCredentialsEmail(data.email, data.fullName, data.role, generatedPassword); } catch (e: any) { console.error('Credentials email failed:', e?.message); }
+  }
+  return user;
+}
+
 export const userService = {
   async getProfile(userId: string) {
     const user = await userRepository.findById(userId);
@@ -161,18 +181,38 @@ export const userService = {
     }
     // Admins can create ORGANIZER and SYSTEM_USER (and admins if needed)
 
-    const existingUser = await userRepository.findByEmail(data.email);
-    if (existingUser) {
-      throw { statusCode: 400, message: 'Email already in use' };
-    }
-
     // An admin adding staff for a particular organizer: the account belongs to that organizer, exactly as if they had added it
     let ownerId = actor.userId;
+    // a system user always belongs to an organizer: an admin must say which one (an organizer adds staff for themselves)
+    if (actor.role === Role.ADMIN && data.role === Role.SYSTEM_USER && !data.organizerId) {
+      throw { statusCode: 400, code: 'ORGANIZER_REQUIRED', message: 'Select the organizer this user is being added for.' };
+    }
     if (data.organizerId) {
       if (actor.role !== 'ADMIN' || data.role !== 'SYSTEM_USER') throw { statusCode: 403, message: 'Only an administrator can add staff on behalf of an organizer' };
       const owner = await userRepository.findById(String(data.organizerId));
       if (!owner || owner.role !== Role.ORGANIZER || owner.isActive === false) throw { statusCode: 404, message: 'Organizer not found' };
       ownerId = String(owner._id);
+    }
+
+    // An email belongs to one account on the whole platform. Being someone's invitee is not an account, so a guest's email is free.
+    const existingUser: any = await userRepository.findByEmail(data.email);
+    if (existingUser) {
+      const sameOwner = String(existingUser.createdBy || '') === String(ownerId) || actor.role === Role.ADMIN;
+      // Staff that were deleted (deleted accounts are only switched off) come back when they are added again by the same organizer
+      if (existingUser.role === Role.SYSTEM_USER && data.role === Role.SYSTEM_USER && existingUser.isActive === false && sameOwner) {
+        return reactivateStaff(existingUser, data, ownerId);
+      }
+      const message =
+        existingUser.role === Role.SYSTEM_USER
+          ? existingUser.isActive === false
+            ? 'This email belongs to a deleted system user of another organizer, so it cannot be added here.'
+            : String(existingUser.createdBy || '') === String(ownerId)
+              ? 'This person is already one of your system users.'
+              : 'This email is already used by a system user of another organizer.'
+          : existingUser.role === Role.ORGANIZER
+            ? 'This email is already used by an organizer account.'
+            : 'This email is already used by an administrator account.';
+      throw { statusCode: 400, message };
     }
 
     const phone = data.phone ? normalizePhoneNumber(data.phone) : undefined;
@@ -306,6 +346,7 @@ export const userService = {
     // Only the organizer details an admin manages; the rest of the profile (avatar, etc.) is left as is
     if (data.profile && actor.role === Role.ADMIN) {
       if (data.profile.organizationName !== undefined) updatePayload['profile.organizationName'] = data.profile.organizationName;
+      if ((data.profile as any).invitationChannel !== undefined) updatePayload['profile.invitationChannel'] = (data.profile as any).invitationChannel;
       if (data.profile.logoKey !== undefined) updatePayload['profile.logoKey'] = data.profile.logoKey;
     }
     if (data.password) {
