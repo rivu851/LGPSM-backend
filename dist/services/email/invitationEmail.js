@@ -110,17 +110,31 @@ function buildInvitationEmail(input) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
+<meta name="x-apple-disable-message-reformatting">
 <title>${title}</title>
+<style>
+  body{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}
+  img{-ms-interpolation-mode:bicubic;}
+  @media only screen and (max-width:600px){
+    .wrap{padding:0 !important;}
+    .sheet{border:0 !important;border-radius:0 !important;}
+    .pad{padding-left:16px !important;padding-right:16px !important;}
+    .pn{padding-left:16px !important;padding-right:16px !important;}
+    .note-i{padding:14px 0 14px 12px !important;}
+    .note-t{padding:14px 12px 14px 10px !important;font-size:14px !important;line-height:1.55 !important;}
+    h1{font-size:21px !important;}
+  }
+</style>
 </head>
 <body style="margin:0;padding:0;background:#FFFFFF;">
   <!-- preview text shown next to the subject in the inbox -->
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${input.isReminder ? `${title} is coming up` : `${host ? `${host} invites you to ` : 'You are invited to '}${title}`}${when ? ` on ${e(when.date)}` : ''}.</div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FFFFFF;">
-    <tr><td align="center" style="padding:24px 8px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background:#FFFFFF;border:1px solid ${LINE};border-radius:8px;">
+    <tr><td align="center" class="wrap" style="padding:24px 8px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="sheet" style="max-width:640px;background:#FFFFFF;border:1px solid ${LINE};border-radius:8px;">
 
         <!-- logo, headline and the guest's chip -->
-        <tr><td align="center" style="padding:32px 24px 0 24px;">
+        <tr><td align="center" class="pad" style="padding:32px 24px 0 24px;">
           <img src="cid:${logoCid}" alt="${host ? `${host} logo` : 'LGPSM'}" height="48" style="display:block;height:48px;width:auto;max-width:180px;border:0;margin:0 auto;" />
           <h1 style="margin:20px 0 16px 0;font-family:${FONT};font-size:24px;line-height:1.35;font-weight:400;color:${INK};">${headline}</h1>
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
@@ -128,21 +142,21 @@ function buildInvitationEmail(input) {
             <td valign="middle" style="padding-left:10px;font-family:${FONT};font-size:14px;font-weight:500;color:${INK};">${guestEmail || guest}</td>
           </tr></table>
         </td></tr>
-        <tr><td style="padding:24px 40px 0 40px;"><div style="border-top:1px solid ${LINE};font-size:0;line-height:0;">&nbsp;</div></td></tr>
+        <tr><td class="pad" style="padding:24px 24px 0 24px;"><div style="border-top:1px solid ${LINE};font-size:0;line-height:0;">&nbsp;</div></td></tr>
 
         ${input.cardCid ? `
         <!-- the event's own card design; tapping it opens it full screen on the invitation page -->
-        <tr><td align="center" style="padding:28px 40px 0 40px;">
+        <tr><td align="center" class="pad" style="padding:28px 24px 0 24px;">
           <a href="${cardLink}" target="_blank" style="text-decoration:none;"><img src="cid:${input.cardCid}" alt="Your invitation card for ${title}" width="280" style="display:block;width:100%;max-width:280px;height:auto;border:0;border-radius:12px;" /></a>
           <p style="margin:8px 0 0 0;font-family:${FONT};font-size:12px;color:${SOFT};">Tap the card to open it full screen</p>
         </td></tr>` : ''}
 
         <!-- the note: who invited the guest to what -->
-        <tr><td style="padding:24px 40px 0 40px;">
+        <tr><td class="pad" style="padding:24px 24px 0 24px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${NOTE_BG}" style="background:${NOTE_BG};border-radius:16px;">
             <tr>
-              <td valign="top" width="24" style="padding:20px 0 20px 20px;">${icon('info')}</td>
-              <td valign="top" style="padding:20px 20px 20px 16px;font-family:${FONT};font-size:15px;line-height:1.6;color:${INK};">
+              <td valign="top" width="24" class="note-i" style="padding:18px 0 18px 16px;">${icon('info')}</td>
+              <td valign="top" class="note-t" style="padding:18px 16px 18px 12px;font-family:${FONT};font-size:15px;line-height:1.6;color:${INK};">
                 <p style="margin:0 0 12px 0;">${input.isReminder ? 'Hi' : 'Dear'} ${b(guest)},</p>
                 <p style="margin:0 0 12px 0;">${noteFirst}</p>
                 <p style="margin:0;">${noteSecond}</p>
@@ -152,25 +166,25 @@ function buildInvitationEmail(input) {
         </td></tr>
 
         ${description ? `
-        <tr><td style="padding:24px 40px 0 40px;">
+        <tr><td class="pad" style="padding:24px 24px 0 24px;">
           <p style="margin:0 0 6px 0;font-family:${FONT};font-size:13px;font-weight:500;letter-spacing:0.4px;text-transform:uppercase;color:${SOFT};">About the event</p>
           ${text(description, `color:${MUTED};margin:0;`)}
         </td></tr>` : ''}
 
         <!-- the details panel -->
-        <tr><td style="padding:24px 40px 0 40px;">
+        <tr><td class="pad" style="padding:24px 24px 0 24px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${PANEL_BG}" style="background:${PANEL_BG};border-radius:24px;">
-            <tr><td style="padding:24px 28px 6px 28px;">
+            <tr><td class="pn" style="padding:22px 22px 4px 22px;">
               <p style="margin:0 0 20px 0;font-family:${FONT};font-size:15px;font-weight:500;color:${INK};">Here are the details:</p>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${rows}
               </table>
             </td></tr>
-            <tr><td style="padding:18px 28px 20px 28px;border-top:2px solid #FFFFFF;font-family:${FONT};font-size:15px;line-height:1.5;color:${INK};">${panelFoot}</td></tr>
+            <tr><td class="pn" style="padding:16px 22px 18px 22px;border-top:2px solid #FFFFFF;font-family:${FONT};font-size:15px;line-height:1.5;color:${INK};">${panelFoot}</td></tr>
           </table>
         </td></tr>
 
         <!-- the call to action -->
-        <tr><td style="padding:28px 40px 0 40px;">
+        <tr><td class="pad" style="padding:28px 24px 0 24px;">
           ${text(rsvpBy
         ? `Please let ${host || 'us'} know whether you can make it. Your invitation page has the full event details and a one-tap reply.`
         : 'Your invitation page has your card and the full event details.')}
@@ -178,11 +192,11 @@ function buildInvitationEmail(input) {
         </td></tr>
 
         <!-- the entry pass -->
-        <tr><td style="padding:0 40px 0 40px;">
+        <tr><td class="pad" style="padding:0 24px 0 24px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${LINE};border-radius:12px;">
             <tr>
-              <td valign="top" width="24" style="padding:18px 0 18px 20px;">${icon('qr')}</td>
-              <td valign="top" style="padding:18px 20px 18px 16px;font-family:${FONT};">
+              <td valign="top" width="24" class="note-i" style="padding:16px 0 16px 16px;">${icon('qr')}</td>
+              <td valign="top" class="note-t" style="padding:16px 16px 16px 12px;font-family:${FONT};">
                 <div style="font-size:15px;font-weight:500;color:${INK};padding-bottom:6px;">Your entry pass</div>
                 <div style="font-size:13px;line-height:1.55;color:${MUTED};">${passLine}</div>
               </td>
@@ -196,13 +210,13 @@ function buildInvitationEmail(input) {
           </table>
         </td></tr>
 
-        <tr><td style="padding:24px 40px 0 40px;">
+        <tr><td class="pad" style="padding:24px 24px 0 24px;">
           ${text(`${contact ? 'If you have any questions, please call us on the number above.' : 'If you have any questions, simply reply to this email.'} ${input.isReminder ? 'See you soon!' : 'We look forward to welcoming you.'}`)}
           ${text(`Warm regards,<br />${b(host || 'The organizing team')}`, 'margin-bottom:0;')}
         </td></tr>
 
         <!-- footer -->
-        <tr><td style="padding:24px 40px 32px 40px;">
+        <tr><td class="pad" style="padding:24px 24px 32px 24px;">
           <p style="margin:0;padding-top:16px;border-top:1px solid ${LINE};font-family:${FONT};font-size:12px;line-height:1.6;color:${SOFT};">
             ${host ? `Organized by <strong>${host}</strong>` : 'Organized via <strong>LGPSM Platform</strong>'}. This invitation is personal to ${guest}.
             If the button does not work, open this link: <a href="${link}" target="_blank" style="color:${BLUE};word-break:break-all;">${link}</a>
