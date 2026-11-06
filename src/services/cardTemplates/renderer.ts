@@ -34,6 +34,12 @@ export interface TemplateCardInput {
   logo?: Buffer | null;
   /** QR code image (PNG) */
   qr?: Buffer | null;
+  /**
+   * The organizer chose cards without a QR ("Select data to show on card"). The QR's frame is part of the artwork, so leaving
+   * the code out would leave an empty frame: the band holding the frame (and its "scan" caption) is cut out of the card and the
+   * parts above and below are joined, so the card simply becomes shorter with no gap.
+   */
+  hideQr?: boolean;
   /** Shown in the photo frame when there is no photo; omit for a neutral silhouette */
   initials?: string;
   /**
@@ -319,6 +325,38 @@ async function qrImage(qr: Buffer, size: number, scale: number): Promise<Buffer>
 const silhouette = (cx: number, cy: number, r: number, ink: string) =>
   `<g fill="${ink}" fill-opacity="0.35"><circle cx="${round(cx)}" cy="${round(cy - r * 0.18)}" r="${round(r * 0.28)}"/><path d="M${round(cx - r * 0.55)} ${round(cy + r * 0.62)} C${round(cx - r * 0.55)} ${round(cy + r * 0.2)} ${round(cx - r * 0.25)} ${round(cy + r * 0.12)} ${round(cx)} ${round(cy + r * 0.12)} C${round(cx + r * 0.25)} ${round(cy + r * 0.12)} ${round(cx + r * 0.55)} ${round(cy + r * 0.2)} ${round(cx + r * 0.55)} ${round(cy + r * 0.62)}Z"/></g>`;
 
+// The horizontal band (Figma px) that holds each design's QR frame and its "Scan the QR code" caption, read from the artwork:
+// `from`/`to` sit in clear background just outside the frame, so nothing else the design prints is inside the band. `blend`
+// is how many px above the cut are cross-faded into the rows below it, so textured backgrounds join without a hard seam.
+const QR_BANDS: Partial<Record<TemplateDesign, { from: number; to: number; blend: number }>> = {
+  CORPORATE_V1: { from: 303, to: 520, blend: 6 }, // stamp frame 307-513; the date pill starts at 526
+  CORPORATE_V2: { from: 192, to: 452, blend: 8 }, // frame and pointer 196-417, caption to ~447; the guest name starts ~469
+  WEDDING: { from: 386, to: 595, blend: 8 }, // ornament 392-558 (the lines above it belong to the date row); the pin is at ~608
+  RICE_CEREMONY: { from: 334, to: 503, blend: 8 }, // frame 341-475, caption to ~498; the time line starts ~520
+  BIRTHDAY: { from: 328, to: 520, blend: 8 }, // frame 333-488, caption to ~513; the month starts ~532
+};
+
+/** Removes rows [from, to) of an RGBA image, cross-fading the last `blend` rows above the cut into the rows that follow it. */
+async function cutBand(png: Buffer, band: { from: number; to: number; blend: number }, scale: number): Promise<Buffer> {
+  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width, height, channels } = info;
+  const from = Math.round(band.from * scale);
+  const to = Math.min(height, Math.round(band.to * scale));
+  const blend = Math.min(Math.round(band.blend * scale), from, to - from);
+  if (from <= 0 || to <= from) return png;
+  const row = width * channels;
+  const out = Buffer.alloc((height - (to - from)) * row);
+  data.copy(out, 0, 0, from * row); // everything above the band
+  data.copy(out, from * row, to * row, height * row); // everything below it, moved up
+  for (let i = 0; i < blend; i++) {
+    const t = (i + 1) / (blend + 1); // 0 -> keep the row above, 1 -> the row below the band
+    const o = (from - blend + i) * row;
+    const below = (to - blend + i) * row;
+    for (let k = 0; k < row; k++) out[o + k] = Math.round(data[o + k] * (1 - t) + data[below + k] * t);
+  }
+  return sharp(out, { raw: { width, height: height - (to - from), channels } }).png({ compressionLevel: PNG_LEVEL }).toBuffer();
+}
+
 /** Renders a card and returns it as PNG bytes. */
 export async function renderTemplateCard(input: TemplateCardInput): Promise<Buffer> {
   const layout = CARD_LAYOUTS[input.design];
@@ -374,7 +412,7 @@ export async function renderTemplateCard(input: TemplateCardInput): Promise<Buff
   }
 
   // QR code
-  if (layout.qr && input.qr) {
+  if (layout.qr && input.qr && !input.hideQr) {
     layers.push({ input: await qrImage(input.qr, layout.qr.size, scale), left: Math.round(layout.qr.x * scale), top: Math.round(layout.qr.y * scale) });
   }
 
@@ -407,7 +445,9 @@ export async function renderTemplateCard(input: TemplateCardInput): Promise<Buff
   }
 
   const background = await loadBackground(layout, scale);
-  return sharp(background).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
+  const card = await sharp(background).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
+  const band = input.hideQr ? QR_BANDS[input.design] : undefined;
+  return band ? cutBand(card, band, scale) : card;
 }
 
 /** The designers' sample text for each slot, used for template previews. */

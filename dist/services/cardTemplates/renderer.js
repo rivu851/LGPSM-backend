@@ -268,6 +268,38 @@ async function qrImage(qr, size, scale) {
     return (0, sharp_1.default)(source).resize(px, px, { fit: 'fill', kernel: 'nearest' }).png().toBuffer();
 }
 const silhouette = (cx, cy, r, ink) => `<g fill="${ink}" fill-opacity="0.35"><circle cx="${round(cx)}" cy="${round(cy - r * 0.18)}" r="${round(r * 0.28)}"/><path d="M${round(cx - r * 0.55)} ${round(cy + r * 0.62)} C${round(cx - r * 0.55)} ${round(cy + r * 0.2)} ${round(cx - r * 0.25)} ${round(cy + r * 0.12)} ${round(cx)} ${round(cy + r * 0.12)} C${round(cx + r * 0.25)} ${round(cy + r * 0.12)} ${round(cx + r * 0.55)} ${round(cy + r * 0.2)} ${round(cx + r * 0.55)} ${round(cy + r * 0.62)}Z"/></g>`;
+// The horizontal band (Figma px) that holds each design's QR frame and its "Scan the QR code" caption, read from the artwork:
+// `from`/`to` sit in clear background just outside the frame, so nothing else the design prints is inside the band. `blend`
+// is how many px above the cut are cross-faded into the rows below it, so textured backgrounds join without a hard seam.
+const QR_BANDS = {
+    CORPORATE_V1: { from: 303, to: 520, blend: 6 }, // stamp frame 307-513; the date pill starts at 526
+    CORPORATE_V2: { from: 192, to: 452, blend: 8 }, // frame and pointer 196-417, caption to ~447; the guest name starts ~469
+    WEDDING: { from: 386, to: 595, blend: 8 }, // ornament 392-558 (the lines above it belong to the date row); the pin is at ~608
+    RICE_CEREMONY: { from: 334, to: 503, blend: 8 }, // frame 341-475, caption to ~498; the time line starts ~520
+    BIRTHDAY: { from: 328, to: 520, blend: 8 }, // frame 333-488, caption to ~513; the month starts ~532
+};
+/** Removes rows [from, to) of an RGBA image, cross-fading the last `blend` rows above the cut into the rows that follow it. */
+async function cutBand(png, band, scale) {
+    const { data, info } = await (0, sharp_1.default)(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const { width, height, channels } = info;
+    const from = Math.round(band.from * scale);
+    const to = Math.min(height, Math.round(band.to * scale));
+    const blend = Math.min(Math.round(band.blend * scale), from, to - from);
+    if (from <= 0 || to <= from)
+        return png;
+    const row = width * channels;
+    const out = Buffer.alloc((height - (to - from)) * row);
+    data.copy(out, 0, 0, from * row); // everything above the band
+    data.copy(out, from * row, to * row, height * row); // everything below it, moved up
+    for (let i = 0; i < blend; i++) {
+        const t = (i + 1) / (blend + 1); // 0 -> keep the row above, 1 -> the row below the band
+        const o = (from - blend + i) * row;
+        const below = (to - blend + i) * row;
+        for (let k = 0; k < row; k++)
+            out[o + k] = Math.round(data[o + k] * (1 - t) + data[below + k] * t);
+    }
+    return (0, sharp_1.default)(out, { raw: { width, height: height - (to - from), channels } }).png({ compressionLevel: PNG_LEVEL }).toBuffer();
+}
 /** Renders a card and returns it as PNG bytes. */
 async function renderTemplateCard(input) {
     const layout = layoutOverrides_1.LAYOUTS[input.design];
@@ -321,7 +353,7 @@ async function renderTemplateCard(input) {
         }
     }
     // QR code
-    if (layout.qr && input.qr) {
+    if (layout.qr && input.qr && !input.hideQr) {
         layers.push({ input: await qrImage(input.qr, layout.qr.size, scale), left: Math.round(layout.qr.x * scale), top: Math.round(layout.qr.y * scale) });
     }
     // text
@@ -350,7 +382,9 @@ async function renderTemplateCard(input) {
         });
     }
     const background = await loadBackground(layout, scale);
-    return (0, sharp_1.default)(background).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
+    const card = await (0, sharp_1.default)(background).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
+    const band = input.hideQr ? QR_BANDS[input.design] : undefined;
+    return band ? cutBand(card, band, scale) : card;
 }
 /** The designers' sample text for each slot, used for template previews. */
 function sampleTexts(design) {

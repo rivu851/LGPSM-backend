@@ -117,7 +117,7 @@ const nameMap = async (ids: unknown[]) => {
   return new Map((users as any[]).map((u) => [String(u._id), { id: String(u._id), name: u.fullName as string, role: u.role as string }]));
 };
 
-const REASON_TEXT: Record<string, string> = { SUPERSEDED_BY_UPLOAD: 'Replaced by a newer upload' };
+const REASON_TEXT: Record<string, string> = { SUPERSEDED_BY_UPLOAD: 'Replaced by a newer upload', REMOVED_BY_ORGANIZER: 'Removed from the guest list' };
 
 export const inviteeSetService = {
   async list(actor: Actor, eventId: string) {

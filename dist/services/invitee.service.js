@@ -52,6 +52,7 @@ const whatsapp_service_1 = require("./whatsapp.service");
 const InviteeSet_1 = require("../models/InviteeSet");
 const inviteeSet_service_1 = require("./inviteeSet.service");
 const auditLog_service_1 = require("./auditLog.service");
+const CredentialEvent_1 = require("../models/CredentialEvent");
 const eventLifecycle_1 = require("../utils/eventLifecycle");
 const spreadsheetGuard_1 = require("../utils/spreadsheetGuard");
 // The only guest fields a request can write. Delivery, credential, archive and list fields change through their own workflows;
@@ -208,11 +209,12 @@ exports.inviteeService = {
         const invitee = await this.getInviteeById(inviteeId, organizerId); // Ensures ownership
         await this.assertGuestEventOpen(invitee);
         await assertSessionsOfEvent(invitee.eventId, data.sessionAccess);
-        // A Locked list keeps who was on it: its guests' details are not rewritten (session access has its own route)
-        const DETAIL_FIELDS = ['name', 'email', 'mobile', 'companyName', 'company', 'professionalIdentity', 'secondaryIdentity'];
-        const changes = DETAIL_FIELDS.some((f) => data[f] !== undefined && String(data[f] ?? '') !== String(invitee[f] ?? ''));
-        if (changes && (await this.inLockedUploadedSet(invitee)))
-            throw new Error('SET_LOCKED');
+        // A guest's details can be corrected even after invitations went out from their list (a misspelt name or a wrong address
+        // is fixed, not frozen). The pass already sent stays the same; the organizer re-sends it to reach a corrected address.
+        // Previously refused for a Locked list:
+        // const DETAIL_FIELDS = ['name', 'email', 'mobile', 'companyName', 'company', 'professionalIdentity', 'secondaryIdentity'] as const;
+        // const changes = DETAIL_FIELDS.some((f) => (data as any)[f] !== undefined && String((data as any)[f] ?? '') !== String((invitee as any)[f] ?? ''));
+        // if (changes && (await this.inLockedUploadedSet(invitee))) throw new Error('SET_LOCKED');
         // Check duplicates if email/mobile changed
         if ((data.email && data.email !== invitee.email) ||
             (data.mobile && data.mobile !== invitee.mobile)) {
@@ -283,16 +285,40 @@ exports.inviteeService = {
         await invitee_repository_1.inviteeRepository.bulkUpdateSessionAccess(inviteeIds, mappedSessionAccess);
         return { success: true, updatedCount: invitees.length };
     },
-    async deleteInvitee(inviteeId, organizerId) {
+    async deleteInvitee(inviteeId, organizerId, actorRole = 'ORGANIZER') {
         const invitee = await this.getInviteeById(inviteeId, organizerId);
         await this.assertGuestEventOpen(invitee);
-        // A guest nothing has happened to can be removed from an open or hand-made list. Anyone who was invited, answered,
-        // attended, or sits in a Locked list stays: removing them would erase history.
-        if (await this.inLockedUploadedSet(invitee))
-            throw new Error('SET_LOCKED');
+        // A guest nothing has happened to, in an open or hand-made list, is simply deleted. Anyone who was invited, answered,
+        // attended, or sits in a list invitations were sent from is removed from the guest list WITHOUT erasing their history:
+        // they are set aside (see Uploaded Lists > Set-aside guests, where they can be restored), and a pass they were sent is
+        // withdrawn, so its QR no longer admits them. No message is sent to the guest.
         const a = (await (0, inviteeSet_service_1.loadActivity)(invitee.eventId, [invitee])).get(String(invitee._id));
-        if (!(0, inviteeSet_service_1.neverAttempted)(a))
-            throw new Error('HAS_HISTORY');
+        if ((await this.inLockedUploadedSet(invitee)) || !(0, inviteeSet_service_1.neverAttempted)(a)) {
+            const now = new Date();
+            const actor = mongoose_1.default.Types.ObjectId.isValid(organizerId) ? new mongoose_1.default.Types.ObjectId(organizerId) : null;
+            const event = await Event_1.Event.findById(invitee.eventId).select('organizerId').lean();
+            const passOut = !!invitee.qrTokenHash && !invitee.credentialRevokedAt;
+            const removed = await Invitee_1.Invitee.findOneAndUpdate({ _id: invitee._id, archivedAt: null }, {
+                $set: {
+                    archivedAt: now, archivedReason: 'REMOVED_BY_ORGANIZER', archivedBy: actor, archivedByRole: actorRole,
+                    ...(passOut ? { credentialRevokedAt: now, credentialRevocation: { category: 'ACCESS_WITHDRAWN', note: 'Removed from the guest list', by: actor, at: now } } : {})
+                }
+            }, { new: true });
+            if (!removed)
+                throw new Error('DELETE_FAILED');
+            if (passOut) {
+                await CredentialEvent_1.CredentialEvent.create({
+                    eventId: invitee.eventId, inviteeId: invitee._id, organizerId: event?.organizerId || actor, type: 'REVOKED', version: invitee.credentialVersion || 1,
+                    source: 'REVOKE', credentialId: invitee.credentialId, reasonCategory: 'ACCESS_WITHDRAWN', note: 'Removed from the guest list', actorId: actor, actorRole, tokenHash: invitee.qrTokenHash
+                });
+            }
+            await auditLog_service_1.auditLogService.record({
+                actorId: organizerId, actorRole, eventId: String(invitee.eventId), organizerId: event?.organizerId, entityType: 'Invitee', entityId: String(invitee._id),
+                action: 'INVITEE_REMOVED', description: passOut ? 'Guest removed from the list; their pass was withdrawn and their history kept' : 'Guest removed from the list; their history kept',
+                metadata: { passWithdrawn: passOut }
+            });
+            return Object.assign(removed, { removedWithHistory: true });
+        }
         const deleted = await invitee_repository_1.inviteeRepository.delete(inviteeId);
         if (!deleted) {
             throw new Error('DELETE_FAILED');

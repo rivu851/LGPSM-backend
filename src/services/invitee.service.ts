@@ -14,6 +14,7 @@ import { CheckIn } from '../models/CheckIn';
 import { InviteeSet, ImportMode } from '../models/InviteeSet';
 import { lockedSetKeys, setKeyOf, loadActivity, neverAttempted, deliveryStateOf, withEventLock } from './inviteeSet.service';
 import { auditLogService } from './auditLog.service';
+import { CredentialEvent } from '../models/CredentialEvent';
 import { assertEventOpenForChanges } from '../utils/eventLifecycle';
 import { assertSafeWorkbook } from '../utils/spreadsheetGuard';
 
@@ -201,10 +202,12 @@ export const inviteeService = {
     await this.assertGuestEventOpen(invitee);
     await assertSessionsOfEvent(invitee.eventId, data.sessionAccess);
 
-    // A Locked list keeps who was on it: its guests' details are not rewritten (session access has its own route)
-    const DETAIL_FIELDS = ['name', 'email', 'mobile', 'companyName', 'company', 'professionalIdentity', 'secondaryIdentity'] as const;
-    const changes = DETAIL_FIELDS.some((f) => (data as any)[f] !== undefined && String((data as any)[f] ?? '') !== String((invitee as any)[f] ?? ''));
-    if (changes && (await this.inLockedUploadedSet(invitee))) throw new Error('SET_LOCKED');
+    // A guest's details can be corrected even after invitations went out from their list (a misspelt name or a wrong address
+    // is fixed, not frozen). The pass already sent stays the same; the organizer re-sends it to reach a corrected address.
+    // Previously refused for a Locked list:
+    // const DETAIL_FIELDS = ['name', 'email', 'mobile', 'companyName', 'company', 'professionalIdentity', 'secondaryIdentity'] as const;
+    // const changes = DETAIL_FIELDS.some((f) => (data as any)[f] !== undefined && String((data as any)[f] ?? '') !== String((invitee as any)[f] ?? ''));
+    // if (changes && (await this.inLockedUploadedSet(invitee))) throw new Error('SET_LOCKED');
 
     // Check duplicates if email/mobile changed
     if (
@@ -294,15 +297,44 @@ export const inviteeService = {
     return { success: true, updatedCount: invitees.length };
   },
 
-  async deleteInvitee(inviteeId: string, organizerId: string): Promise<IInvitee> {
+  async deleteInvitee(inviteeId: string, organizerId: string, actorRole = 'ORGANIZER'): Promise<IInvitee & { removedWithHistory?: boolean }> {
     const invitee = await this.getInviteeById(inviteeId, organizerId);
     await this.assertGuestEventOpen(invitee);
 
-    // A guest nothing has happened to can be removed from an open or hand-made list. Anyone who was invited, answered,
-    // attended, or sits in a Locked list stays: removing them would erase history.
-    if (await this.inLockedUploadedSet(invitee)) throw new Error('SET_LOCKED');
+    // A guest nothing has happened to, in an open or hand-made list, is simply deleted. Anyone who was invited, answered,
+    // attended, or sits in a list invitations were sent from is removed from the guest list WITHOUT erasing their history:
+    // they are set aside (see Uploaded Lists > Set-aside guests, where they can be restored), and a pass they were sent is
+    // withdrawn, so its QR no longer admits them. No message is sent to the guest.
     const a = (await loadActivity(invitee.eventId, [invitee])).get(String(invitee._id))!;
-    if (!neverAttempted(a)) throw new Error('HAS_HISTORY');
+    if ((await this.inLockedUploadedSet(invitee)) || !neverAttempted(a)) {
+      const now = new Date();
+      const actor = mongoose.Types.ObjectId.isValid(organizerId) ? new mongoose.Types.ObjectId(organizerId) : null;
+      const event: any = await Event.findById(invitee.eventId).select('organizerId').lean();
+      const passOut = !!(invitee as any).qrTokenHash && !(invitee as any).credentialRevokedAt;
+      const removed: any = await Invitee.findOneAndUpdate(
+        { _id: invitee._id, archivedAt: null },
+        {
+          $set: {
+            archivedAt: now, archivedReason: 'REMOVED_BY_ORGANIZER', archivedBy: actor, archivedByRole: actorRole,
+            ...(passOut ? { credentialRevokedAt: now, credentialRevocation: { category: 'ACCESS_WITHDRAWN', note: 'Removed from the guest list', by: actor, at: now } } : {})
+          }
+        },
+        { new: true }
+      );
+      if (!removed) throw new Error('DELETE_FAILED');
+      if (passOut) {
+        await CredentialEvent.create({
+          eventId: invitee.eventId, inviteeId: invitee._id, organizerId: event?.organizerId || actor, type: 'REVOKED', version: (invitee as any).credentialVersion || 1,
+          source: 'REVOKE', credentialId: (invitee as any).credentialId, reasonCategory: 'ACCESS_WITHDRAWN', note: 'Removed from the guest list', actorId: actor, actorRole, tokenHash: (invitee as any).qrTokenHash
+        });
+      }
+      await auditLogService.record({
+        actorId: organizerId, actorRole, eventId: String(invitee.eventId), organizerId: event?.organizerId, entityType: 'Invitee', entityId: String(invitee._id),
+        action: 'INVITEE_REMOVED', description: passOut ? 'Guest removed from the list; their pass was withdrawn and their history kept' : 'Guest removed from the list; their history kept',
+        metadata: { passWithdrawn: passOut }
+      } as any);
+      return Object.assign(removed, { removedWithHistory: true });
+    }
     const deleted = await inviteeRepository.delete(inviteeId);
     if (!deleted) {
       throw new Error('DELETE_FAILED');

@@ -394,6 +394,7 @@ async function renderFromTemplate(design: TemplateDesign, data: InvitationCardDa
     design,
     texts,
     qr,
+    hideQr: !show.qr,
     photo: eventImage,
     // corporate designs show the host's logo where personal designs show a photo; fall back to the LGPSM logo
     logo: eventImage || dataUrlToBuffer(getLogoBase64()),

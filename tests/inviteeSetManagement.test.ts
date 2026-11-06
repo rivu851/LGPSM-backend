@@ -418,17 +418,19 @@ describe('audit entries', () => {
 });
 
 describe('a Locked list is not rewritten', () => {
-  it('refuses to change the details of, or remove, a guest of a locked uploaded list', async () => {
+  it('a guest of a list invitations were sent from can be corrected, and removing one sets them aside (restorable) instead of erasing them', async () => {
     await upload([HEAD, ['Sent Sam', 'sam@x.com', ''], ['Idle Ida', 'ida@x.com', '']], 'REPLACE', 'a.xlsx');
     await Invitee.updateOne({ email: 'sam@x.com' }, { invitationStatus: InvitationStatus.SENT });
     const ida: any = await Invitee.findOne({ email: 'ida@x.com' });
     const patch = await request(app).patch(`/api/v1/invitees/${ida._id}`).set(bearer(tA)).send({ name: 'Renamed Ida' });
-    expect(patch.status).toBe(409);
-    expect(patch.body.code).toBe('SET_LOCKED');
+    expect(patch.status).toBe(200);
+    expect((await Invitee.findById(ida._id))!.name).toBe('Renamed Ida');
     const del = await request(app).delete(`/api/v1/invitees/${ida._id}`).set(bearer(tA));
-    expect(del.status).toBe(409);
-    expect(del.body.code).toBe('SET_LOCKED');
-    expect((await Invitee.findById(ida._id))!.name).toBe('Idle Ida');
+    expect(del.status).toBe(200);
+    expect(del.body.data.setAside).toBe(true);
+    expect(await Invitee.findById(ida._id)).toBeNull(); // off the active list
+    const kept: any = await Invitee.findOne({ _id: ida._id }).setOptions({ includeArchived: true } as any);
+    expect(kept.archivedReason).toBe('REMOVED_BY_ORGANIZER'); // ...but kept, and listed with the set-aside guests
   });
 
   it('never lets the organizer set the guest\'s food choice (the guest makes it on the invitation page) and still adds a brand new list', async () => {
@@ -440,13 +442,20 @@ describe('a Locked list is not rewritten', () => {
     expect((await upload([HEAD, ['New Nat', 'nat@x.com', '']], 'APPEND', 'b.xlsx')).body.data.imported).toBe(1);
   });
 
-  it('never removes a guest who was invited, answered or attended, even from an open or hand-made list', async () => {
-    const hand: any = await Invitee.create({ eventId: event._id, name: 'Hand Hal', email: 'hal@x.com', invitationStatus: InvitationStatus.FAILED, rsvpStatus: RsvpStatus.PENDING, sessionAccess: [] });
+  it('removing a guest who was invited keeps their history: they are set aside and the pass they were sent no longer admits them', async () => {
+    const hand: any = await Invitee.create({ eventId: event._id, name: 'Hand Hal', email: 'hal@x.com', invitationStatus: InvitationStatus.SENT, rsvpStatus: RsvpStatus.ACCEPTED, qrTokenHash: 'h'.repeat(64), credentialVersion: 1, sessionAccess: [] });
     const del = await request(app).delete(`/api/v1/invitees/${hand._id}`).set(bearer(tA));
-    expect(del.status).toBe(409);
-    expect(del.body.code).toBe('HAS_HISTORY');
+    expect(del.status).toBe(200);
+    expect(del.body.data.setAside).toBe(true);
+    const kept: any = await Invitee.findOne({ _id: hand._id }).setOptions({ includeArchived: true } as any);
+    expect(kept.rsvpStatus).toBe(RsvpStatus.ACCEPTED); // history untouched
+    expect(kept.credentialRevokedAt).toBeTruthy(); // the pass is withdrawn, so a restore cannot quietly revive it
+    expect(kept.credentialRevocation.category).toBe('ACCESS_WITHDRAWN');
+    // a guest nothing has happened to is still simply deleted
     const fresh: any = await Invitee.create({ eventId: event._id, name: 'Hand Hana', email: 'hana@x.com', invitationStatus: InvitationStatus.PENDING, rsvpStatus: RsvpStatus.PENDING, sessionAccess: [] });
-    expect((await request(app).delete(`/api/v1/invitees/${fresh._id}`).set(bearer(tA))).status).toBe(200);
-    expect((await request(app).patch(`/api/v1/invitees/${hand._id}`).set(bearer(tA)).send({ name: 'Hand Hal Renamed' })).status).toBe(200); // hand-made list: details stay editable
+    const gone = await request(app).delete(`/api/v1/invitees/${fresh._id}`).set(bearer(tA));
+    expect(gone.status).toBe(200);
+    expect(gone.body.data.setAside).toBe(false);
+    expect(await Invitee.findOne({ _id: fresh._id }).setOptions({ includeArchived: true } as any)).toBeNull();
   });
 });
