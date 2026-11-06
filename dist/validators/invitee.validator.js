@@ -2,17 +2,12 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.bulkUpdateSessionAccessSchema = exports.updateSessionAccessSchema = exports.updateInviteeSchema = exports.createInviteeSchema = void 0;
 const zod_1 = require("zod");
-const mobileValidation = zod_1.z.string().optional().or(zod_1.z.literal('')).refine(val => {
-    if (!val || !val.trim())
-        return true;
-    const digits = val.replace(/\D/g, '');
-    return digits.length >= 7 && digits.length <= 15;
-}, { message: 'Mobile number must contain between 7 and 15 digits' });
+const phone_validator_1 = require("./phone.validator");
 exports.createInviteeSchema = zod_1.z.object({
     body: zod_1.z.object({
         name: zod_1.z.string().trim().min(1, 'Name is required').max(100, 'Name must be 100 characters or less'),
         email: zod_1.z.string().trim().toLowerCase().email('Invalid email address').optional().or(zod_1.z.literal('')),
-        mobile: mobileValidation,
+        mobile: phone_validator_1.optionalPhoneSchema,
         companyName: zod_1.z.string().trim().max(200, 'Company must be 200 characters or less').optional(),
         company: zod_1.z.string().trim().max(200, 'Company must be 200 characters or less').optional(),
         professionalIdentity: zod_1.z.string().trim().max(100).optional(),
@@ -31,7 +26,7 @@ exports.updateInviteeSchema = zod_1.z.object({
     body: zod_1.z.object({
         name: zod_1.z.string().trim().min(1).max(100).optional(),
         email: zod_1.z.string().trim().toLowerCase().email('Invalid email address').optional().or(zod_1.z.literal('')),
-        mobile: mobileValidation,
+        mobile: phone_validator_1.optionalPhoneSchema,
         companyName: zod_1.z.string().trim().max(200, 'Company must be 200 characters or less').optional(),
         company: zod_1.z.string().trim().max(200, 'Company must be 200 characters or less').optional(),
         professionalIdentity: zod_1.z.string().trim().max(100).optional(),

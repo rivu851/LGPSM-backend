@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.mediaUploadLimiter = exports.importLimiter = exports.credentialActionLimiter = exports.invitationSendLimiter = exports.checkInLimiter = exports.templateRenderLimiter = exports.templateGenerationReadLimiter = exports.templateGenerationLimiter = exports.cardPreviewLimiter = exports.publicInvitationLimiter = exports.contactRateLimiter = exports.contactAttemptLimiter = exports.resendVerificationRateLimiter = exports.verifyEmailRateLimiter = exports.refreshRateLimiter = exports.loginAccountLimiter = exports.loginIpLimiter = exports.authRateLimiter = void 0;
+exports.mediaUploadLimiter = exports.importLimiter = exports.credentialActionLimiter = exports.invitationSendLimiter = exports.checkInLimiter = exports.templateRenderLimiter = exports.templateGenerationReadLimiter = exports.templateGenerationLimiter = exports.cardPreviewLimiter = exports.publicInvitationLimiter = exports.contactRateLimiter = exports.contactAttemptLimiter = exports.changePendingEmailRateLimiter = exports.resendVerificationRateLimiter = exports.verifyEmailRateLimiter = exports.refreshRateLimiter = exports.loginAccountLimiter = exports.loginIpLimiter = exports.authRateLimiter = void 0;
 const express_rate_limit_1 = __importStar(require("express-rate-limit"));
 const securityLog_1 = require("../utils/securityLog");
 // Records every throttled request as a security event, then answers exactly as the default handler would
@@ -110,6 +110,16 @@ exports.resendVerificationRateLimiter = (0, express_rate_limit_1.default)({
     windowMs: 10 * 60 * 1000,
     max: 5,
     message: { success: false, message: 'Too many resend requests. Please try again in 10 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: skipInTest,
+});
+/** Changing the address of a pending sign-up: it sends mail and takes a password, so it is limited like a resend */
+exports.changePendingEmailRateLimiter = (0, express_rate_limit_1.default)({
+    handler: logged('changePendingEmailRateLimiter'),
+    windowMs: 10 * 60 * 1000,
+    max: 8,
+    message: { success: false, message: 'Too many attempts. Please try again in 10 minutes.' },
     standardHeaders: true,
     legacyHeaders: false,
     skip: skipInTest,

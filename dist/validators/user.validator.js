@@ -3,15 +3,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.changePasswordSchema = exports.updateUserSchema = exports.createUserSchema = exports.updateProfileSchema = void 0;
 const zod_1 = require("zod");
 const User_1 = require("../models/User");
+const phone_validator_1 = require("./phone.validator");
 exports.updateProfileSchema = zod_1.z.object({
     fullName: zod_1.z.string().trim().min(2, 'Full name must be at least 2 characters').max(120, 'Full name is too long').optional(),
-    phone: zod_1.z.string().optional(),
+    phone: phone_validator_1.optionalPhoneSchema,
     // Keys become part of a database update path, so only plain names are accepted
     profile: zod_1.z.record(zod_1.z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/, 'Invalid profile field'), zod_1.z.any()).optional(),
     // The organizer's organization, kept apart from their personal details (name, phone). Organizers and admins only.
     organization: zod_1.z.object({
         name: zod_1.z.string().trim().min(1, 'Organization name is required').max(150),
-        phone: zod_1.z.string().trim().max(30).regex(/^[+\d][\d\s()-]*$/, 'Enter a valid phone number').optional().or(zod_1.z.literal('')),
+        phone: phone_validator_1.optionalPhoneSchema,
         email: zod_1.z.string().trim().email('Enter a valid organization email').max(150).optional().or(zod_1.z.literal('')),
         address: zod_1.z.string().trim().max(300).optional(),
         website: zod_1.z.string().trim().max(200).regex(/^https?:\/\/[^\s]+$/i, 'Website must start with http:// or https://').optional().or(zod_1.z.literal(''))
@@ -22,7 +23,7 @@ exports.createUserSchema = zod_1.z.object({
     email: zod_1.z.string().email('Invalid email address'),
     // Omit to have a password generated and emailed to the new account
     password: zod_1.z.string().min(8, 'Password must be at least 8 characters').optional(),
-    phone: zod_1.z.string().optional(),
+    phone: phone_validator_1.optionalPhoneSchema,
     role: zod_1.z.enum([User_1.Role.ADMIN, User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER]),
     // Admin only: the organizer a new staff account is added for
     organizerId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
@@ -35,7 +36,7 @@ exports.createUserSchema = zod_1.z.object({
 exports.updateUserSchema = zod_1.z.object({
     fullName: zod_1.z.string().trim().min(2, 'Full name must be at least 2 characters').max(120, 'Full name is too long').optional(),
     email: zod_1.z.string().email('Invalid email address').optional(),
-    phone: zod_1.z.string().optional(),
+    phone: phone_validator_1.optionalPhoneSchema,
     password: zod_1.z.string().min(8, 'Password must be at least 8 characters').optional(),
     isActive: zod_1.z.boolean().optional(),
     profile: zod_1.z.object({

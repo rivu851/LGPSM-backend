@@ -95,14 +95,14 @@ describe('duplicate-key conflicts reach the API as clear 409s', () => {
   it('adding a guest by hand with an existing email or phone', async () => {
     await mk({ email: 'e@x.com', mobile: '9876500005' });
     const a = await post({ name: 'Other One', email: 'e@x.com' });
-    const b = await post({ name: 'Other Two', mobile: '+91 98765 00005' });
+    const b = await post({ name: 'Other Two', mobile: '919876500005' });
     expect(a.status).toBe(409); expect(b.status).toBe(409);
   });
 
   it('editing a guest to a phone another active guest already has (written differently)', async () => {
     await mk({ mobile: '9876500006' });
     const other: any = await mk({ email: 'o@x.com' });
-    const res = await request(app).patch(`/api/v1/invitees/${other._id}`).set(bearer(tok)).send({ mobile: '+91 98765 00006' });
+    const res = await request(app).patch(`/api/v1/invitees/${other._id}`).set(bearer(tok)).send({ mobile: '919876500006' });
     expect(res.status).toBe(409);
     expect((await Invitee.findById(other._id))!.mobile).toBeUndefined();
   });

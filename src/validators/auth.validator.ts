@@ -49,6 +49,13 @@ export const resendVerificationSchema = z.object({
   email: z.string().email('Invalid email format'),
 });
 
+/** "Change email address" on the sign-up code page: the address the code went to, the corrected one, and the password chosen in step 1 */
+export const changePendingEmailSchema = z.object({
+  email: z.string().email('Invalid email format'),
+  newEmail: z.string().trim().email('Enter a valid email address'),
+  password: z.string().min(1, 'Enter the password you chose'),
+});
+
 /** Validates the code submitted in the mobile "Forgot password" flow. */
 export const verifyResetOtpSchema = z.object({
   email: z.string().email('Invalid email format'),

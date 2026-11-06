@@ -463,7 +463,7 @@ describe('ADMIN login is unaffected by email verification gate', () => {
 });
 
 describe('Mobile-number login', () => {
-  const rawPhone = '98765 43210';
+  const rawPhone = '9876543210'; // digits only, the way the API now accepts it (login normalises it to 91…)
   const normalizedPhone = '919876543210';
 
   beforeAll(async () => {

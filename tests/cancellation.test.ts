@@ -328,12 +328,12 @@ describe('P0.3 — event cancellation lifecycle', () => {
       emailSpy.mockClear();
       let cancelled = false;
       emailSpy.mockImplementation(async (_to: string, subject: string) => {
-        if (!cancelled && subject.startsWith('Invitation')) { cancelled = true; await cancel(); } // the cancellation lands in the middle of the send
+        if (!cancelled && subject.startsWith("You're invited:")) { cancelled = true; await cancel(); } // the cancellation lands in the middle of the send
         return true as any;
       });
       const results: any[] = await invitationService.sendInvitations(String(event._id), { userId: String(org._id), role: 'ORGANIZER' }, [String(guests.late1.inv._id), String(guests.late2.inv._id)], DeliveryChannel.EMAIL);
       await settle(event._id);
-      const invitationMails = emailSpy.mock.calls.filter((c) => String(c[1]).startsWith('Invitation'));
+      const invitationMails = emailSpy.mock.calls.filter((c) => String(c[1]).startsWith("You're invited:"));
       expect(invitationMails.length).toBeLessThanOrEqual(2);
       // every guest an invitation went out to is also told it was cancelled; nobody else is
       const reached = (await Invitation.find({ eventId: event._id, status: 'SENT' }).lean()).map((i: any) => String(i.inviteeId)).sort();

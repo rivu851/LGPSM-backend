@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.submitContactSchema = exports.countLinks = exports.MAX_LINKS_PER_MESSAGE = void 0;
 const zod_1 = require("zod");
+const phone_validator_1 = require("./phone.validator");
 // Collapse whitespace / strip control characters so stored text is predictable and can't smuggle
 // terminal or header-injection characters into notification emails.
 const stripControlChars = (v) => v.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
@@ -11,13 +12,6 @@ const multiLine = (v) => stripControlChars(v)
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-// Accepts "+91 98765-43210", "(022) 1234 5678" … and stores "+919876543210" style digits.
-// 7–15 digits (E.164 maximum); anything else is rejected rather than guessed at.
-const normalisePhone = (v) => {
-    const trimmed = v.trim();
-    const digits = trimmed.replace(/\D/g, '');
-    return (trimmed.startsWith('+') ? '+' : '') + digits;
-};
 exports.MAX_LINKS_PER_MESSAGE = 2;
 const countLinks = (text) => (text.match(/https?:\/\/|www\./gi) || []).length;
 exports.countLinks = countLinks;
@@ -31,11 +25,7 @@ exports.submitContactSchema = zod_1.z.object({
             .string({ message: 'Email is required' })
             .transform((v) => singleLine(v).toLowerCase())
             .pipe(zod_1.z.string().max(254, 'Email is too long').email('Enter a valid email address')),
-        phone: zod_1.z
-            .string()
-            .optional()
-            .transform((v) => (v === undefined || v.trim() === '' ? undefined : normalisePhone(v)))
-            .refine((v) => v === undefined || /^\+?\d{7,15}$/.test(v), { message: 'Enter a valid phone number (7–15 digits)' }),
+        phone: phone_validator_1.optionalPhoneSchema.transform((v) => v || undefined),
         message: zod_1.z
             .string({ message: 'Message is required' })
             .transform(multiLine)
