@@ -53,6 +53,29 @@ describe('assigning staff to events (bulk selection on User Management)', () => 
     expect(await SystemUserAssignment.countDocuments({ eventId: eventA._id })).toBe(3);
   });
 
+  it('organizers and admins can assign themselves to events as assigned users', async () => {
+    const organizerAssignment = await assign(tA, eventA._id, orgA._id);
+    const adminAssignment = await assign(tAdmin, eventA._id, admin._id);
+
+    expect(organizerAssignment.status).toBe(201);
+    expect(adminAssignment.status).toBe(201);
+    expect(await SystemUserAssignment.countDocuments({ eventId: eventA._id })).toBe(2);
+
+    const myAssignments = await request(app)
+      .get('/api/v1/users/me/assignments')
+      .set(auth(tA));
+    expect(myAssignments.status).toBe(200);
+    expect(myAssignments.body.data).toHaveLength(1);
+    expect(String(myAssignments.body.data[0].userId)).toBe(String(orgA._id));
+
+    const adminMyAssignments = await request(app)
+      .get('/api/v1/users/me/assignments')
+      .set(auth(tAdmin));
+    expect(adminMyAssignments.status).toBe(200);
+    expect(adminMyAssignments.body.data).toHaveLength(1);
+    expect(String(adminMyAssignments.body.data[0].userId)).toBe(String(admin._id));
+  });
+
   it('a partly failing selection saves the valid users and reports the others (duplicate, inactive)', async () => {
     await assign(tA, eventA._id, staffA[0]._id);
     const results = await Promise.all([staffA[0], staffA[1], inactive].map((u) => assign(tA, eventA._id, u._id)));

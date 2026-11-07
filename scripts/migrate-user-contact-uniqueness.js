@@ -2,6 +2,7 @@
 //   npm run migrate:user-contact-uniqueness            # report only
 //   npm run migrate:user-contact-uniqueness -- --apply # replace with a non-unique index
 require('dotenv').config();
+const dns = require('dns');
 const mongoose = require('mongoose');
 
 const isEmailIndex = (index) => {
@@ -11,6 +12,11 @@ const isEmailIndex = (index) => {
 
 (async () => {
   if (!process.env.ATLAS_URL) throw new Error('ATLAS_URL is not set');
+  try {
+    dns.setServers(['8.8.8.8', '1.1.1.1']);
+  } catch (error) {
+    console.warn('DNS override failed; using system defaults.');
+  }
   await mongoose.connect(process.env.ATLAS_URL);
   const users = mongoose.connection.collection('users');
   const indexes = await users.indexes();

@@ -16,7 +16,7 @@ export const systemUserAssignmentController = {
       } else if (error.message === 'EVENT_CANCELLED') {
         res.status(409).json({ error: 'Conflict', code: 'EVENT_CANCELLED', message: 'This event has been cancelled. Staff can no longer be assigned to it.', details: [] });
       } else if (error.message === 'INVALID_USER') {
-        res.status(400).json({ error: 'Bad Request', message: 'Invalid or inactive system user', details: [] });
+        res.status(400).json({ error: 'Bad Request', message: 'Invalid or inactive user', details: [] });
       } else if (error.message === 'DUPLICATE_ASSIGNMENT') {
         res.status(409).json({ error: 'Conflict', message: 'User is already assigned to this event', details: [] });
       } else if (error.message === 'INVALID_SESSIONS') {

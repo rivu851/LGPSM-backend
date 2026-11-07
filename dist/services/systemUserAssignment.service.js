@@ -44,11 +44,11 @@ exports.systemUserAssignmentService = {
         }
         (0, eventLifecycle_1.assertEventOpenForChanges)(event);
         const targetUser = await User_1.User.findById(data.userId);
-        if (!targetUser || !targetUser.isActive || targetUser.role !== User_1.Role.SYSTEM_USER) {
+        if (!targetUser || !targetUser.isActive) {
             throw new Error('INVALID_USER');
         }
-        // Organizers can only assign their own staff
-        if ((await (0, eventAccess_1.getUserRole)(organizerId)) === User_1.Role.ORGANIZER) {
+        // Organizers can assign themselves or staff visible to their organization.
+        if ((await (0, eventAccess_1.getUserRole)(organizerId)) === User_1.Role.ORGANIZER && data.userId !== organizerId) {
             const visible = await (0, user_service_1.staffVisibleToOrganizer)(organizerId);
             if (!visible.some((id) => String(id) === data.userId))
                 throw new Error('INVALID_USER');

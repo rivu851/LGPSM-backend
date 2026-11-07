@@ -43,11 +43,11 @@ export const systemUserAssignmentService = {
     assertEventOpenForChanges(event);
 
     const targetUser = await User.findById(data.userId);
-    if (!targetUser || !targetUser.isActive || targetUser.role !== Role.SYSTEM_USER) {
+    if (!targetUser || !targetUser.isActive) {
       throw new Error('INVALID_USER');
     }
-    // Organizers can only assign their own staff
-    if ((await getUserRole(organizerId)) === Role.ORGANIZER) {
+    // Organizers can assign themselves or staff visible to their organization.
+    if ((await getUserRole(organizerId)) === Role.ORGANIZER && data.userId !== organizerId) {
       const visible = await staffVisibleToOrganizer(organizerId);
       if (!visible.some((id) => String(id) === data.userId)) throw new Error('INVALID_USER');
     }

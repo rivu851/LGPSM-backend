@@ -30,4 +30,4 @@ exports.assignmentRoutes.patch('/:assignmentId', (0, authorizeRoles_1.authorizeR
 exports.assignmentRoutes.delete('/:assignmentId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), (0, auditAction_1.auditAction)({ action: 'STAFF_UNASSIGN', entityType: 'SystemUserAssignment', entityParam: 'assignmentId', eventOf: 'SystemUserAssignment', critical: true }), systemUserAssignment_controller_1.systemUserAssignmentController.deleteAssignment);
 exports.myAssignmentRoutes = (0, express_1.Router)();
 exports.myAssignmentRoutes.use(authenticate_1.authenticate);
-exports.myAssignmentRoutes.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.SYSTEM_USER), systemUserAssignment_controller_1.systemUserAssignmentController.getMyAssignments);
+exports.myAssignmentRoutes.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.SYSTEM_USER, User_1.Role.ORGANIZER, User_1.Role.ADMIN), systemUserAssignment_controller_1.systemUserAssignmentController.getMyAssignments);

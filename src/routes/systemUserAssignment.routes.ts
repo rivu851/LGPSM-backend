@@ -33,4 +33,4 @@ assignmentRoutes.delete('/:assignmentId', authorizeRoles(Role.ORGANIZER, Role.AD
 
 export const myAssignmentRoutes = Router();
 myAssignmentRoutes.use(authenticate);
-myAssignmentRoutes.get('/', authorizeRoles(Role.SYSTEM_USER), systemUserAssignmentController.getMyAssignments);
+myAssignmentRoutes.get('/', authorizeRoles(Role.SYSTEM_USER, Role.ORGANIZER, Role.ADMIN), systemUserAssignmentController.getMyAssignments);
