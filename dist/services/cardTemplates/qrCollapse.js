@@ -15,13 +15,6 @@ function moved(e, d) {
         return { ...e, y1: e.y1 - d, y2: e.y2 - d };
     return { ...e, y: e.y - d };
 }
-function shortened(e, d) {
-    if (e.type === 'rect' || e.type === 'ellipse' || e.type === 'image')
-        return { ...e, h: e.h - d };
-    if (e.type === 'line')
-        return e.y1 >= e.y2 ? { ...e, y1: e.y1 - d } : { ...e, y2: e.y2 - d };
-    return e;
-}
 function qrCollapsePlan(spec) {
     const height = spec.canvas.height;
     const qr = spec.elements.find((e) => e.type === 'qr');
@@ -70,14 +63,16 @@ function qrCollapsePlan(spec) {
     const d = Math.round((nextBelow - groupTop) * 100) / 100;
     if (d < 8)
         return asIs;
-    // a panel or border around the card may only lose space below what stays above the QR
-    if (kept.some((e) => kinds.get(e) === 'spans' && boxOf(e).bottom - d < aboveBottom + 4))
+    // the content above the QR moves down by half the freed room, the content below it moves up by the other half
+    const down = Math.round((d / 2) * 100) / 100;
+    const elements = kept.map((e) => (kinds.get(e) === 'moves' ? moved(e, d - down) : kinds.get(e) === 'above' ? moved(e, -down) : e));
+    // nothing may end up outside the canvas
+    if (elements.some((e) => boxOf(e).bottom > height + 1 || boxOf(e).top < -1))
         return asIs;
-    const elements = kept.map((e) => (kinds.get(e) === 'moves' ? moved(e, d) : kinds.get(e) === 'spans' ? shortened(e, d) : e));
-    // nothing that moved may now overlap something that stayed (panels around the card excepted)
+    // nothing that moved may now overlap something that stayed in place (panels around the card excepted)
     const stayed = elements.filter((e, i) => kinds.get(kept[i]) === 'above').map(boxOf);
     const movedBoxes = elements.filter((e, i) => kinds.get(kept[i]) === 'moves').map(boxOf);
     if (movedBoxes.some((m) => stayed.some((s) => overlaps(m, s))))
         return asIs;
-    return { elements, height: Math.round(height - d), shift: d };
+    return { elements, height, shift: d };
 }

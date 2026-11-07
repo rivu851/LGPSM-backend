@@ -37,7 +37,8 @@ export interface TemplateCardInput {
   /**
    * The organizer chose cards without a QR ("Select data to show on card"). The QR's frame is part of the artwork, so leaving
    * the code out would leave an empty frame: the band holding the frame (and its "scan" caption) is cut out of the card and the
-   * parts above and below are joined, so the card simply becomes shorter with no gap.
+   * parts above and below are joined. The card keeps its full size (a phone screen does not shrink): the room that was freed is
+   * given back as margin above and below the content, so the content sits centred in the card instead of leaving a gap.
    */
   hideQr?: boolean;
   /** Shown in the photo frame when there is no photo; omit for a neutral silhouette */
@@ -328,12 +329,14 @@ const silhouette = (cx: number, cy: number, r: number, ink: string) =>
 // The horizontal band (Figma px) that holds each design's QR frame and its "Scan the QR code" caption, read from the artwork:
 // `from`/`to` sit in clear background just outside the frame, so nothing else the design prints is inside the band. `blend`
 // is how many px above the cut are cross-faded into the rows below it, so textured backgrounds join without a hard seam.
-const QR_BANDS: Partial<Record<TemplateDesign, { from: number; to: number; blend: number }>> = {
-  CORPORATE_V1: { from: 303, to: 520, blend: 6 }, // stamp frame 307-513; the date pill starts at 526
-  CORPORATE_V2: { from: 192, to: 452, blend: 8 }, // frame and pointer 196-417, caption to ~447; the guest name starts ~469
-  WEDDING: { from: 386, to: 595, blend: 8 }, // ornament 392-558 (the lines above it belong to the date row); the pin is at ~608
-  RICE_CEREMONY: { from: 334, to: 503, blend: 8 }, // frame 341-475, caption to ~498; the time line starts ~520
-  BIRTHDAY: { from: 328, to: 520, blend: 8 }, // frame 333-488, caption to ~513; the month starts ~532
+// `smooth`: the artwork is textured (watercolour, paper), so the filler is a soft wash; flat-colour artwork is carried straight on (a blur would smear its edges).
+// `top` is the share of the freed room that goes above the content (the rest opens a gap between what was above and below the QR).
+const QR_BANDS: Partial<Record<TemplateDesign, { from: number; to: number; blend: number; top: number; smooth: boolean }>> = {
+  CORPORATE_V1: { from: 303, to: 520, blend: 6, top: 0.65, smooth: true }, // stamp frame 307-513; the date pill starts at 526
+  CORPORATE_V2: { from: 192, to: 452, blend: 8, top: 0.65, smooth: false }, // frame and pointer 196-417, caption to ~447; the guest name starts ~469
+  WEDDING: { from: 386, to: 595, blend: 8, top: 0.65, smooth: false }, // ornament 392-558 (the lines above it belong to the date row); the pin is at ~608
+  RICE_CEREMONY: { from: 334, to: 503, blend: 8, top: 0.65, smooth: false }, // frame 341-475, caption to ~498; the time line starts ~520
+  BIRTHDAY: { from: 328, to: 520, blend: 8, top: 0.65, smooth: true }, // frame 333-488, caption to ~513; the month starts ~532
 };
 
 /** Removes rows [from, to) of an RGBA image, cross-fading the last `blend` rows above the cut into the rows that follow it. */
@@ -355,6 +358,45 @@ async function cutBand(png: Buffer, band: { from: number; to: number; blend: num
     for (let k = 0; k < row; k++) out[o + k] = Math.round(data[o + k] * (1 - t) + data[below + k] * t);
   }
   return sharp(out, { raw: { width, height: height - (to - from), channels } }).png({ compressionLevel: PNG_LEVEL }).toBuffer();
+}
+
+/**
+ * Opens `rows` rows of plain background at row `at`, carrying the colours just above that row down through the gap (smoothed
+ * sideways, like addMargins), so the content above and below move apart without a visible seam.
+ */
+async function openGap(png: Buffer, at: number, rows: number, smooth: boolean): Promise<Buffer> {
+  if (rows <= 0) return png;
+  const meta = await sharp(png).metadata();
+  const width = meta.width || 0, height = meta.height || 0;
+  const rowsAbove = Math.min(4, at);
+  const edge = await sharp(png).extract({ left: 0, top: at - rowsAbove, width, height: rowsAbove }).png().toBuffer();
+  const one = sharp(edge).resize(width, 1, { fit: 'fill' });
+  const wash = await (smooth ? one.blur(Math.max(4, width / 40)) : one).resize(width, rows, { fit: 'fill', kernel: 'nearest' }).png().toBuffer();
+  const upper = await sharp(png).extract({ left: 0, top: 0, width, height: at }).png().toBuffer();
+  const lower = await sharp(png).extract({ left: 0, top: at, width, height: height - at }).png().toBuffer();
+  const base = await sharp({ create: { width, height: height + rows, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+  return sharp(base).composite([{ input: upper, left: 0, top: 0 }, { input: wash, left: 0, top: at }, { input: lower, left: 0, top: at + rows }]).png({ compressionLevel: PNG_LEVEL }).toBuffer();
+}
+
+/**
+ * Adds `top` / `bottom` rows to a card as margin. The margin is the card's own edge colour carried outwards, smoothed sideways, so
+ * plain, textured and watercolour backgrounds all continue without streaks. (Mirroring the edge would copy real content.)
+ */
+async function addMargins(png: Buffer, top: number, bottom: number, smooth: boolean): Promise<Buffer> {
+  const { width, height } = await sharp(png).metadata().then((m) => ({ width: m.width || 0, height: m.height || 0 }));
+  const strip = async (fromTop: boolean, rows: number) => {
+    if (rows <= 0) return null;
+    const edge = await sharp(png).extract({ left: 0, top: fromTop ? 0 : height - 4, width, height: 4 }).png().toBuffer();
+    // a soft wash of the edge colours: average a few rows, blur across, then hold that colour down the margin
+    const one = sharp(edge).resize(width, 1, { fit: 'fill' });
+    return (smooth ? one.blur(Math.max(4, width / 40)) : one).resize(width, rows, { fit: 'fill', kernel: 'nearest' }).png().toBuffer();
+  };
+  const [t, b] = await Promise.all([strip(true, top), strip(false, bottom)]);
+  const layers: Array<{ input: Buffer; left: number; top: number }> = [{ input: png, left: 0, top }];
+  if (t) layers.unshift({ input: t, left: 0, top: 0 });
+  if (b) layers.unshift({ input: b, left: 0, top: top + height });
+  const base = await sharp({ create: { width, height: height + top + bottom, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+  return sharp(base).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
 }
 
 /** Renders a card and returns it as PNG bytes. */
@@ -447,7 +489,17 @@ export async function renderTemplateCard(input: TemplateCardInput): Promise<Buff
   const background = await loadBackground(layout, scale);
   const card = await sharp(background).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
   const band = input.hideQr ? QR_BANDS[input.design] : undefined;
-  return band ? cutBand(card, band, scale) : card;
+  if (!band) return card;
+  // close the band up, then give the freed height back as margin (see addMargins)
+  const joined = await cutBand(card, band, scale);
+  const joinedHeight = (await sharp(joined).metadata()).height || 0;
+  const freed = height - joinedHeight;
+  if (freed <= 0) return joined;
+  // the room is given back above the content and between the two groups, never below: the details block at the foot of the card
+  // follows the artwork directly, so margin there would show as an empty band above it
+  const top = Math.round(freed * band.top);
+  const gapped = await openGap(joined, Math.round(band.from * scale), freed - top, band.smooth);
+  return addMargins(gapped, top, 0, band.smooth);
 }
 
 /** The designers' sample text for each slot, used for template previews. */

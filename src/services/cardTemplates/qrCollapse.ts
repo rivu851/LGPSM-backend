@@ -2,13 +2,14 @@ import type { DesignSpec, SpecElement } from './designSpec';
 
 /**
  * A custom design printed without its QR ("Select data to show on card" with Event QR unticked). Removing only the QR element
- * would leave an empty space (and any frame drawn around the code), so the whole QR group comes out and the layout closes up:
+ * would leave an empty space (and any frame drawn around the code), so the whole QR group comes out and the layout closes up
+ * INSIDE the same canvas (a phone screen does not shrink, so the card keeps its size):
  *  - the group is the QR, any rectangle / ellipse drawn as its frame (it encloses the code and is not much larger), and the
  *    "scan" caption next to it;
- *  - everything that starts below the group moves up, so the next element sits as far below what was above the QR as the QR
- *    itself did; panels and borders that run around the whole card get shorter by the same amount, and so does the canvas;
- *  - thin lines that start beside the group (the legs of corner brackets, say) move up with the rest, as long as they then
- *    touch nothing that stayed put.
+ *  - everything that starts below the group moves up to where the group started, which closes the gap; the room that frees is
+ *    split evenly above and below the content, so the content sits centred in the card;
+ *  - panels and borders that run around the whole card stay exactly where they are, and so does the canvas;
+ *  - thin lines that start beside the group (the legs of corner brackets, say) move with the content below.
  * The layout is only changed when that is safe: if text, an image or a shape sits beside the QR, or a moved element would
  * overlap one that stayed, only the QR group is removed. An organizer's uploaded artwork is never re-laid out (this code
  * cannot see what the picture prints around the QR).
@@ -16,9 +17,9 @@ import type { DesignSpec, SpecElement } from './designSpec';
 export interface QrCollapsePlan {
   /** the design's elements without the QR group, moved up when the layout closes */
   elements: SpecElement[];
-  /** the canvas height after closing up (unchanged when the layout is left as it is) */
+  /** the canvas height: always the design's own, the card keeps its size */
   height: number;
-  /** how far the layout moved up; 0 when it was left as it is */
+  /** the room the QR group took up that the layout closed over; 0 when it was left as it is */
   shift: number;
 }
 
@@ -38,12 +39,6 @@ function moved(e: SpecElement, d: number): SpecElement {
   if (e.type === 'line') return { ...e, y1: e.y1 - d, y2: e.y2 - d };
   return { ...e, y: (e as any).y - d } as SpecElement;
 }
-function shortened(e: SpecElement, d: number): SpecElement {
-  if (e.type === 'rect' || e.type === 'ellipse' || e.type === 'image') return { ...e, h: e.h - d } as SpecElement;
-  if (e.type === 'line') return e.y1 >= e.y2 ? { ...e, y1: e.y1 - d } : { ...e, y2: e.y2 - d };
-  return e;
-}
-
 export function qrCollapsePlan(spec: Pick<DesignSpec, 'canvas' | 'elements' | 'backgroundMedia'>): QrCollapsePlan {
   const height = spec.canvas.height;
   const qr = spec.elements.find((e) => e.type === 'qr');
@@ -86,13 +81,14 @@ export function qrCollapsePlan(spec: Pick<DesignSpec, 'canvas' | 'elements' | 'b
   const nextBelow = movers.length ? Math.min(...movers.map((b) => b.top)) : height;
   const d = Math.round((nextBelow - groupTop) * 100) / 100;
   if (d < 8) return asIs;
-  // a panel or border around the card may only lose space below what stays above the QR
-  if (kept.some((e) => kinds.get(e) === 'spans' && boxOf(e).bottom - d < aboveBottom + 4)) return asIs;
-
-  const elements = kept.map((e) => (kinds.get(e) === 'moves' ? moved(e, d) : kinds.get(e) === 'spans' ? shortened(e, d) : e));
-  // nothing that moved may now overlap something that stayed (panels around the card excepted)
+  // the content above the QR moves down by half the freed room, the content below it moves up by the other half
+  const down = Math.round((d / 2) * 100) / 100;
+  const elements = kept.map((e) => (kinds.get(e) === 'moves' ? moved(e, d - down) : kinds.get(e) === 'above' ? moved(e, -down) : e));
+  // nothing may end up outside the canvas
+  if (elements.some((e) => boxOf(e).bottom > height + 1 || boxOf(e).top < -1)) return asIs;
+  // nothing that moved may now overlap something that stayed in place (panels around the card excepted)
   const stayed = elements.filter((e, i) => kinds.get(kept[i]) === 'above').map(boxOf);
   const movedBoxes = elements.filter((e, i) => kinds.get(kept[i]) === 'moves').map(boxOf);
   if (movedBoxes.some((m) => stayed.some((s) => overlaps(m, s)))) return asIs;
-  return { elements, height: Math.round(height - d), shift: d };
+  return { elements, height, shift: d };
 }

@@ -409,7 +409,7 @@ async function renderFromSpec(fullSpec: DesignSpec, data: InvitationCardData): P
   const show = cardDisplayOf(data.cardDisplay);
   // a hidden QR takes its frame and its "scan" caption with it, and the card closes up where it was (see qrCollapse.ts)
   const collapse = show.qr ? null : qrCollapsePlan(fullSpec);
-  const spec: DesignSpec = collapse ? ({ ...fullSpec, canvas: { ...fullSpec.canvas, height: collapse.height }, elements: collapse.elements } as DesignSpec) : fullSpec;
+  const spec: DesignSpec = collapse ? ({ ...fullSpec, elements: collapse.elements } as DesignSpec) : fullSpec;
   const allTexts = buildSpecTexts({
     title: data.event.title || '',
     description: data.event.description,

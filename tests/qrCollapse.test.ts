@@ -16,18 +16,26 @@ const box = (e: SpecElement) => e.type === 'line' ? { t: Math.min(e.y1, e.y2), b
 const isText = (e: SpecElement) => e.type === 'text';
 
 describe('custom card designs without the QR', () => {
-  it.each(['INVITATION_PORTRAIT', 'INVITATION_CARD', 'INVITATION_SQUARE'] as const)('%s: the QR group is removed and the layout closes up', async (preset) => {
+  it.each(['INVITATION_PORTRAIT', 'INVITATION_CARD', 'INVITATION_SQUARE'] as const)('%s: the QR group is removed and the content is re-centred in the same canvas', async (preset) => {
     const spec = await gala(preset);
     const plan = qrCollapsePlan(spec);
     expect(plan.elements.some((e) => e.type === 'qr')).toBe(false);
     expect(plan.elements.some((e) => e.type === 'text' && e.role === 'label' && /scan/i.test(String(e.label)))).toBe(false);
     expect(plan.shift).toBeGreaterThan(100);
-    expect(plan.height).toBe(Math.round(spec.canvas.height - plan.shift));
-    // every element still fits the shorter canvas, and the texts keep their order without overlapping
-    for (const e of plan.elements) expect(box(e).b).toBeLessThanOrEqual(plan.height + 1);
-    // closing up adds no overlaps between texts (the generated design may already have some of its own)
-    const overlapsIn = (els: SpecElement[]) => { const t = els.filter(isText).map(box); let n = 0; for (let i = 0; i < t.length; i++) for (let j = i + 1; j < t.length; j++) if (t[i].t < t[j].b - 1 && t[j].t < t[i].b - 1) n++; return n; };
+    expect(plan.height).toBe(spec.canvas.height); // the card keeps its size
+    // everything still fits the canvas
+    for (const e of plan.elements) { expect(box(e).t).toBeGreaterThanOrEqual(-1); expect(box(e).b).toBeLessThanOrEqual(plan.height + 1); }
+    // the remaining content sits centred: better than merely deleting the QR and leaving everything where it was
     const keptBefore = spec.elements.filter((e) => plan.elements.some((k) => k.type === e.type && (k as any).role === (e as any).role && (k as any).label === (e as any).label));
+    const textsOf = (els: SpecElement[]) => els.filter(isText).map(box);
+    const imbalance = (els: SpecElement[]) => Math.abs(Math.min(...textsOf(els).map((t) => t.t)) - (spec.canvas.height - Math.max(...textsOf(els).map((t) => t.b))));
+    expect(imbalance(plan.elements)).toBeLessThan(imbalance(keptBefore));
+    expect(imbalance(plan.elements)).toBeLessThan(spec.canvas.height * 0.15);
+    // borders and panels around the card are untouched
+    const edges = (els: SpecElement[]) => els.filter((e) => (e.type === 'rect' && box(e).b - box(e).t > spec.canvas.height * 0.7)).map(box);
+    expect(edges(plan.elements)).toEqual(edges(spec.elements));
+    // closing up adds no overlaps between texts (the generated design may already have some of its own)
+    const overlapsIn = (els: SpecElement[]) => { const t = textsOf(els); let n = 0; for (let i = 0; i < t.length; i++) for (let j = i + 1; j < t.length; j++) if (t[i].t < t[j].b - 1 && t[j].t < t[i].b - 1) n++; return n; };
     expect(overlapsIn(plan.elements)).toBeLessThanOrEqual(overlapsIn(keptBefore));
   });
 

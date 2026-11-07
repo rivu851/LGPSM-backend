@@ -202,16 +202,18 @@ export const userService = {
       if (existingUser.role === Role.SYSTEM_USER && data.role === Role.SYSTEM_USER && existingUser.isActive === false && sameOwner) {
         return reactivateStaff(existingUser, data, ownerId);
       }
+      // An email is one login. If the person only needs to receive an invitation (and food, entry pass), a guest needs no account at all
+      const asGuest = ' If this person only needs to receive an invitation, add them as an invitee instead: a guest does not need an account.';
       const message =
         existingUser.role === Role.SYSTEM_USER
           ? existingUser.isActive === false
-            ? 'This email belongs to a deleted system user of another organizer, so it cannot be added here.'
+            ? 'This email belongs to a deleted system user of another organizer, so it cannot be added here.' + asGuest
             : String(existingUser.createdBy || '') === String(ownerId)
               ? 'This person is already one of your system users.'
-              : 'This email is already used by a system user of another organizer.'
+              : 'This email is already used by a system user of another organizer.' + asGuest
           : existingUser.role === Role.ORGANIZER
-            ? 'This email is already used by an organizer account.'
-            : 'This email is already used by an administrator account.';
+            ? 'This email is already used by an organizer account, and one email can only be one login.' + asGuest
+            : 'This email is already used by an administrator account, and one email can only be one login.' + asGuest;
       throw { statusCode: 400, message };
     }
 
