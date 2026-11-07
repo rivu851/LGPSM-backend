@@ -52,6 +52,15 @@ export const systemUserAssignmentService = {
       if (!visible.some((id) => String(id) === data.userId)) throw new Error('INVALID_USER');
     }
 
+    // Switched off for now: a small event may be run entirely by its organizer, who then also works it as a system user (an organizer
+    // and a system user may share an email). To bring back "the organizer of an event is not also its staff", restore this check
+    // (matched by email, so it covers their organizer account and their system user account) and the IS_EVENT_ORGANIZER branch in
+    // systemUserAssignment.controller.ts:
+    //
+    // const owner: any = await User.findById((event as any).organizerId);
+    // const sameEmail = (a?: string | null, b?: string | null) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+    // if (sameEmail(owner?.email, targetUser.email)) throw new Error('IS_EVENT_ORGANIZER');
+
     const existing = await systemUserAssignmentRepository.findByUserAndEvent(data.userId, eventId);
     if (existing) {
       throw new Error('DUPLICATE_ASSIGNMENT');

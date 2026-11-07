@@ -20,7 +20,9 @@ function auditAction(opts) {
         res.json = ((body) => { captured = body; return json(body); });
         const params = req.params;
         let entityId = opts.entityParam ? params[opts.entityParam] : undefined;
-        let eventId = (opts.eventParam && params[opts.eventParam]) || (isObj(req.body) ? req.body.eventId : undefined);
+        // The event an entry belongs to: the one the route names, else the event in the URL (every route under /events/:eventId/...: sending
+        // invitations, check-in), else one in the body (scanning). An entry without an event never shows in an event's Action Log.
+        let eventId = (opts.eventParam && params[opts.eventParam]) || params.eventId || (isObj(req.body) ? req.body.eventId : undefined);
         if (opts.eventOf && entityId && !eventId) {
             try {
                 const row = await OWNER_MODELS[opts.eventOf].findById(entityId).select('eventId').lean();

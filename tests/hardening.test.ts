@@ -108,7 +108,7 @@ describe('production hardening', () => {
         password: PASSWORD,
         role: Role.SYSTEM_USER,
       });
-      expect(adminEmail.status).toBe(400);
+      expect(adminEmail.status).toBe(400); // organizers and system users may share an email, an administrator's is never shared
     });
 
     it('create ignores credential, delivery, RSVP and archive fields in the body', async () => {
@@ -491,11 +491,15 @@ describe('production hardening', () => {
       const own = await User.create({ fullName: 'Own Staff', email: 'own.staff@x.test', role: Role.SYSTEM_USER, createdBy: organizer._id, isActive: true, passwordHash: 'x' });
       expect((await request(app).patch(`/api/users/${own._id}`).set(auth(tOrg)).send({ fullName: 'Own Staff Two' })).status).toBe(200);
     });
-    it('a second account cannot take a phone number another account signs in with', async () => {
+    it('a second account may share a phone number; each signs in with its own password', async () => {
       await User.updateOne({ _id: staff._id }, { phone: '919876500001' });
-      const r = await request(app).post('/api/users').set(auth(tOther)).send({ fullName: 'Copy Cat', email: 'copy.cat@x.test', phone: '9876500001', role: 'SYSTEM_USER', password: PASSWORD });
-      expect(r.status).toBe(409);
+      const r = await request(app).post('/api/users').set(auth(tOther)).send({ fullName: 'Copy Cat', email: 'copy.cat@x.test', phone: '9876500001', role: 'SYSTEM_USER', password: 'CopyCatPass123!' });
+      expect(r.status).toBe(201);
       expect((await request(app).post('/api/auth/login').send({ phone: '9876500001', password: PASSWORD })).status).toBe(200);
+      const copy = await request(app).post('/api/auth/login').send({ phone: '9876500001', password: 'CopyCatPass123!' });
+      expect(copy.status).toBe(200);
+      expect(String(copy.body.data.user._id)).toBe(r.body.data._id);
+      await User.deleteOne({ _id: r.body.data._id });
       await User.updateOne({ _id: staff._id }, { $unset: { phone: '' } });
     });
     it('the last active administrator cannot be deactivated', async () => {

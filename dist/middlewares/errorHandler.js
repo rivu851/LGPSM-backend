@@ -35,6 +35,16 @@ function resolveStatus(err) {
             return { statusCode: 409, message: 'A guest with this mobile number is already on this event\'s active list.', code: 'DUPLICATE_INVITEE' };
         if (keys.includes('email') && keys.includes('eventId'))
             return { statusCode: 409, message: 'A guest with this email address is already on this event\'s active list.', code: 'DUPLICATE_INVITEE' };
+        // a user's email: one organizer per email is a rule (two requests at once can still meet at the database), but a unique index on
+        // the whole email is the OLD rule: it still exists in a database the migration has not been run on
+        const detail = String(err.errmsg || err.message || '');
+        if (keys.length === 1 && keys[0] === 'email' && /uniq_organizer_email/.test(detail)) {
+            return { statusCode: 409, message: 'An organizer account already uses this email address.', code: 'ORGANIZER_EMAIL_IN_USE' };
+        }
+        if (keys.length === 1 && keys[0] === 'email' && /index: email_1\b/.test(detail)) {
+            console.error('[users] The database still has the old unique index on users.email (email_1), so a second account on an existing email is refused. Run: npm run migrate:user-contact-uniqueness -- --apply');
+            return { statusCode: 409, message: 'This email is already used by another account, and the system has not yet been updated to let one email belong to several accounts. Please ask your administrator to finish the update, then try again.', code: 'USER_EMAIL_INDEX_OUTDATED' };
+        }
         return { statusCode: 409, message: 'A record with the same unique value already exists' };
     }
     if (err.type === 'entity.parse.failed') {

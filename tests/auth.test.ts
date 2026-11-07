@@ -114,15 +114,15 @@ describe('Registration', () => {
     expect(retryRes.body.data.pendingVerification).toBe(true);
   });
 
-  it('allows registration when another account already uses the email', async () => {
+  it('refuses a second organizer on an email an organizer already uses (one organizer per email)', async () => {
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ fullName: 'New Organizer', email: 'neworg@example.com', password: 'password123' });
+      .send({ fullName: 'New Organizer', email: 'NewOrg@example.com', password: 'password123' });
 
-    expect(res.statusCode).toBe(201);
-    expect(await User.countDocuments({ email: 'neworg@example.com' })).toBe(2);
-    const newest = await User.find({ email: 'neworg@example.com' }).sort({ createdAt: -1 }).limit(1);
-    await User.deleteOne({ _id: newest[0]._id });
+    expect(res.statusCode).toBe(400);
+    // (here the existing organizer is a sign-up still waiting for its code; for a verified one the message is "an organizer account already uses this email")
+    expect(res.body.message).toMatch(/organizer account already uses this email|waiting for its verification code/);
+    expect(await User.countDocuments({ email: 'neworg@example.com' })).toBe(1);
   });
 
   it('does not allow non-ORGANIZER self-registration', async () => {

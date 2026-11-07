@@ -28,6 +28,8 @@ export const refreshTokenSchema = z.object({
 
 export const forgotPasswordSchema = z.object({
   email: z.string().email('Invalid email format'),
+  /** the portal asking, when an email is shared by several accounts (mobile app: SYSTEM_USER) */
+  role: z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });
 
 export const resetPasswordSchema = z.object({
@@ -60,4 +62,5 @@ export const changePendingEmailSchema = z.object({
 export const verifyResetOtpSchema = z.object({
   email: z.string().email('Invalid email format'),
   code: z.string().regex(/^\d{4}$/, 'Enter the 4-digit code'),
+  role: z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });

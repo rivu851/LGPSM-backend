@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 
-const SALT_ROUNDS = 10;
+// 10 rounds in production; the test suite hashes hundreds of passwords, so it uses the cheapest setting
+const SALT_ROUNDS = process.env.NODE_ENV === 'test' ? 4 : 10;
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = await bcrypt.genSalt(SALT_ROUNDS);

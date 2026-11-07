@@ -17,6 +17,9 @@ export const systemUserAssignmentController = {
         res.status(409).json({ error: 'Conflict', code: 'EVENT_CANCELLED', message: 'This event has been cancelled. Staff can no longer be assigned to it.', details: [] });
       } else if (error.message === 'INVALID_USER') {
         res.status(400).json({ error: 'Bad Request', message: 'Invalid or inactive user', details: [] });
+      // Switched off with the check in systemUserAssignment.service.ts (an organizer may also work their own event):
+      // } else if (error.message === 'IS_EVENT_ORGANIZER') {
+      //   res.status(409).json({ error: 'Conflict', code: 'IS_EVENT_ORGANIZER', message: 'This person is the organizer of this event, so they cannot also work it as a system user. They can still be a system user on other events.', details: [] });
       } else if (error.message === 'DUPLICATE_ASSIGNMENT') {
         res.status(409).json({ error: 'Conflict', message: 'User is already assigned to this event', details: [] });
       } else if (error.message === 'INVALID_SESSIONS') {

@@ -28,6 +28,22 @@ describe('the invitation email', () => {
     expect(html).not.toContain('OFFICIAL INVITATION');
   });
 
+  it("shows the organization's name beside the logo when it is set, and just the logo when it is not", () => {
+    const named = buildInvitationEmail({ ...base, organizationName: 'Iconic Events' });
+    // one row: the logo, then the name next to it
+    expect(named).toMatch(/<td[^>]*><img src="cid:logo-1"[^>]*\/><\/td>\s*<td[^>]*>Iconic Events<\/td>/);
+    const unnamed = buildInvitationEmail({ ...base, organizationName: undefined });
+    expect(unnamed).not.toMatch(/<td[^>]*><img src="cid:logo-1"/); // the logo alone, as before (no side-by-side row)
+    expect(unnamed).toContain('<img src="cid:logo-1"');
+    expect(buildInvitationEmail({ ...base, organizationName: '   ' })).not.toMatch(/<td[^>]*><img src="cid:logo-1"/);
+    // beside the LGPSM logo too, when the organizer has a name but no logo yet
+    expect(buildInvitationEmail({ ...base, organizerLogoCid: undefined, organizationName: 'Iconic Events' })).toMatch(/cid:lgpsm-logo"[^>]*\/><\/td>\s*<td[^>]*>Iconic Events<\/td>/);
+    // what a person typed is escaped
+    const hostile = buildInvitationEmail({ ...base, organizationName: '<img src=x onerror=alert(1)> & Co' });
+    expect(hostile).not.toContain('<img src=x');
+    expect(hostile).toContain('&amp; Co');
+  });
+
   it('shows a food preference only once the guest has chosen one; before that it says where to choose', () => {
     const chosen = buildInvitationEmail({ ...base, asksDietary: true, dietaryPreference: 'Vegetarian' });
     expect(chosen).toContain('>Vegetarian<');

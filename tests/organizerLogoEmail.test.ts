@@ -65,6 +65,15 @@ describe("the organizer's logo in the invitation email", () => {
     const meta = await sharp(att.content).metadata();
     expect(meta.width).toBeGreaterThan(0); // the organizer's picture itself
     expect(after.html).toContain('alt="Iconic Events logo"');
+    // beside the logo: the organization's name, because this organizer has set one
+    expect(after.html).toMatch(/<img src="cid:organizer-logo-[^>]*\/><\/td>\s*<td[^>]*>Iconic Events<\/td>/);
+  });
+
+  it('with no organization name set, the logo stands alone (no name beside it)', async () => {
+    await User.updateOne({ _id: org._id }, { $unset: { 'profile.organizationName': '' } });
+    const e = await sendOne('noname@x.com');
+    expect(e.html).toContain('src="cid:lgpsm-logo"');
+    expect(e.html).not.toMatch(/cid:lgpsm-logo"[^>]*\/><\/td>\s*<td/);
   });
 
   it('goes back to the LGPSM logo when the organizer removes theirs', async () => {

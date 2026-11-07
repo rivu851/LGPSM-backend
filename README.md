@@ -29,12 +29,12 @@ npm start
 ```
 
 ## Allow shared user contact details
-User accounts may share email addresses and phone numbers. Before deploying this schema change to an existing database, inspect and remove the legacy unique email index:
+An organizer and system users may share an email address and phone number (the same person can hold both accounts, on the same event or different ones), but there is only ONE ORGANIZER ACCOUNT PER EMAIL, and an ADMINISTRATOR's email is never shared with any other account (sign-up, adding an account and changing an email all refuse it).
 ```bash
 npm run migrate:user-contact-uniqueness
 npm run migrate:user-contact-uniqueness -- --apply
 ```
-The migration requires `ATLAS_URL`, changes indexes only, and does not modify user records.
+The migration requires `ATLAS_URL`, changes indexes only, and does not modify user records. It also creates the organizer-only unique email index; if two organizer accounts already share an email it lists them instead, and you resolve those first.
 
 ## Folder Structure
 - `src/config/`: Configuration files (Database, Environment, External services)

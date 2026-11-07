@@ -4,6 +4,8 @@ import { convertStitchDesign } from '../src/services/stitch/stitch.converter';
 import { CANVAS_PRESETS, DesignSpec, SpecElement } from '../src/services/cardTemplates/designSpec';
 import { qrCollapsePlan } from '../src/services/cardTemplates/qrCollapse';
 
+jest.setTimeout(60_000); // each case converts and lays out a full design (image work): the 5 s default is too tight when the whole suite runs side by side
+
 // Custom designs printed without the QR: the QR, its frame and its "scan" caption come out and the layout closes up, but only when
 // that is safe. Otherwise only the QR group is removed.
 const fixture = (name: string) => fs.readFileSync(path.join(__dirname, 'fixtures', name));

@@ -291,9 +291,9 @@ describe('item 14: an invitee and a system user can be the same person', () => {
     expect((await request(app).post(`/api/v1/events/${ev._id}/invitees`).set(auth(a)).send({ name: 'Rina Das', email: 'rina@x.com', mobile: '9876500078' })).status).toBe(201);
   });
 
-  it('an email that already signs in as an organizer cannot also become a system user (one sign-in per email), and the message says why', async () => {
+  it('an email that signs in as an organizer can also be a system user: they are separate accounts, told apart at sign-in', async () => {
     const res = await request(app).post('/api/users').set(auth(a)).send({ fullName: 'B as staff', email: 'b@x.com', password: 'password123', role: 'SYSTEM_USER' });
-    expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/^This email is already used by an organizer account/);
+    expect(res.status).toBe(201);
+    expect(await User.countDocuments({ email: 'b@x.com' })).toBe(2);
   });
 });

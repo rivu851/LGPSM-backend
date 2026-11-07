@@ -1,7 +1,7 @@
 /**
- * Who can share an email or a phone number. A login is one email on the whole platform, so two accounts (system user, organizer,
- * administrator) can never share one. A guest (invitee) is not an account, so a person can be a guest AND a system user (or an
- * organizer, or an admin) in the same event: they get their own invitation, pass and food like any other guest. Every pair is
+ * Who can share an email or a phone number. Accounts (system user, organizer, administrator) may share both; sign-in tells them apart by
+ * password and portal. A guest (invitee) is not an account either, so a person can be a guest AND a system user (or an organizer, or
+ * an admin) in the same event: they get their own invitation, pass and food like any other guest. Every pair is
  * tried in both orders through the real routes. Mail is mocked: nothing is sent.
  */
 import request from 'supertest';
@@ -74,42 +74,22 @@ describe('system user and invitee: the same person can be both', () => {
   });
 });
 
-describe('two accounts can never share one login email (these are refused, with a message that says why)', () => {
-  it('system user and system user: the same organizer, another organizer, and a deleted one', async () => {
-    const first = await addStaff(orgA, { fullName: 'Staff One', email: 's1@x.com' });
-    expect(first.status).toBe(201);
+describe('two accounts MAY share an email (the shared-email rules are tested in sharedEmailAccounts.test.ts)', () => {
+  it('a system user can share an email with an organizer and with another organizer\'s system user (not with an admin)', async () => {
+    expect((await addStaff(orgA, { fullName: 'Shared', email: 'b@x.com' })).status).toBe(201);
+    expect((await addStaff(orgA, { fullName: 'Shared', email: 'admin@x.com' })).status).toBe(400); // an administrator's email is never shared
+    expect((await addStaff(orgA, { fullName: 'Staff One', email: 's1@x.com' })).status).toBe(201);
+    expect((await addStaff(orgB, { fullName: 'Staff One', email: 'S1@x.com' })).status).toBe(201);
+    // the same organizer still lists a person once
     const again = await addStaff(orgA, { fullName: 'Staff One', email: 's1@x.com' });
     expect(again.status).toBe(400); expect(again.body.message).toBe('This person is already one of your system users.');
-    const other = await addStaff(orgB, { fullName: 'Staff One', email: 'S1@x.com' });
-    expect(other.status).toBe(400); expect(other.body.message).toMatch(/^This email is already used by a system user of another organizer\. .*add them as an invitee/);
-    await request(app).delete(`/api/users/${first.body.data._id}`).set(auth(orgA));
-    const afterDelete = await addStaff(orgB, { fullName: 'Staff One', email: 's1@x.com' });
-    expect(afterDelete.status).toBe(400); expect(afterDelete.body.message).toMatch(/deleted system user of another organizer.*add them as an invitee/);
-    expect((await addStaff(orgA, { fullName: 'Staff One', email: 's1@x.com' })).status).toBe(201); // the owner gets them back
-  });
-  it('system user and organizer, both orders', async () => {
-    const asStaff = await addStaff(orgA, { fullName: 'Pretend', email: 'b@x.com' });
-    expect(asStaff.status).toBe(400); expect(asStaff.body.message).toMatch(/^This email is already used by an organizer account, and one email can only be one login\. .*add them as an invitee/);
-    await addStaff(orgA, { fullName: 'Staff Two', email: 's2@x.com' });
-    const asOrg = await request(app).post('/api/users').set(auth(admin)).send({ fullName: 'Staff Two', email: 's2@x.com', password: 'password123', role: 'ORGANIZER', profile: { organizationName: 'S2' } });
-    expect(asOrg.status).toBe(400);
-    const signup = await request(app).post('/api/auth/register').send({ fullName: 'Staff Two', email: 's2@x.com', password: 'password123' });
-    expect(signup.status).toBe(400);
-  });
-  it('system user and administrator, both orders', async () => {
-    const asStaff = await addStaff(orgA, { fullName: 'Pretend', email: 'admin@x.com' });
-    expect(asStaff.status).toBe(400); expect(asStaff.body.message).toMatch(/^This email is already used by an administrator account, and one email can only be one login\. .*add them as an invitee/);
-    await addStaff(orgA, { fullName: 'Staff Three', email: 's3@x.com' });
-    const asAdmin = await request(app).post('/api/users').set(auth(admin)).send({ fullName: 'Staff Three', email: 's3@x.com', password: 'password123', role: 'ADMIN' });
-    expect(asAdmin.status).toBeGreaterThanOrEqual(400);
   });
 });
 
 describe('phone numbers', () => {
-  it('a system user may share a phone number with a guest, but not with another account', async () => {
+  it('a system user may share a phone number with a guest and with another account', async () => {
     await addGuest(orgA, { name: 'Guest', email: 'g@x.com', mobile: '9876500081' });
     expect((await addStaff(orgA, { fullName: 'Staff', email: 's4@x.com', phone: '9876500081' })).status).toBe(201);
-    const clash = await addStaff(orgA, { fullName: 'Staff Five', email: 's5@x.com', phone: '9876500081' });
-    expect(clash.status).toBe(409); expect(clash.body.message).toMatch(/mobile number is already used by another account/);
+    expect((await addStaff(orgA, { fullName: 'Staff Five', email: 's5@x.com', phone: '9876500081' })).status).toBe(201);
   });
 });

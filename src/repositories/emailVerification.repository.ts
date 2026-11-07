@@ -13,7 +13,7 @@ export const emailVerificationRepository = {
    * @param email      Normalised (lowercase) email address.
    * @param codeHash   bcrypt hash of the 6-digit OTP.
    */
-  async createOrReplace(email: string, codeHash: string): Promise<IEmailVerification> {
+  async createOrReplace(email: string, codeHash: string, userId?: unknown): Promise<IEmailVerification> {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
@@ -21,6 +21,7 @@ export const emailVerificationRepository = {
       { email },
       {
         email,
+        ...(userId ? { userId } : {}),
         codeHash,
         expiresAt,
         attempts: 0,

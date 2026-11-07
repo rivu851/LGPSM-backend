@@ -44,6 +44,7 @@ export function buildFormalInvitationEmailHTML(params: {
   /** The organizer's logo (attached inline) and organisation name */
   organizerLogoCid?: string;
   organizerName?: string;
+  organizationName?: string;
   startIso?: string | Date | null;
   endIso?: string | Date | null;
   locationSub?: string;
@@ -96,13 +97,14 @@ export function channelsForInvitee(channel: DeliveryChannel, invitee: { email?: 
 }
 
 /** The organizer's logo for the bottom of invitation emails (null when none was uploaded or it cannot be read) */
-async function organizerBrand(organizerId: unknown): Promise<{ name?: string; logo: { content: Buffer; contentType: string } | null }> {
+async function organizerBrand(organizerId: unknown): Promise<{ name?: string; organizationName?: string; logo: { content: Buffer; contentType: string } | null }> {
   if (!organizerId) return { logo: null };
   const organizer: any = await User.findById(organizerId as never).select('fullName profile.organizationName profile.logoKey').lean();
-  const name = organizer?.profile?.organizationName?.trim() || organizer?.fullName?.trim() || undefined;
+  const organizationName = organizer?.profile?.organizationName?.trim() || undefined; // only when the organizer has set one
+  const name = organizationName || organizer?.fullName?.trim() || undefined;
   const dataUrl = await resolveImageKeyBase64(organizer?.profile?.logoKey).catch(() => '');
   const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl || '');
-  return { name, logo: match ? { contentType: match[1], content: Buffer.from(match[2], 'base64') } : null };
+  return { name, organizationName, logo: match ? { contentType: match[1], content: Buffer.from(match[2], 'base64') } : null };
 }
 
 // Rendered sample cards by event, oldest dropped first (see previewInvitationCard)
@@ -341,6 +343,7 @@ export const invitationService = {
             isReminder: false,
             organizerLogoCid: brand.logo ? `organizer-logo-${invitee._id}` : undefined,
             organizerName: brand.name,
+            organizationName: brand.organizationName,
             startIso: event.schedule?.start,
             endIso: event.schedule?.end,
             locationSub,
@@ -652,6 +655,7 @@ export const invitationService = {
             isReminder: true,
             organizerLogoCid: brand.logo ? `organizer-logo-${invitee._id}` : undefined,
             organizerName: brand.name,
+            organizationName: brand.organizationName,
             startIso: event.schedule?.start,
             endIso: event.schedule?.end,
             locationSub,

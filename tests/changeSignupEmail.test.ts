@@ -71,13 +71,21 @@ describe('"change email address" on the sign-up code page', () => {
     expect(await User.findOne({ email: 'thief@example.com' })).toBeNull();
   });
 
-  it('refuses an address that already has an account, and leaves the pending sign-up as it was', async () => {
+  it('refuses an address an organizer already uses (one organizer per email) and leaves the pending sign-up as it was', async () => {
     await User.create({ fullName: 'Taken', email: 'taken@example.com', passwordHash: 'x', role: 'ORGANIZER', isActive: true, isEmailVerified: true });
     await signup();
     const res = await change({ email: 'rina.typo@example.com', newEmail: 'Taken@Example.com', password: 'StrongPass123!' });
     expect(res.status).toBe(409);
-    expect(res.body.message).toMatch(/already/i);
+    expect(res.body.message).toMatch(/organizer account already uses this email/);
     expect(await User.findOne({ email: 'rina.typo@example.com' })).not.toBeNull();
+    expect(await User.countDocuments({ email: 'taken@example.com' })).toBe(1);
+  });
+  it('may move a sign-up onto an address only a system user uses (the person can be both)', async () => {
+    await User.create({ fullName: 'Staff', email: 'staff.only@example.com', passwordHash: 'x', role: 'SYSTEM_USER', isActive: true });
+    await signup();
+    const res = await change({ email: 'rina.typo@example.com', newEmail: 'staff.only@example.com', password: 'StrongPass123!' });
+    expect(res.status).toBe(200);
+    expect(await User.countDocuments({ email: 'staff.only@example.com' })).toBe(2);
   });
 
   it('keeps the pending sign-up if the new code cannot be sent, so the person can try again', async () => {

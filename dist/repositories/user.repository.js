@@ -33,8 +33,16 @@ exports.userRepository = {
     async updateById(id, updateData) {
         return User_1.User.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
     },
-    async verifyOrganizerEmail(email) {
-        await User_1.User.updateMany({ email, role: User_1.Role.ORGANIZER }, { $set: { isEmailVerified: true } });
+    /** Marks one organizer sign-up verified (the account a code was sent for). Without an id (old codes) every unverified organizer on the email. */
+    async verifyOrganizerEmail(email, userId) {
+        if (userId)
+            await User_1.User.updateOne({ _id: userId, role: User_1.Role.ORGANIZER }, { $set: { isEmailVerified: true } });
+        else
+            await User_1.User.updateMany({ email, role: User_1.Role.ORGANIZER, isEmailVerified: false }, { $set: { isEmailVerified: true } });
+    },
+    /** The organizer sign-ups on this email that are still waiting for their code (oldest first) */
+    async findUnverifiedOrganizers(email) {
+        return User_1.User.find({ email, role: User_1.Role.ORGANIZER, isEmailVerified: false }).sort({ createdAt: 1 });
     },
     async deleteById(id) {
         await User_1.User.deleteOne({ _id: id });

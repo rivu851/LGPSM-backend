@@ -27,6 +27,8 @@ exports.refreshTokenSchema = zod_1.z.object({
 });
 exports.forgotPasswordSchema = zod_1.z.object({
     email: zod_1.z.string().email('Invalid email format'),
+    /** the portal asking, when an email is shared by several accounts (mobile app: SYSTEM_USER) */
+    role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });
 exports.resetPasswordSchema = zod_1.z.object({
     token: zod_1.z.string().min(1, 'Reset token is required'),
@@ -54,4 +56,5 @@ exports.changePendingEmailSchema = zod_1.z.object({
 exports.verifyResetOtpSchema = zod_1.z.object({
     email: zod_1.z.string().email('Invalid email format'),
     code: zod_1.z.string().regex(/^\d{4}$/, 'Enter the 4-digit code'),
+    role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });

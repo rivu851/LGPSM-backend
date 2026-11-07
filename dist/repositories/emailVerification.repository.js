@@ -10,11 +10,12 @@ exports.emailVerificationRepository = {
      * @param email      Normalised (lowercase) email address.
      * @param codeHash   bcrypt hash of the 6-digit OTP.
      */
-    async createOrReplace(email, codeHash) {
+    async createOrReplace(email, codeHash, userId) {
         const now = new Date();
         const expiresAt = new Date(now.getTime() + EmailVerification_1.OTP_EXPIRY_MINUTES * 60 * 1000);
         return EmailVerification_1.EmailVerification.findOneAndReplace({ email }, {
             email,
+            ...(userId ? { userId } : {}),
             codeHash,
             expiresAt,
             attempts: 0,

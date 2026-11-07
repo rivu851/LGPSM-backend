@@ -54,7 +54,7 @@ exports.authController = {
     },
     async requestPasswordResetOtp(req, res, next) {
         try {
-            await auth_service_1.authService.requestPasswordResetOtp(req.body.email);
+            await auth_service_1.authService.requestPasswordResetOtp(req.body.email, req.body.role);
             res.status(200).json({ success: true, message: 'If the details are correct, a code has been sent.' });
         }
         catch (error) {
@@ -63,7 +63,7 @@ exports.authController = {
     },
     async verifyPasswordResetOtp(req, res, next) {
         try {
-            const result = await auth_service_1.authService.verifyPasswordResetOtp(req.body.email, req.body.code);
+            const result = await auth_service_1.authService.verifyPasswordResetOtp(req.body.email, req.body.code, req.body.role);
             res.status(200).json({ success: true, data: result });
         }
         catch (error) {

@@ -71,4 +71,8 @@ UserSchema.post(
   () => userAuthCache.clear()
 );
 
+// One organizer account per email, enforced by the database as well (two requests at once cannot both get through). Staff and admin
+// accounts are outside this index: they may share an email with an organizer and with each other.
+UserSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { role: 'ORGANIZER' }, name: 'uniq_organizer_email' });
+
 export const User = mongoose.model<IUser>('User', UserSchema);

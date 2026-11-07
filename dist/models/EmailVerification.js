@@ -46,7 +46,8 @@ const mongoose_1 = __importStar(require("mongoose"));
  *    invalid) once it reaches MAX_ATTEMPTS.
  *  - `lastSentAt` enforces the 60-second resend cooldown at the model layer.
  *
- * One document per email address (upsert replaces any previous pending code).
+ * One document per email address (upsert replaces any previous pending code). Several accounts may share an email, so the code also
+ * remembers WHICH organizer sign-up it was sent for (`userId`): entering it verifies that account and no other.
  */
 exports.OTP_EXPIRY_MINUTES = 10;
 exports.MAX_OTP_ATTEMPTS = 5;
@@ -59,6 +60,7 @@ const EmailVerificationSchema = new mongoose_1.Schema({
         lowercase: true,
         trim: true,
     },
+    userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
     codeHash: { type: String, required: true },
     expiresAt: { type: Date, required: true, index: { expires: 0 } },
     attempts: { type: Number, default: 0 },

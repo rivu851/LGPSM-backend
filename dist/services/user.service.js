@@ -218,15 +218,28 @@ exports.userService = {
                 throw { statusCode: 404, message: 'Organizer not found' };
             ownerId = String(owner._id);
         }
+        // An administrator's email is never shared: an admin cannot be created on an email another account uses, and nobody else can take an
+        // admin's. (Organizers and system users may share an email with each other.)
+        const lowered = String(data.email).toLowerCase().trim();
+        if (data.role === User_1.Role.ADMIN) {
+            if (await User_1.User.exists({ email: lowered }))
+                throw { statusCode: 400, message: 'This email address is already used by another account, so it cannot be an administrator account.' };
+        }
+        else if (await User_1.User.exists({ email: lowered, role: User_1.Role.ADMIN })) {
+            throw { statusCode: 400, message: 'This email address belongs to an administrator account, so it cannot be used for another account.' };
+        }
+        // One organizer account per email. (System users may share an email with an organizer and with each other.)
+        if (data.role === User_1.Role.ORGANIZER && (await User_1.User.exists({ email: String(data.email).toLowerCase().trim(), role: User_1.Role.ORGANIZER }))) {
+            throw { statusCode: 400, message: 'An organizer account already uses this email address.' };
+        }
         // Reuse a deleted staff account owned by this organizer when possible. Other
         // accounts may share an email or phone number.
         if (data.role === User_1.Role.SYSTEM_USER) {
-            const inactiveStaff = await User_1.User.findOne({
-                email: String(data.email).toLowerCase().trim(),
-                role: User_1.Role.SYSTEM_USER,
-                createdBy: ownerId,
-                isActive: false,
-            });
+            const mine = await User_1.User.find({ email: String(data.email).toLowerCase().trim(), role: User_1.Role.SYSTEM_USER, createdBy: ownerId });
+            // other accounts, and other organizers' staff, may share this email; the same organizer's own list shows a person once
+            if (mine.some((u) => u.isActive !== false))
+                throw { statusCode: 400, message: 'This person is already one of your system users.' };
+            const inactiveStaff = mine.find((u) => u.isActive === false);
             if (inactiveStaff)
                 return reactivateStaff(inactiveStaff, data, ownerId);
         }
@@ -328,6 +341,21 @@ exports.userService = {
         if (data.fullName !== undefined)
             updatePayload.fullName = data.fullName;
         if (data.email !== undefined) {
+            const email = String(data.email).toLowerCase().trim();
+            // the same rules as when the account was created: an admin's email is never shared; one organizer per email; one listing of a
+            // person per organizer's staff
+            if (target.role === User_1.Role.ADMIN && (await User_1.User.exists({ email, _id: { $ne: userId } }))) {
+                throw { statusCode: 409, message: 'This email address is already used by another account, so it cannot be an administrator account.' };
+            }
+            if (target.role !== User_1.Role.ADMIN && (await User_1.User.exists({ email, role: User_1.Role.ADMIN }))) {
+                throw { statusCode: 409, message: 'This email address belongs to an administrator account, so it cannot be used for another account.' };
+            }
+            if (target.role === User_1.Role.ORGANIZER && (await User_1.User.exists({ email, role: User_1.Role.ORGANIZER, _id: { $ne: userId } }))) {
+                throw { statusCode: 409, message: 'An organizer account already uses this email address.' };
+            }
+            if (target.role === User_1.Role.SYSTEM_USER && (await User_1.User.exists({ email, role: User_1.Role.SYSTEM_USER, createdBy: target.createdBy, isActive: { $ne: false }, _id: { $ne: userId } }))) {
+                throw { statusCode: 409, message: 'This person is already one of your system users.' };
+            }
             updatePayload.email = data.email;
         }
         if (data.phone !== undefined) {

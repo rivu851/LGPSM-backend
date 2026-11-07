@@ -77,4 +77,7 @@ const UserSchema = new mongoose_1.Schema({
 });
 // A change to any account (role, active flag, removal) must show up on the next request, not after the auth cache expires
 UserSchema.post(['save', 'findOneAndUpdate', 'findOneAndReplace', 'findOneAndDelete', 'updateOne', 'updateMany', 'deleteOne', 'deleteMany'], () => userAuthCache_1.userAuthCache.clear());
+// One organizer account per email, enforced by the database as well (two requests at once cannot both get through). Staff and admin
+// accounts are outside this index: they may share an email with an organizer and with each other.
+UserSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { role: 'ORGANIZER' }, name: 'uniq_organizer_email' });
 exports.User = mongoose_1.default.model('User', UserSchema);

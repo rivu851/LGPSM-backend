@@ -75,10 +75,11 @@ async function organizerBrand(organizerId) {
     if (!organizerId)
         return { logo: null };
     const organizer = await User_1.User.findById(organizerId).select('fullName profile.organizationName profile.logoKey').lean();
-    const name = organizer?.profile?.organizationName?.trim() || organizer?.fullName?.trim() || undefined;
+    const organizationName = organizer?.profile?.organizationName?.trim() || undefined; // only when the organizer has set one
+    const name = organizationName || organizer?.fullName?.trim() || undefined;
     const dataUrl = await (0, resolveImageBase64_1.resolveImageKeyBase64)(organizer?.profile?.logoKey).catch(() => '');
     const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl || '');
-    return { name, logo: match ? { contentType: match[1], content: Buffer.from(match[2], 'base64') } : null };
+    return { name, organizationName, logo: match ? { contentType: match[1], content: Buffer.from(match[2], 'base64') } : null };
 }
 // Rendered sample cards by event, oldest dropped first (see previewInvitationCard)
 const sampleCards = new Map();
@@ -299,6 +300,7 @@ exports.invitationService = {
                         isReminder: false,
                         organizerLogoCid: brand.logo ? `organizer-logo-${invitee._id}` : undefined,
                         organizerName: brand.name,
+                        organizationName: brand.organizationName,
                         startIso: event.schedule?.start,
                         endIso: event.schedule?.end,
                         locationSub,
@@ -597,6 +599,7 @@ exports.invitationService = {
                             isReminder: true,
                             organizerLogoCid: brand.logo ? `organizer-logo-${invitee._id}` : undefined,
                             organizerName: brand.name,
+                            organizationName: brand.organizationName,
                             startIso: event.schedule?.start,
                             endIso: event.schedule?.end,
                             locationSub,
