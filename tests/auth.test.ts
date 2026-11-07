@@ -114,13 +114,15 @@ describe('Registration', () => {
     expect(retryRes.body.data.pendingVerification).toBe(true);
   });
 
-  it('rejects duplicate registration', async () => {
+  it('allows registration when another account already uses the email', async () => {
     const res = await request(app)
       .post('/api/auth/register')
       .send({ fullName: 'New Organizer', email: 'neworg@example.com', password: 'password123' });
 
-    expect(res.statusCode).toBe(400);
-    expect(res.body.success).toBe(false);
+    expect(res.statusCode).toBe(201);
+    expect(await User.countDocuments({ email: 'neworg@example.com' })).toBe(2);
+    const newest = await User.find({ email: 'neworg@example.com' }).sort({ createdAt: -1 }).limit(1);
+    await User.deleteOne({ _id: newest[0]._id });
   });
 
   it('does not allow non-ORGANIZER self-registration', async () => {
@@ -463,7 +465,7 @@ describe('ADMIN login is unaffected by email verification gate', () => {
 });
 
 describe('Mobile-number login', () => {
-  const rawPhone = '98765 43210';
+  const rawPhone = '9876543210';
   const normalizedPhone = '919876543210';
 
   beforeAll(async () => {
@@ -518,11 +520,10 @@ describe('Mobile-number login', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('fails safely when a phone number is ambiguous across accounts', async () => {
+  it('authenticates the matching account when a phone number is shared', async () => {
     const bcrypt = require('bcrypt');
     const hash = await bcrypt.hash('OtherPass123!', 10);
-    // A second account sharing the exact same normalized phone (data integrity issue).
-    await User.create({
+    const duplicate = await User.create({
       fullName: 'Duplicate Phone User',
       email: 'dupephone@example.com',
       phone: normalizedPhone,
@@ -536,7 +537,8 @@ describe('Mobile-number login', () => {
     const res = await request(app)
       .post('/api/auth/login')
       .send({ phone: rawPhone, password: 'PhonePass123!' });
-    expect(res.statusCode).toBe(401);
+    expect(res.statusCode).toBe(200);
+    expect(String(res.body.data.user._id)).not.toBe(String(duplicate._id));
 
     await User.deleteOne({ email: 'dupephone@example.com' });
   });

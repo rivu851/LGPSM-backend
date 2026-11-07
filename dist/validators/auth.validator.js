@@ -2,11 +2,12 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.verifyResetOtpSchema = exports.resendVerificationSchema = exports.verifyEmailSchema = exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.refreshTokenSchema = exports.loginSchema = exports.registerSchema = void 0;
 const zod_1 = require("zod");
+const phone_validator_1 = require("./phone.validator");
 exports.registerSchema = zod_1.z.object({
     fullName: zod_1.z.string().trim().min(2, 'Full name must be at least 2 characters').max(120, 'Full name is too long'),
     email: zod_1.z.string().email('Invalid email format'),
     password: zod_1.z.string().min(8, 'Password must be at least 8 characters'),
-    phone: zod_1.z.string().optional(),
+    phone: phone_validator_1.optionalPhoneSchema,
     role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
     // How the organizer will send invitations (asked at signup); the send screen starts with this choice
     invitationChannel: zod_1.z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
@@ -17,7 +18,7 @@ exports.registerSchema = zod_1.z.object({
 // for Zod refine failures, only the raw field-error tree.
 exports.loginSchema = zod_1.z.object({
     email: zod_1.z.string().email('Invalid email format').optional(),
-    phone: zod_1.z.string().min(4, 'Invalid mobile number').optional(),
+    phone: phone_validator_1.optionalPhoneSchema,
     password: zod_1.z.string().min(1, 'Password is required'),
     role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });

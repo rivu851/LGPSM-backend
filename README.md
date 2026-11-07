@@ -28,6 +28,14 @@ To start the server for production:
 npm start
 ```
 
+## Allow shared user contact details
+User accounts may share email addresses and phone numbers. Before deploying this schema change to an existing database, inspect and remove the legacy unique email index:
+```bash
+npm run migrate:user-contact-uniqueness
+npm run migrate:user-contact-uniqueness -- --apply
+```
+The migration requires `ATLAS_URL`, changes indexes only, and does not modify user records.
+
 ## Folder Structure
 - `src/config/`: Configuration files (Database, Environment, External services)
 - `src/controllers/`: Handle HTTP requests and responses

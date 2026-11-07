@@ -10,6 +10,7 @@
     "dev": "tsx watch src/server.ts",
     "check:deployed-layout": "node scripts/check-deployed-layout.js",
     "migrate:invitee-uniqueness": "node scripts/migrate-invitee-uniqueness.js",
+    "migrate:user-contact-uniqueness": "node scripts/migrate-user-contact-uniqueness.js",
     "inventory:credentials": "node scripts/credential-inventory.js"
   },
   "keywords": [],

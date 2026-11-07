@@ -132,18 +132,10 @@ export const authService = {
     role?: string;
     invitationChannel?: 'EMAIL' | 'WHATSAPP' | 'BOTH';
   }) {
-    const existingUser = await userRepository.findByEmail(data.email);
-    if (existingUser) {
-      throw { statusCode: 400, message: 'Email already in use' };
-    }
-
     // Self-registration only creates organizers.
     if (data.role && data.role !== Role.ORGANIZER) {
       throw { statusCode: 403, message: 'Only organizer accounts can be self-registered' };
     }
-
-    const { assertPhoneAvailable } = await import('./user.service');
-    await assertPhoneAvailable(data.phone ? normalizePhoneNumber(data.phone) : undefined);
 
     const hashedPassword = await hashPassword(data.password);
 
@@ -172,7 +164,7 @@ export const authService = {
     } catch (err) {
       // SMTP failure → undo account creation so the caller can retry.
       // We do not log or re-throw the OTP.
-      await userRepository.deleteByEmail(data.email).catch(() => {});
+      await userRepository.deleteById(String(user._id)).catch(() => {});
       await emailVerificationRepository.deleteByEmail(data.email).catch(() => {});
       console.error(
         '[auth.service] Failed to send verification email for',
@@ -256,9 +248,7 @@ export const authService = {
     }
 
     // Correct code — mark email as verified
-    await userRepository.updateByEmail(normalised, {
-      isEmailVerified: true,
-    });
+    await userRepository.verifyOrganizerEmail(normalised);
 
     // Remove OTP record
     await emailVerificationRepository.deleteByEmail(normalised);
@@ -277,7 +267,7 @@ export const authService = {
   async resendVerificationCode(email: string) {
     const normalised = email.trim().toLowerCase();
 
-    const user = await userRepository.findByEmail(normalised);
+    const user = await userRepository.findByRoleAndEmail(normalised, Role.ORGANIZER);
 
     if (!user || user.role !== Role.ORGANIZER) {
       // Return success-shaped response to avoid email enumeration
@@ -336,31 +326,24 @@ export const authService = {
       throw { statusCode: 400, message: 'Provide an email address or mobile number to sign in' };
     }
 
-    const userByEmail = data.email ? await userRepository.findByEmail(data.email) : null;
+    const emailMatches = data.email ? await userRepository.findAllByEmail(data.email.trim().toLowerCase()) : [];
     const phoneMatches = data.phone ? await userRepository.findByPhone(data.phone) : [];
+    const phoneIds = new Set(phoneMatches.map((candidate) => String(candidate._id)));
+    const candidates = data.email && data.phone
+      ? emailMatches.filter((candidate) => phoneIds.has(String(candidate._id)))
+      : data.email ? emailMatches : phoneMatches;
 
-    if (phoneMatches.length > 1) {
-      // Data integrity issue (phone isn't a unique field) — never guess which
-      // account was meant; fail safely and leave a trail for an admin to fix.
-      console.error(
-        '[auth.service] Ambiguous phone number matched multiple accounts during login attempt'
-      );
-      throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
-    }
-    const userByPhone = phoneMatches[0] ?? null;
+    const passwordMatches = await Promise.all(candidates.map(async (candidate) => {
+      const usable = candidate.authProvider === AuthProvider.LOCAL && !!candidate.passwordHash;
+      const matches = await verifyPassword(data.password, usable ? candidate.passwordHash! : UNKNOWN_ACCOUNT_HASH);
+      return usable && matches ? candidate : null;
+    }));
+    const authenticated = passwordMatches.filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null);
+    const roleMatches = data.role ? authenticated.filter((candidate) => candidate.role === data.role) : authenticated;
+    const user = roleMatches.length === 1 ? roleMatches[0] : authenticated.length === 1 ? authenticated[0] : null;
 
-    let user: Awaited<ReturnType<typeof userRepository.findByEmail>>;
-    if (data.email && data.phone) {
-      // Both identifiers supplied — they must resolve to the same account.
-      user = userByEmail && userByPhone && String(userByEmail._id) === String(userByPhone._id) ? userByEmail : null;
-    } else {
-      user = userByEmail ?? userByPhone;
-    }
-
-    // Every sign-in failure before this point looks the same from outside: same answer, same time spent
-    const canUsePassword = !!user && user.authProvider === AuthProvider.LOCAL && !!user.passwordHash;
-    const isMatch = await verifyPassword(data.password, canUsePassword ? user!.passwordHash! : UNKNOWN_ACCOUNT_HASH);
-    if (!user || !canUsePassword || !isMatch) {
+    if (!candidates.length) await verifyPassword(data.password, UNKNOWN_ACCOUNT_HASH);
+    if (!user) {
       throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
     }
 

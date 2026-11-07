@@ -1,37 +1,4 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -134,16 +101,10 @@ exports.authService = {
      * Returns `{ pendingVerification: true, email }`.
      */
     async register(data) {
-        const existingUser = await user_repository_1.userRepository.findByEmail(data.email);
-        if (existingUser) {
-            throw { statusCode: 400, message: 'Email already in use' };
-        }
         // Self-registration only creates organizers.
         if (data.role && data.role !== User_1.Role.ORGANIZER) {
             throw { statusCode: 403, message: 'Only organizer accounts can be self-registered' };
         }
-        const { assertPhoneAvailable } = await Promise.resolve().then(() => __importStar(require('./user.service')));
-        await assertPhoneAvailable(data.phone ? (0, whatsapp_service_1.normalizePhoneNumber)(data.phone) : undefined);
         const hashedPassword = await (0, password_1.hashPassword)(data.password);
         // Create account as active but unverified (isActive is preserved for administrative activation semantics)
         const user = await user_repository_1.userRepository.create({
@@ -169,7 +130,7 @@ exports.authService = {
         catch (err) {
             // SMTP failure → undo account creation so the caller can retry.
             // We do not log or re-throw the OTP.
-            await user_repository_1.userRepository.deleteByEmail(data.email).catch(() => { });
+            await user_repository_1.userRepository.deleteById(String(user._id)).catch(() => { });
             await emailVerification_repository_1.emailVerificationRepository.deleteByEmail(data.email).catch(() => { });
             console.error('[auth.service] Failed to send verification email for', data.email, ':', err instanceof Error ? err.message : 'unknown error');
             throw {
@@ -235,9 +196,7 @@ exports.authService = {
             };
         }
         // Correct code — mark email as verified
-        await user_repository_1.userRepository.updateByEmail(normalised, {
-            isEmailVerified: true,
-        });
+        await user_repository_1.userRepository.verifyOrganizerEmail(normalised);
         // Remove OTP record
         await emailVerification_repository_1.emailVerificationRepository.deleteByEmail(normalised);
         return { verified: true };
@@ -252,7 +211,7 @@ exports.authService = {
      */
     async resendVerificationCode(email) {
         const normalised = email.trim().toLowerCase();
-        const user = await user_repository_1.userRepository.findByEmail(normalised);
+        const user = await user_repository_1.userRepository.findByRoleAndEmail(normalised, User_1.Role.ORGANIZER);
         if (!user || user.role !== User_1.Role.ORGANIZER) {
             // Return success-shaped response to avoid email enumeration
             return { sent: true };
@@ -298,27 +257,23 @@ exports.authService = {
         if (!data.email && !data.phone) {
             throw { statusCode: 400, message: 'Provide an email address or mobile number to sign in' };
         }
-        const userByEmail = data.email ? await user_repository_1.userRepository.findByEmail(data.email) : null;
+        const emailMatches = data.email ? await user_repository_1.userRepository.findAllByEmail(data.email.trim().toLowerCase()) : [];
         const phoneMatches = data.phone ? await user_repository_1.userRepository.findByPhone(data.phone) : [];
-        if (phoneMatches.length > 1) {
-            // Data integrity issue (phone isn't a unique field) — never guess which
-            // account was meant; fail safely and leave a trail for an admin to fix.
-            console.error('[auth.service] Ambiguous phone number matched multiple accounts during login attempt');
-            throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
-        }
-        const userByPhone = phoneMatches[0] ?? null;
-        let user;
-        if (data.email && data.phone) {
-            // Both identifiers supplied — they must resolve to the same account.
-            user = userByEmail && userByPhone && String(userByEmail._id) === String(userByPhone._id) ? userByEmail : null;
-        }
-        else {
-            user = userByEmail ?? userByPhone;
-        }
-        // Every sign-in failure before this point looks the same from outside: same answer, same time spent
-        const canUsePassword = !!user && user.authProvider === User_1.AuthProvider.LOCAL && !!user.passwordHash;
-        const isMatch = await (0, password_1.verifyPassword)(data.password, canUsePassword ? user.passwordHash : UNKNOWN_ACCOUNT_HASH);
-        if (!user || !canUsePassword || !isMatch) {
+        const phoneIds = new Set(phoneMatches.map((candidate) => String(candidate._id)));
+        const candidates = data.email && data.phone
+            ? emailMatches.filter((candidate) => phoneIds.has(String(candidate._id)))
+            : data.email ? emailMatches : phoneMatches;
+        const passwordMatches = await Promise.all(candidates.map(async (candidate) => {
+            const usable = candidate.authProvider === User_1.AuthProvider.LOCAL && !!candidate.passwordHash;
+            const matches = await (0, password_1.verifyPassword)(data.password, usable ? candidate.passwordHash : UNKNOWN_ACCOUNT_HASH);
+            return usable && matches ? candidate : null;
+        }));
+        const authenticated = passwordMatches.filter((candidate) => candidate !== null);
+        const roleMatches = data.role ? authenticated.filter((candidate) => candidate.role === data.role) : authenticated;
+        const user = roleMatches.length === 1 ? roleMatches[0] : authenticated.length === 1 ? authenticated[0] : null;
+        if (!candidates.length)
+            await (0, password_1.verifyPassword)(data.password, UNKNOWN_ACCOUNT_HASH);
+        if (!user) {
             throw { statusCode: 401, message: 'Invalid credentials or inactive account' };
         }
         // Role-portal check

@@ -6,16 +6,22 @@ export const userRepository = {
     return User.findOne({ email });
   },
 
+  async findAllByEmail(email: string): Promise<IUser[]> {
+    return User.find({ email });
+  },
+
+  async findByRoleAndEmail(email: string, role: Role): Promise<IUser | null> {
+    return User.findOne({ email, role });
+  },
+
   /**
-   * Looks up accounts by normalized phone number via the indexed `phone` field
-   * (no collection scan). Returns up to 2 matches so the caller can detect and
-   * safely reject an ambiguous match (phone isn't a unique field) rather than
-   * silently picking one account.
+   * Looks up all accounts by normalized phone number via the indexed `phone`
+   * field. Login resolves shared numbers using the password and requested role.
    */
   async findByPhone(rawPhone: string): Promise<IUser[]> {
     const normalized = normalizePhoneNumber(rawPhone);
     if (!normalized) return [];
-    return User.find({ phone: normalized }).limit(2);
+    return User.find({ phone: normalized });
   },
 
   async findById(id: string): Promise<IUser | null> {
@@ -31,21 +37,12 @@ export const userRepository = {
     return User.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
   },
 
-  /**
-   * Updates a user matched by email address.
-   * Used by the email-verification flow (updateByEmail happens before the
-   * user has a session, so we can't rely on an ID).
-   */
-  async updateByEmail(email: string, updateData: Partial<IUser>): Promise<IUser | null> {
-    return User.findOneAndUpdate({ email }, updateData, { new: true, runValidators: true });
+  async verifyOrganizerEmail(email: string): Promise<void> {
+    await User.updateMany({ email, role: Role.ORGANIZER }, { $set: { isEmailVerified: true } });
   },
 
-  /**
-   * Hard-deletes a user by email.  Called by the registration rollback path
-   * when SMTP delivery fails, ensuring no orphaned inactive accounts remain.
-   */
-  async deleteByEmail(email: string): Promise<void> {
-    await User.deleteOne({ email });
+  async deleteById(id: string): Promise<void> {
+    await User.deleteOne({ _id: id });
   },
 
   async find(query: any = {}): Promise<IUser[]> {

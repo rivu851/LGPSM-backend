@@ -7,17 +7,21 @@ exports.userRepository = {
     async findByEmail(email) {
         return User_1.User.findOne({ email });
     },
+    async findAllByEmail(email) {
+        return User_1.User.find({ email });
+    },
+    async findByRoleAndEmail(email, role) {
+        return User_1.User.findOne({ email, role });
+    },
     /**
-     * Looks up accounts by normalized phone number via the indexed `phone` field
-     * (no collection scan). Returns up to 2 matches so the caller can detect and
-     * safely reject an ambiguous match (phone isn't a unique field) rather than
-     * silently picking one account.
+     * Looks up all accounts by normalized phone number via the indexed `phone`
+     * field. Login resolves shared numbers using the password and requested role.
      */
     async findByPhone(rawPhone) {
         const normalized = (0, whatsapp_service_1.normalizePhoneNumber)(rawPhone);
         if (!normalized)
             return [];
-        return User_1.User.find({ phone: normalized }).limit(2);
+        return User_1.User.find({ phone: normalized });
     },
     async findById(id) {
         return User_1.User.findById(id);
@@ -29,20 +33,11 @@ exports.userRepository = {
     async updateById(id, updateData) {
         return User_1.User.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
     },
-    /**
-     * Updates a user matched by email address.
-     * Used by the email-verification flow (updateByEmail happens before the
-     * user has a session, so we can't rely on an ID).
-     */
-    async updateByEmail(email, updateData) {
-        return User_1.User.findOneAndUpdate({ email }, updateData, { new: true, runValidators: true });
+    async verifyOrganizerEmail(email) {
+        await User_1.User.updateMany({ email, role: User_1.Role.ORGANIZER }, { $set: { isEmailVerified: true } });
     },
-    /**
-     * Hard-deletes a user by email.  Called by the registration rollback path
-     * when SMTP delivery fails, ensuring no orphaned inactive accounts remain.
-     */
-    async deleteByEmail(email) {
-        await User_1.User.deleteOne({ email });
+    async deleteById(id) {
+        await User_1.User.deleteOne({ _id: id });
     },
     async find(query = {}) {
         return User_1.User.find(query).select('-passwordHash').sort({ createdAt: -1 });

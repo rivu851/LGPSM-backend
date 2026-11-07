@@ -51,7 +51,7 @@ const UserSchema = new mongoose_1.Schema({
     // Indexed (non-unique) so admin/organizer user search can sort/filter by
     // name without a full collection scan.
     fullName: { type: String, required: true, index: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    email: { type: String, required: true, lowercase: true, trim: true, index: true },
     // Stored in normalized form (see whatsapp.service.ts normalizePhoneNumber) so
     // phone-based login can do a direct indexed lookup instead of scanning the
     // collection. Not unique: existing data may still contain duplicates/legacy

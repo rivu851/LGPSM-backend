@@ -51,14 +51,6 @@ export async function staffVisibleToOrganizer(organizerId: string): Promise<mong
   return [...ids.values()];
 }
 
-// Phone numbers sign people in. Two accounts on one number lock both out of phone sign-in (login refuses to guess), so a number
-// another account already uses is refused here instead of letting someone lock that person out.
-export async function assertPhoneAvailable(phone: string | undefined, exceptUserId?: string) {
-  if (!phone) return;
-  const taken = await User.exists({ phone, ...(exceptUserId ? { _id: { $ne: exceptUserId } } : {}) });
-  if (taken) throw { statusCode: 409, code: 'PHONE_IN_USE', message: 'This mobile number is already used by another account.' };
-}
-
 // An organizer may see the staff who work their events, but may only change an account that is theirs. Staff created by another
 // organizer, or also working for one, have their password and email out of reach: changing them would take the account from its owner.
 async function assertOrganizerOwnsStaff(organizerId: string, target: any) {
@@ -98,7 +90,6 @@ async function findManageableUser(actor: Actor, userId: string) {
 /** A deleted (switched off) staff account added again by the same organizer: brought back with the new details and a new password */
 async function reactivateStaff(existing: any, data: any, ownerId: string) {
   const phone = data.phone ? normalizePhoneNumber(data.phone) : undefined;
-  await assertPhoneAvailable(phone, String(existing._id));
   const { hashPassword } = await import('../utils/password');
   const generatedPassword = data.password ? null : generateTemporaryPassword();
   const passwordHash = await hashPassword(data.password ?? generatedPassword!);
@@ -127,7 +118,6 @@ export const userService = {
   async updateProfile(userId: string, data: any) {
     const { organization, ...personal } = data || {};
     let payload: any = personal.phone !== undefined ? { ...personal, phone: normalizePhoneNumber(personal.phone) } : { ...personal };
-    await assertPhoneAvailable(payload.phone, userId);
     if (organization) {
       const me = await userRepository.findById(userId);
       if (!me) throw { statusCode: 404, message: 'User not found' };
@@ -194,29 +184,19 @@ export const userService = {
       ownerId = String(owner._id);
     }
 
-    // An email belongs to one account on the whole platform. Being someone's invitee is not an account, so a guest's email is free.
-    const existingUser: any = await userRepository.findByEmail(data.email);
-    if (existingUser) {
-      const sameOwner = String(existingUser.createdBy || '') === String(ownerId) || actor.role === Role.ADMIN;
-      // Staff that were deleted (deleted accounts are only switched off) come back when they are added again by the same organizer
-      if (existingUser.role === Role.SYSTEM_USER && data.role === Role.SYSTEM_USER && existingUser.isActive === false && sameOwner) {
-        return reactivateStaff(existingUser, data, ownerId);
-      }
-      const message =
-        existingUser.role === Role.SYSTEM_USER
-          ? existingUser.isActive === false
-            ? 'This email belongs to a deleted system user of another organizer, so it cannot be added here.'
-            : String(existingUser.createdBy || '') === String(ownerId)
-              ? 'This person is already one of your system users.'
-              : 'This email is already used by a system user of another organizer.'
-          : existingUser.role === Role.ORGANIZER
-            ? 'This email is already used by an organizer account.'
-            : 'This email is already used by an administrator account.';
-      throw { statusCode: 400, message };
+    // Reuse a deleted staff account owned by this organizer when possible. Other
+    // accounts may share an email or phone number.
+    if (data.role === Role.SYSTEM_USER) {
+      const inactiveStaff = await User.findOne({
+        email: String(data.email).toLowerCase().trim(),
+        role: Role.SYSTEM_USER,
+        createdBy: ownerId,
+        isActive: false,
+      });
+      if (inactiveStaff) return reactivateStaff(inactiveStaff, data, ownerId);
     }
 
     const phone = data.phone ? normalizePhoneNumber(data.phone) : undefined;
-    await assertPhoneAvailable(phone);
 
     const { hashPassword } = await import('../utils/password');
     const { AuthProvider } = await import('../models/User');
@@ -240,7 +220,7 @@ export const userService = {
         await sendCredentialsEmail(data.email, data.fullName, data.role, generatedPassword);
       } catch (err) {
         // The account is useless if nobody can learn its password: undo it so the person can try again
-        await userRepository.deleteByEmail(data.email).catch(() => {});
+        await userRepository.deleteById(String(user._id)).catch(() => {});
         throw { statusCode: 502, message: 'The account could not be created because the login email could not be sent. Please try again.' };
       }
     }
@@ -329,15 +309,10 @@ export const userService = {
     const updatePayload: any = {};
     if (data.fullName !== undefined) updatePayload.fullName = data.fullName;
     if (data.email !== undefined) {
-      const existing = await userRepository.findByEmail(String(data.email).toLowerCase().trim());
-      if (existing && (existing as any)._id.toString() !== userId) {
-        throw { statusCode: 409, message: 'Email already in use' };
-      }
       updatePayload.email = data.email;
     }
     if (data.phone !== undefined) {
       updatePayload.phone = normalizePhoneNumber(data.phone);
-      await assertPhoneAvailable(updatePayload.phone, userId);
     }
     if (data.isActive !== undefined && actor.role === Role.ADMIN) {
       if (data.isActive === false) await assertNotLastAdmin(target);

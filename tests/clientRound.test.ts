@@ -196,7 +196,7 @@ describe('one person can be an invitee and a system user', () => {
   });
 });
 
-describe('adding a system user whose email is taken', () => {
+describe('adding system users with shared contact details', () => {
   it('a deleted staff member added again by the same organizer comes back (not "email already in use")', async () => {
     const first = await request(app).post('/api/users').set(auth(a)).send({ fullName: 'Old Name', email: 'staff@x.com', phone: '9876500001', password: 'password123', role: 'SYSTEM_USER' });
     expect(first.status).toBe(201);
@@ -208,20 +208,41 @@ describe('adding a system user whose email is taken', () => {
     expect(u.fullName).toBe('New Name');
     expect(await User.countDocuments({ email: 'staff@x.com' })).toBe(1);
   });
-  it('every other clash says exactly why', async () => {
-    const mine = await request(app).post('/api/users').set(auth(a)).send({ fullName: 'Mine', email: 'mine@x.com', phone: '9876500003', password: 'password123', role: 'SYSTEM_USER' });
-    expect(mine.status).toBe(201);
-    const dup = await request(app).post('/api/users').set(auth(a)).send({ fullName: 'Mine', email: 'mine@x.com', phone: '9876500004', password: 'password123', role: 'SYSTEM_USER' });
-    expect(dup.body.message).toMatch(/already one of your system users/);
-    const other = await request(app).post('/api/users').set(auth(b)).send({ fullName: 'Mine', email: 'mine@x.com', phone: '9876500005', password: 'password123', role: 'SYSTEM_USER' });
-    expect(other.body.message).toMatch(/system user of another organizer/);
-    const org = await request(app).post('/api/users').set(auth(a)).send({ fullName: 'Xavier', email: 'b@x.com', phone: '9876500006', password: 'password123', role: 'SYSTEM_USER' });
-    expect(org.body.message).toMatch(/organizer account/);
-    // another organizer cannot take over someone else's deleted staff account
-    await request(app).delete(`/api/users/${mine.body.data._id}`).set(auth(a));
-    const steal = await request(app).post('/api/users').set(auth(b)).send({ fullName: 'Stolen', email: 'mine@x.com', phone: '9876500007', password: 'password123', role: 'SYSTEM_USER' });
-    expect(steal.status).toBe(400);
-    expect(((await User.findOne({ email: 'mine@x.com' }).lean()) as any).isActive).toBe(false);
+  it('allows different accounts, including an organizer and staff, to share email and phone', async () => {
+    const organizer = await User.create({
+      fullName: 'Shared Organizer',
+      email: 'shared@x.com',
+      phone: '919876500003',
+      role: Role.ORGANIZER,
+      isActive: true,
+    });
+
+    const first = await request(app).post('/api/users').set(auth(a)).send({
+      fullName: 'Shared Staff',
+      email: organizer.email,
+      phone: '9876500003',
+      password: 'password123',
+      role: 'SYSTEM_USER',
+    });
+    expect(first.status).toBe(201);
+    const login = await request(app).post('/api/auth/login').send({
+      email: organizer.email,
+      phone: '9876500003',
+      password: 'password123',
+      role: 'SYSTEM_USER',
+    });
+    expect(login.status).toBe(200);
+    expect(String(login.body.data.user._id)).toBe(first.body.data._id);
+
+    const second = await request(app).post('/api/users').set(auth(b)).send({
+      fullName: 'Another Shared Staff',
+      email: organizer.email,
+      phone: '9876500003',
+      password: 'password456',
+      role: 'SYSTEM_USER',
+    });
+    expect(second.status).toBe(201);
+    expect(await User.countDocuments({ email: organizer.email })).toBe(3);
   });
 });
 
