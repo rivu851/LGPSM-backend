@@ -97,6 +97,15 @@ exports.authController = {
      * Resends a fresh OTP, subject to a 60-second cooldown.
      * Returns success even when the email is not found (enumeration prevention).
      */
+    async changePendingEmail(req, res, next) {
+        try {
+            const result = await auth_service_1.authService.changePendingEmail(req.body);
+            res.status(200).json({ success: true, data: result, message: `A new verification code has been sent to ${result.email}.` });
+        }
+        catch (error) {
+            next(error);
+        }
+    },
     async resendVerificationCode(req, res, next) {
         try {
             const result = await auth_service_1.authService.resendVerificationCode(req.body.email);

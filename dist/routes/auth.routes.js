@@ -28,5 +28,7 @@ router.post('/forgot-password/verify-otp', rateLimiter_1.authRateLimiter, rateLi
 router.post('/reset-password', rateLimiter_1.authRateLimiter, validate(auth_validator_1.resetPasswordSchema), auth_controller_1.authController.resetPassword);
 // Email verification — additional, stricter rate limiters on top of authRateLimiter
 router.post('/verify-email', rateLimiter_1.authRateLimiter, rateLimiter_1.verifyEmailRateLimiter, validate(auth_validator_1.verifyEmailSchema), auth_controller_1.authController.verifyEmail);
+// "Change email address" on the sign-up code page
+router.post('/change-pending-email', rateLimiter_1.authRateLimiter, rateLimiter_1.changePendingEmailRateLimiter, validate(auth_validator_1.changePendingEmailSchema), auth_controller_1.authController.changePendingEmail);
 router.post('/resend-verification', rateLimiter_1.authRateLimiter, rateLimiter_1.resendVerificationRateLimiter, validate(auth_validator_1.resendVerificationSchema), auth_controller_1.authController.resendVerificationCode);
 exports.default = router;

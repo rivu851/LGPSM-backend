@@ -200,19 +200,18 @@ describe('Invitation Service', () => {
 
     const [recipientEmail, subject, html, attachments] = (sendEmail as jest.Mock).mock.calls[0];
     expect(recipientEmail).toBe('test@example.com');
-    expect(subject).toBe('Invitation: Test Event');
-    expect(html).toContain('cid:invitation-qr-');
+    expect(subject).toBe("You're invited: Test Event");
     expect(attachments).toBeDefined();
-    // Email carries the rendered invitation card plus the scannable QR image
-    expect(attachments.length).toBe(2);
+    // The guest's QR is printed on the rendered invitation card, so the card is the one inline image (a second, loose QR
+    // image would show up in Gmail as a stray attachment)
     const qrAttachment = attachments.find((a: any) => a.filename === 'invitation-qr.png');
     const cardAttachment = attachments.find((a: any) => a.filename === 'invitation-card.png');
     expect(cardAttachment).toBeDefined();
     expect(html).toContain(`cid:${cardAttachment.cid}`);
-    expect(qrAttachment).toBeDefined();
-    expect(qrAttachment.contentType).toBe('image/png');
-    expect(qrAttachment.cid).toContain('invitation-qr-');
-    expect(Buffer.isBuffer(qrAttachment.content)).toBe(true);
+    expect(cardAttachment.contentType).toBe('image/png');
+    expect(Buffer.isBuffer(cardAttachment.content)).toBe(true);
+    expect(qrAttachment).toBeUndefined();
+    expect(html).not.toContain('cid:invitation-qr-');
 
     // Verify token stored in DB matches the hashed invitation token
     const invitee = await Invitee.findById(inviteeId);

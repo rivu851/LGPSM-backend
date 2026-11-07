@@ -264,8 +264,9 @@ exports.inviteeController = {
         try {
             const organizerId = req.user.userId;
             const inviteeId = req.params.inviteeId;
-            const invitee = await invitee_service_1.inviteeService.deleteInvitee(inviteeId, organizerId);
-            res.status(200).json({ success: true, data: { inviteeId: invitee._id, deleted: true } });
+            const invitee = await invitee_service_1.inviteeService.deleteInvitee(inviteeId, organizerId, req.user.role);
+            // a guest with history is set aside (restorable, pass withdrawn) rather than erased
+            res.status(200).json({ success: true, data: { inviteeId: invitee._id, deleted: true, setAside: !!invitee.removedWithHistory } });
         }
         catch (error) {
             if (error.message === 'INVITEE_NOT_FOUND') {

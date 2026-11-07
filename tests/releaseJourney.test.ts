@@ -85,7 +85,7 @@ describe('release journey: admin, organizer, staff and attendee', () => {
     const ids = (await Invitee.find({ eventId }).select('_id').lean()).map((i: any) => String(i._id));
     const send = await call(request(app).post(`/api/v1/events/${eventId}/invitations/send`).set(auth(tOrg)).send({ inviteeIds: ids, channel: 'EMAIL' }));
     expect(send.status).toBe(200);
-    expect(mails.filter((m) => /Invitation/.test(m.subject))).toHaveLength(4);
+    expect(mails.filter((m) => /^You're invited:/.test(m.subject))).toHaveLength(4);
     const alice = await tokensOf('Alice Attendee');
     const mail = mails.find((m) => m.to === 'alice@guest.test')!;
     expect(mail.html).toContain(invitationUrlFor(alice.invitation));

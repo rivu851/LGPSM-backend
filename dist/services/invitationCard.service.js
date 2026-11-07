@@ -13,6 +13,7 @@ const content_1 = require("./cardTemplates/content");
 const specRenderer_1 = require("./cardTemplates/specRenderer");
 const infoFooter_1 = require("./cardTemplates/infoFooter");
 const cardDisplay_1 = require("../utils/cardDisplay");
+const qrCollapse_1 = require("./cardTemplates/qrCollapse");
 const coverage_1 = require("./cardTemplates/coverage");
 const CARD_WIDTH = 1536;
 const CARD_HEIGHT = 2048;
@@ -332,6 +333,7 @@ async function renderFromTemplate(design, data) {
         design,
         texts,
         qr,
+        hideQr: !show.qr,
         photo: eventImage,
         // corporate designs show the host's logo where personal designs show a photo; fall back to the LGPSM logo
         logo: eventImage || dataUrlToBuffer(getLogoBase64()),
@@ -342,8 +344,9 @@ async function renderFromTemplate(design, data) {
 // A custom (AI-generated) design: the stored layout with this event's details and this guest's own QR code
 async function renderFromSpec(fullSpec, data) {
     const show = (0, cardDisplay_1.cardDisplayOf)(data.cardDisplay);
-    // a hidden QR takes its own area and its "scan" caption with it
-    const spec = show.qr ? fullSpec : { ...fullSpec, elements: fullSpec.elements.filter((e) => e.type !== 'qr' && !(e.type === 'text' && e.role === 'label' && /scan/i.test(String(e.label || '')))) };
+    // a hidden QR takes its frame and its "scan" caption with it, and the card closes up where it was (see qrCollapse.ts)
+    const collapse = show.qr ? null : (0, qrCollapse_1.qrCollapsePlan)(fullSpec);
+    const spec = collapse ? { ...fullSpec, elements: collapse.elements } : fullSpec;
     const allTexts = (0, content_1.buildSpecTexts)({
         title: data.event.title || '',
         description: data.event.description,

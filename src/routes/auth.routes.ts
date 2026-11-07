@@ -7,6 +7,7 @@ import {
   refreshRateLimiter,
   verifyEmailRateLimiter,
   resendVerificationRateLimiter,
+  changePendingEmailRateLimiter,
 } from '../middlewares/rateLimiter';
 import {
   registerSchema,
@@ -16,6 +17,7 @@ import {
   resetPasswordSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  changePendingEmailSchema,
   verifyResetOtpSchema,
 } from '../validators/auth.validator';
 import { Request, Response, NextFunction } from 'express';
@@ -66,6 +68,14 @@ router.post(
   verifyEmailRateLimiter,
   validate(verifyEmailSchema),
   authController.verifyEmail
+);
+// "Change email address" on the sign-up code page
+router.post(
+  '/change-pending-email',
+  authRateLimiter,
+  changePendingEmailRateLimiter,
+  validate(changePendingEmailSchema),
+  authController.changePendingEmail
 );
 router.post(
   '/resend-verification',

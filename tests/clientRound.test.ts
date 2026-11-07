@@ -278,3 +278,22 @@ describe('an admin adding a system user', () => {
     expect((await request(app).post('/api/users').set(auth(a)).send({ fullName: 'Own Staff', email: 'own@x.com', phone: '9876500012', password: 'password123', role: 'SYSTEM_USER' })).status).toBe(201);
   });
 });
+
+describe('item 14: an invitee and a system user can be the same person', () => {
+  it('a guest of an event can be added as a system user with the same email and phone, and the reverse', async () => {
+    const ev: any = await mkEvent(a);
+    // guest first, then the same person as staff
+    expect((await request(app).post(`/api/v1/events/${ev._id}/invitees`).set(auth(a)).send({ name: 'Chanchal Roy', email: 'chanchal@x.com', mobile: '9876500077' })).status).toBe(201);
+    const staff = await request(app).post('/api/users').set(auth(a)).send({ fullName: 'Chanchal Roy', email: 'chanchal@x.com', phone: '9876500077', password: 'password123', role: 'SYSTEM_USER' });
+    expect(staff.status).toBe(201);
+    // staff first, then the same person as a guest
+    expect((await request(app).post('/api/users').set(auth(a)).send({ fullName: 'Rina Das', email: 'rina@x.com', phone: '9876500078', password: 'password123', role: 'SYSTEM_USER' })).status).toBe(201);
+    expect((await request(app).post(`/api/v1/events/${ev._id}/invitees`).set(auth(a)).send({ name: 'Rina Das', email: 'rina@x.com', mobile: '9876500078' })).status).toBe(201);
+  });
+
+  it('an email that already signs in as an organizer cannot also become a system user (one sign-in per email), and the message says why', async () => {
+    const res = await request(app).post('/api/users').set(auth(a)).send({ fullName: 'B as staff', email: 'b@x.com', password: 'password123', role: 'SYSTEM_USER' });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/^This email is already used by an organizer account/);
+  });
+});

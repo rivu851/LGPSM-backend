@@ -9,6 +9,7 @@ import type { DesignSpec } from './cardTemplates/designSpec';
 import { renderDesignSpec } from './cardTemplates/specRenderer';
 import { appendInfoFooter, insertGuestBand, FOOTER_STYLES, FooterStyle } from './cardTemplates/infoFooter';
 import { CardDisplay, cardDisplayOf, withoutHidden } from '../utils/cardDisplay';
+import { qrCollapsePlan } from './cardTemplates/qrCollapse';
 import { coverageOfDesign, coverageOfSpec, Coverage, detailRows } from './cardTemplates/coverage';
 
 export interface CardSessionData {
@@ -394,6 +395,7 @@ async function renderFromTemplate(design: TemplateDesign, data: InvitationCardDa
     design,
     texts,
     qr,
+    hideQr: !show.qr,
     photo: eventImage,
     // corporate designs show the host's logo where personal designs show a photo; fall back to the LGPSM logo
     logo: eventImage || dataUrlToBuffer(getLogoBase64()),
@@ -405,8 +407,9 @@ async function renderFromTemplate(design: TemplateDesign, data: InvitationCardDa
 // A custom (AI-generated) design: the stored layout with this event's details and this guest's own QR code
 async function renderFromSpec(fullSpec: DesignSpec, data: InvitationCardData): Promise<Buffer> {
   const show = cardDisplayOf(data.cardDisplay);
-  // a hidden QR takes its own area and its "scan" caption with it
-  const spec: DesignSpec = show.qr ? fullSpec : { ...fullSpec, elements: fullSpec.elements.filter((e: any) => e.type !== 'qr' && !(e.type === 'text' && e.role === 'label' && /scan/i.test(String(e.label || '')))) } as DesignSpec;
+  // a hidden QR takes its frame and its "scan" caption with it, and the card closes up where it was (see qrCollapse.ts)
+  const collapse = show.qr ? null : qrCollapsePlan(fullSpec);
+  const spec: DesignSpec = collapse ? ({ ...fullSpec, elements: collapse.elements } as DesignSpec) : fullSpec;
   const allTexts = buildSpecTexts({
     title: data.event.title || '',
     description: data.event.description,

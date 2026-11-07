@@ -29,143 +29,13 @@ const concurrency_1 = require("../utils/concurrency");
 const context_1 = require("./cardTemplates/context");
 const cardInfo_1 = require("../utils/cardInfo");
 const resolveImageBase64_1 = require("../utils/resolveImageBase64");
-const html_1 = require("../utils/html");
+const emailImages_1 = require("./email/emailImages");
+const invitationEmail_1 = require("./email/invitationEmail");
 const inviteeClaim_1 = require("../utils/inviteeClaim");
 const admissionWindow_1 = require("../utils/admissionWindow");
 function buildFormalInvitationEmailHTML(params) {
-    const { cid, cardCid, isReminder } = params;
-    // Every value below was typed by someone (an organizer, a spreadsheet, a guest); none of it may reach the guest's mail client as markup
-    const eventTitle = (0, html_1.escapeHtml)(params.eventTitle);
-    const inviteeName = (0, html_1.escapeHtml)(params.inviteeName);
-    const eventDate = (0, html_1.escapeHtml)(params.eventDate);
-    const eventTime = (0, html_1.escapeHtml)(params.eventTime);
-    const venue = (0, html_1.escapeHtml)(params.venue);
-    const dietaryPreference = params.dietaryPreference ? (0, html_1.escapeHtml)(params.dietaryPreference) : undefined;
-    const invitationUrl = (0, html_1.escapeHtml)(params.invitationUrl);
-    const cardViewUrl = (0, html_1.escapeHtml)(`${params.invitationUrl}${params.invitationUrl.includes('?') ? '&' : '?'}view=card`);
-    return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <title>${eventTitle}</title>
-    </head>
-    <body style="margin: 0; padding: 0; background-color: #F4F5F8; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
-      <table border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed; background-color: #F4F5F8; padding: 30px 0;">
-        <tr>
-          <td align="center">
-            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 650px; background-color: #FFFFFF; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08); border: 1px solid #E5E7EB;">
-              <!-- Header Bar -->
-              <tr>
-                <td style="background: linear-gradient(135deg, #FF5B22 0%, #CF5317 100%); padding: 24px 30px; text-align: center;">
-                  <h1 style="color: #FFFFFF; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.3;">
-                    ${isReminder ? 'INVITATION REMINDER' : 'OFFICIAL INVITATION'}
-                  </h1>
-                  <p style="color: rgba(255, 255, 255, 0.9); margin: 6px 0 0 0; font-size: 13px; font-weight: 500;">
-                    ${eventTitle}
-                  </p>
-                </td>
-              </tr>
-
-              ${cardCid ? `
-              <!-- PERSONALIZED INVITATION CARD EMBED -->
-              <tr>
-                <td align="center" style="padding: 20px 20px 10px 20px; background-color: #FFFFFF;">
-                  <!-- tapping the card opens it full screen on the invitation page, where the QR scans reliably -->
-                  <a href="${cardViewUrl}" target="_blank" style="display: block; text-decoration: none;">
-                    <img src="cid:${cardCid}" alt="Personalized Invitation Card" style="width: 100%; max-width: 600px; height: auto; border-radius: 8px; display: block; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" />
-                  </a>
-                  <p style="margin: 10px 0 4px 0; font-size: 12px; line-height: 1.5; color: #6B7280; text-align: center;">
-                    Tap the card to open it full screen for scanning at the entrance.
-                  </p>
-                </td>
-              </tr>
-              ` : ''}
-
-              <!-- Greeting & Body -->
-              <tr>
-                <td style="padding: 24px 30px 10px 30px; color: #1F2937;">
-                  <p style="font-size: 15px; margin: 0 0 12px 0; color: #111827;">Dear <strong>${inviteeName}</strong>,</p>
-                  <p style="font-size: 13px; line-height: 1.6; color: #4B5563; margin: 0;">
-                    ${isReminder
-        ? `This is a friendly reminder of your upcoming invitation to <strong>${eventTitle}</strong>. We look forward to welcoming you.`
-        : `You are cordially invited to attend <strong>${eventTitle}</strong>. Below are your official event details and entry pass.`}
-                  </p>
-                </td>
-              </tr>
-
-              <!-- Event Details Box -->
-              <tr>
-                <td style="padding: 15px 30px;">
-                  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #FFF5F2; border: 1px solid #FFDCD1; border-radius: 10px; padding: 20px;">
-                    <tr>
-                      <td style="padding-bottom: 10px; font-size: 13px; color: #374151;">
-                        <strong style="color: #FF5B22;">Event:</strong> ${eventTitle}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="padding-bottom: 10px; font-size: 13px; color: #374151;">
-                        <strong style="color: #FF5B22;">Date:</strong> ${eventDate}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="padding-bottom: 10px; font-size: 13px; color: #374151;">
-                        <strong style="color: #FF5B22;">Time:</strong> ${eventTime}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="padding-bottom: ${dietaryPreference ? '10px' : '0px'}; font-size: 13px; color: #374151;">
-                        <strong style="color: #FF5B22;">Venue:</strong> ${venue}
-                      </td>
-                    </tr>
-                    ${dietaryPreference ? `
-                    <tr>
-                      <td style="font-size: 13px; color: #374151;">
-                        <strong style="color: #FF5B22;">Dietary Preference:</strong> ${dietaryPreference}
-                      </td>
-                    </tr>
-                    ` : ''}
-                  </table>
-                </td>
-              </tr>
-
-              <!-- Entry Pass QR Code Section -->
-              <tr>
-                <td align="center" style="padding: 20px 30px 30px 30px;">
-                  <div style="background-color: #FFFFFF; border: 2px dashed #E5E7EB; border-radius: 12px; padding: 25px; display: inline-block; max-width: 260px;">
-                    <p style="font-size: 12px; font-weight: 700; color: #111827; margin: 0 0 12px 0; text-transform: uppercase;">
-                      Official Entry QR Pass
-                    </p>
-                    <img src="cid:${cid}" alt="Entry Pass QR Code" width="190" height="190" style="display: block; margin: 0 auto; border-radius: 6px; border: 1px solid #F3F4F6;" />
-                    <p style="font-size: 11px; color: #6B7280; margin: 12px 0 0 0; line-height: 1.4;">
-                      Please present this QR code at the check-in desk for entry validation.
-                    </p>
-                  </div>
-
-                  <!-- Online Pass Button -->
-                  <div style="margin-top: 25px;">
-                    <a href="${invitationUrl}" target="_blank" style="background-color: #FF5B22; color: #FFFFFF; text-decoration: none; padding: 12px 28px; font-size: 13px; font-weight: 700; border-radius: 6px; display: inline-block;">
-                      Access Digital Pass
-                    </a>
-                  </div>
-                </td>
-              </tr>
-
-              <!-- Footer Section -->
-              <tr>
-                <td style="background-color: #F9FAFB; padding: 20px 30px; text-align: center; border-top: 1px solid #E5E7EB; font-size: 11px; color: #9CA3AF;">
-                  ${params.organizerLogoCid ? `<img src="cid:${params.organizerLogoCid}" alt="${params.organizerName ? (0, html_1.escapeHtml)(params.organizerName) : 'Organizer'} logo" style="display: block; margin: 0 auto 8px auto; max-height: 56px; max-width: 180px; height: auto;" />` : ''}
-                  <p style="margin: 0 0 4px 0; font-size: 12px; color: #374151;">${params.organizerName ? `Organized by <strong>${(0, html_1.escapeHtml)(params.organizerName)}</strong>` : 'Organized via <strong>LGPSM Platform</strong>'}</p>
-                  <p style="margin: 0;">If you have any questions, please contact the event organizer.</p>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-      </table>
-    </body>
-    </html>
-  `;
+    // The letter itself lives in services/email/invitationEmail.ts (one template for invitations and reminders)
+    return (0, invitationEmail_1.buildInvitationEmail)({ ...params, qrCid: params.cid });
 }
 // Guests in one batch are prepared a few at a time: each one is mostly waiting on image rendering and the mail /
 // WhatsApp providers, so a small amount of overlap cuts a big batch's time without flooding either provider.
@@ -417,16 +287,26 @@ exports.invitationService = {
                     const htmlContent = buildFormalInvitationEmailHTML({
                         eventTitle: event.title,
                         inviteeName: invitee.name,
+                        inviteeEmail: invitee.email,
                         eventDate,
                         eventTime,
                         venue,
                         dietaryPreference: invitee.dietaryPreference,
+                        asksDietary: !!event.dietaryPreference?.enabled && Array.isArray(event.dietaryPreference?.options) && event.dietaryPreference.options.length > 0,
                         invitationUrl,
                         cid,
                         cardCid,
                         isReminder: false,
                         organizerLogoCid: brand.logo ? `organizer-logo-${invitee._id}` : undefined,
                         organizerName: brand.name,
+                        startIso: event.schedule?.start,
+                        endIso: event.schedule?.end,
+                        locationSub,
+                        isVirtual: event.format === 'VIRTUAL',
+                        description: event.description,
+                        contactNumber: event.contactNumber,
+                        rsvpBy: event.rsvp?.enabled ? event.rsvp?.acceptanceLastDate : undefined,
+                        showQr: event.cardDisplay?.qr !== false,
                     });
                     const attachments = [
                         {
@@ -435,15 +315,19 @@ exports.invitationService = {
                             cid: cardCid,
                             contentType: 'image/png'
                         },
-                        {
-                            filename: 'invitation-qr.png',
-                            content: qrBuffer,
-                            cid,
-                            contentType: 'image/png'
-                        },
-                        ...(brand.logo ? [{ filename: 'organizer-logo', content: brand.logo.content, cid: `organizer-logo-${invitee._id}`, contentType: brand.logo.contentType }] : [])
+                        // the QR goes in only when the email shows it on its own, i.e. there is no card image to carry it (an unused inline image
+                        // would appear as a loose attachment in Gmail)
+                        ...(event.cardDisplay?.qr !== false && !cardBuffer?.length ? [{
+                                filename: 'invitation-qr.png',
+                                content: qrBuffer,
+                                cid,
+                                contentType: 'image/png'
+                            }] : []),
+                        ...(brand.logo ? [{ filename: 'organizer-logo', content: brand.logo.content, cid: `organizer-logo-${invitee._id}`, contentType: brand.logo.contentType }] : []),
+                        // the details icons, and the LGPSM logo while the organizer has none of their own
+                        ...(await (0, emailImages_1.inlineImagesFor)(htmlContent))
                     ];
-                    await (0, email_provider_1.sendEmail)(invitee.email, `Invitation: ${event.title}`, htmlContent, attachments);
+                    await (0, email_provider_1.sendEmail)(invitee.email, (0, invitationEmail_1.invitationEmailSubject)(event.title), htmlContent, attachments);
                     emailSuccess = true;
                     invitation.emailStatus = Invitation_1.InvitationDeliveryStatus.SENT;
                     invitation.emailFailureReason = undefined;
@@ -701,16 +585,26 @@ exports.invitationService = {
                         const htmlContent = buildFormalInvitationEmailHTML({
                             eventTitle: event.title,
                             inviteeName: invitee.name,
+                            inviteeEmail: invitee.email,
                             eventDate,
                             eventTime,
                             venue,
                             dietaryPreference: invitee.dietaryPreference,
+                            asksDietary: !!event.dietaryPreference?.enabled && Array.isArray(event.dietaryPreference?.options) && event.dietaryPreference.options.length > 0,
                             invitationUrl,
                             cid,
                             cardCid,
                             isReminder: true,
                             organizerLogoCid: brand.logo ? `organizer-logo-${invitee._id}` : undefined,
                             organizerName: brand.name,
+                            startIso: event.schedule?.start,
+                            endIso: event.schedule?.end,
+                            locationSub,
+                            isVirtual: event.format === 'VIRTUAL',
+                            description: event.description,
+                            contactNumber: event.contactNumber,
+                            rsvpBy: event.rsvp?.enabled ? event.rsvp?.acceptanceLastDate : undefined,
+                            showQr: event.cardDisplay?.qr !== false,
                         });
                         const attachments = [
                             {
@@ -719,15 +613,19 @@ exports.invitationService = {
                                 cid: cardCid,
                                 contentType: 'image/png'
                             },
-                            {
-                                filename: 'invitation-qr.png',
-                                content: qrBuffer,
-                                cid,
-                                contentType: 'image/png'
-                            },
-                            ...(brand.logo ? [{ filename: 'organizer-logo', content: brand.logo.content, cid: `organizer-logo-${invitee._id}`, contentType: brand.logo.contentType }] : [])
+                            // the QR goes in only when the email shows it on its own, i.e. there is no card image to carry it (an unused inline image
+                            // would appear as a loose attachment in Gmail)
+                            ...(event.cardDisplay?.qr !== false && !cardBuffer?.length ? [{
+                                    filename: 'invitation-qr.png',
+                                    content: qrBuffer,
+                                    cid,
+                                    contentType: 'image/png'
+                                }] : []),
+                            ...(brand.logo ? [{ filename: 'organizer-logo', content: brand.logo.content, cid: `organizer-logo-${invitee._id}`, contentType: brand.logo.contentType }] : []),
+                            // the details icons, and the LGPSM logo while the organizer has none of their own
+                            ...(await (0, emailImages_1.inlineImagesFor)(htmlContent))
                         ];
-                        await (0, email_provider_1.sendEmail)(invitee.email, `Reminder: ${event.title}`, htmlContent, attachments);
+                        await (0, email_provider_1.sendEmail)(invitee.email, (0, invitationEmail_1.invitationEmailSubject)(event.title, true), htmlContent, attachments);
                         emailSuccess = true;
                         resendInvitation.emailStatus = Invitation_1.InvitationDeliveryStatus.SENT;
                         resendInvitation.emailFailureReason = undefined;

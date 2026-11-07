@@ -110,7 +110,7 @@ const nameMap = async (ids) => {
     const users = valid.length ? await User_1.User.find({ _id: { $in: valid } }).select('fullName role').lean() : [];
     return new Map(users.map((u) => [String(u._id), { id: String(u._id), name: u.fullName, role: u.role }]));
 };
-const REASON_TEXT = { SUPERSEDED_BY_UPLOAD: 'Replaced by a newer upload' };
+const REASON_TEXT = { SUPERSEDED_BY_UPLOAD: 'Replaced by a newer upload', REMOVED_BY_ORGANIZER: 'Removed from the guest list' };
 exports.inviteeSetService = {
     async list(actor, eventId) {
         await manageableEvent(actor, eventId);

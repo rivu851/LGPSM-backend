@@ -74,7 +74,7 @@ describe('Auth & RBAC regression', () => {
     const editStaff = await request(app)
       .patch(`/api/users/${staff._id}`)
       .set('Authorization', `Bearer ${organizerToken}`)
-      .send({ phone: '+919999999999' });
+      .send({ phone: '919999999999' });
     expect(editStaff.status).toBe(200);
 
     const list = await request(app)
@@ -87,7 +87,7 @@ describe('Auth & RBAC regression', () => {
     const editOther = await request(app)
       .patch(`/api/users/${otherStaff._id}`)
       .set('Authorization', `Bearer ${organizerToken}`)
-      .send({ phone: '+919999999990' });
+      .send({ phone: '919999999990' });
     expect(editOther.status).toBe(404);
   });
 

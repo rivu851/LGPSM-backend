@@ -252,9 +252,9 @@ export const inviteeController = {
       const organizerId = (req as any).user.userId;
       const inviteeId = req.params.inviteeId as string;
       
-      const invitee = await inviteeService.deleteInvitee(inviteeId, organizerId);
-      
-      res.status(200).json({ success: true, data: { inviteeId: invitee._id, deleted: true } });
+      const invitee = await inviteeService.deleteInvitee(inviteeId, organizerId, (req as any).user.role);
+      // a guest with history is set aside (restorable, pass withdrawn) rather than erased
+      res.status(200).json({ success: true, data: { inviteeId: invitee._id, deleted: true, setAside: !!invitee.removedWithHistory } });
     } catch (error: any) {
       if (error.message === 'INVITEE_NOT_FOUND') {
         res.status(404).json({ error: 'Not Found', message: 'Invitee not found or inaccessible', details: [] });

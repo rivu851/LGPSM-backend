@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyResetOtpSchema = exports.resendVerificationSchema = exports.verifyEmailSchema = exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.refreshTokenSchema = exports.loginSchema = exports.registerSchema = void 0;
+exports.verifyResetOtpSchema = exports.changePendingEmailSchema = exports.resendVerificationSchema = exports.verifyEmailSchema = exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.refreshTokenSchema = exports.loginSchema = exports.registerSchema = void 0;
 const zod_1 = require("zod");
 const phone_validator_1 = require("./phone.validator");
 exports.registerSchema = zod_1.z.object({
@@ -43,6 +43,12 @@ exports.verifyEmailSchema = zod_1.z.object({
 /** Validates a resend request. */
 exports.resendVerificationSchema = zod_1.z.object({
     email: zod_1.z.string().email('Invalid email format'),
+});
+/** "Change email address" on the sign-up code page: the address the code went to, the corrected one, and the password chosen in step 1 */
+exports.changePendingEmailSchema = zod_1.z.object({
+    email: zod_1.z.string().email('Invalid email format'),
+    newEmail: zod_1.z.string().trim().email('Enter a valid email address'),
+    password: zod_1.z.string().min(1, 'Enter the password you chose'),
 });
 /** Validates the code submitted in the mobile "Forgot password" flow. */
 exports.verifyResetOtpSchema = zod_1.z.object({

@@ -202,6 +202,48 @@ exports.authService = {
         return { verified: true };
     },
     /**
+     * "Change email address" on the sign-up code page: the person typed their address wrongly in step 1, so the code went nowhere.
+     * The pending (not yet verified) account moves to the corrected address and a fresh code is sent there, so step 1 does not have
+     * to be filled in again, and the first address is not left behind holding the phone number and the name.
+     *
+     * The password chosen in step 1 proves the request comes from the person who started the sign-up; every refusal for "no such
+     * pending sign-up" and "wrong password" is the same answer, so this cannot be used to find out who has an account. The new code
+     * is sent before anything is changed, so a mail failure leaves the pending sign-up exactly as it was.
+     */
+    async changePendingEmail(data) {
+        const current = data.email.trim().toLowerCase();
+        const next = data.newEmail.trim().toLowerCase();
+        const refused = { statusCode: 401, message: 'We could not change the email address. Check the details and try again.' };
+        const user = await user_repository_1.userRepository.findByEmail(current);
+        if (!user || user.role !== User_1.Role.ORGANIZER || user.isEmailVerified !== false || !(await (0, password_1.verifyPassword)(data.password, user.passwordHash ?? '')))
+            throw refused;
+        if (next === current)
+            throw { statusCode: 400, message: 'Enter a different email address.' };
+        if (await user_repository_1.userRepository.findByEmail(next)) {
+            throw { statusCode: 409, message: 'This email address is already registered. Sign in, or use another address.' };
+        }
+        const otp = generateOtpPlaintext();
+        const codeHash = await hashOtp(otp);
+        try {
+            await sendVerificationEmail(next, user.fullName, otp);
+        }
+        catch (err) {
+            console.error('[auth.service] Failed to send verification email to the changed address:', err instanceof Error ? err.message : 'unknown error');
+            throw { statusCode: 503, exposeMessage: true, message: 'Unable to send verification email. Please try again later.' };
+        }
+        try {
+            await user_repository_1.userRepository.updateById(String(user._id), { email: next });
+        }
+        catch (err) {
+            if (err?.code === 11000)
+                throw { statusCode: 409, message: 'This email address is already registered. Sign in, or use another address.' };
+            throw err;
+        }
+        await emailVerification_repository_1.emailVerificationRepository.deleteByEmail(current).catch(() => { });
+        await emailVerification_repository_1.emailVerificationRepository.createOrReplace(next, codeHash);
+        return { email: next };
+    },
+    /**
      * Resend a verification OTP.
      *
      * Rules:

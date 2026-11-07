@@ -268,6 +268,81 @@ async function qrImage(qr, size, scale) {
     return (0, sharp_1.default)(source).resize(px, px, { fit: 'fill', kernel: 'nearest' }).png().toBuffer();
 }
 const silhouette = (cx, cy, r, ink) => `<g fill="${ink}" fill-opacity="0.35"><circle cx="${round(cx)}" cy="${round(cy - r * 0.18)}" r="${round(r * 0.28)}"/><path d="M${round(cx - r * 0.55)} ${round(cy + r * 0.62)} C${round(cx - r * 0.55)} ${round(cy + r * 0.2)} ${round(cx - r * 0.25)} ${round(cy + r * 0.12)} ${round(cx)} ${round(cy + r * 0.12)} C${round(cx + r * 0.25)} ${round(cy + r * 0.12)} ${round(cx + r * 0.55)} ${round(cy + r * 0.2)} ${round(cx + r * 0.55)} ${round(cy + r * 0.62)}Z"/></g>`;
+// The horizontal band (Figma px) that holds each design's QR frame and its "Scan the QR code" caption, read from the artwork:
+// `from`/`to` sit in clear background just outside the frame, so nothing else the design prints is inside the band. `blend`
+// is how many px above the cut are cross-faded into the rows below it, so textured backgrounds join without a hard seam.
+// `smooth`: the artwork is textured (watercolour, paper), so the filler is a soft wash; flat-colour artwork is carried straight on (a blur would smear its edges).
+// `top` is the share of the freed room that goes above the content (the rest opens a gap between what was above and below the QR).
+const QR_BANDS = {
+    CORPORATE_V1: { from: 303, to: 520, blend: 6, top: 0.65, smooth: true }, // stamp frame 307-513; the date pill starts at 526
+    CORPORATE_V2: { from: 192, to: 452, blend: 8, top: 0.65, smooth: false }, // frame and pointer 196-417, caption to ~447; the guest name starts ~469
+    WEDDING: { from: 386, to: 595, blend: 8, top: 0.65, smooth: false }, // ornament 392-558 (the lines above it belong to the date row); the pin is at ~608
+    RICE_CEREMONY: { from: 334, to: 503, blend: 8, top: 0.65, smooth: false }, // frame 341-475, caption to ~498; the time line starts ~520
+    BIRTHDAY: { from: 328, to: 520, blend: 8, top: 0.65, smooth: true }, // frame 333-488, caption to ~513; the month starts ~532
+};
+/** Removes rows [from, to) of an RGBA image, cross-fading the last `blend` rows above the cut into the rows that follow it. */
+async function cutBand(png, band, scale) {
+    const { data, info } = await (0, sharp_1.default)(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const { width, height, channels } = info;
+    const from = Math.round(band.from * scale);
+    const to = Math.min(height, Math.round(band.to * scale));
+    const blend = Math.min(Math.round(band.blend * scale), from, to - from);
+    if (from <= 0 || to <= from)
+        return png;
+    const row = width * channels;
+    const out = Buffer.alloc((height - (to - from)) * row);
+    data.copy(out, 0, 0, from * row); // everything above the band
+    data.copy(out, from * row, to * row, height * row); // everything below it, moved up
+    for (let i = 0; i < blend; i++) {
+        const t = (i + 1) / (blend + 1); // 0 -> keep the row above, 1 -> the row below the band
+        const o = (from - blend + i) * row;
+        const below = (to - blend + i) * row;
+        for (let k = 0; k < row; k++)
+            out[o + k] = Math.round(data[o + k] * (1 - t) + data[below + k] * t);
+    }
+    return (0, sharp_1.default)(out, { raw: { width, height: height - (to - from), channels } }).png({ compressionLevel: PNG_LEVEL }).toBuffer();
+}
+/**
+ * Opens `rows` rows of plain background at row `at`, carrying the colours just above that row down through the gap (smoothed
+ * sideways, like addMargins), so the content above and below move apart without a visible seam.
+ */
+async function openGap(png, at, rows, smooth) {
+    if (rows <= 0)
+        return png;
+    const meta = await (0, sharp_1.default)(png).metadata();
+    const width = meta.width || 0, height = meta.height || 0;
+    const rowsAbove = Math.min(4, at);
+    const edge = await (0, sharp_1.default)(png).extract({ left: 0, top: at - rowsAbove, width, height: rowsAbove }).png().toBuffer();
+    const one = (0, sharp_1.default)(edge).resize(width, 1, { fit: 'fill' });
+    const wash = await (smooth ? one.blur(Math.max(4, width / 40)) : one).resize(width, rows, { fit: 'fill', kernel: 'nearest' }).png().toBuffer();
+    const upper = await (0, sharp_1.default)(png).extract({ left: 0, top: 0, width, height: at }).png().toBuffer();
+    const lower = await (0, sharp_1.default)(png).extract({ left: 0, top: at, width, height: height - at }).png().toBuffer();
+    const base = await (0, sharp_1.default)({ create: { width, height: height + rows, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+    return (0, sharp_1.default)(base).composite([{ input: upper, left: 0, top: 0 }, { input: wash, left: 0, top: at }, { input: lower, left: 0, top: at + rows }]).png({ compressionLevel: PNG_LEVEL }).toBuffer();
+}
+/**
+ * Adds `top` / `bottom` rows to a card as margin. The margin is the card's own edge colour carried outwards, smoothed sideways, so
+ * plain, textured and watercolour backgrounds all continue without streaks. (Mirroring the edge would copy real content.)
+ */
+async function addMargins(png, top, bottom, smooth) {
+    const { width, height } = await (0, sharp_1.default)(png).metadata().then((m) => ({ width: m.width || 0, height: m.height || 0 }));
+    const strip = async (fromTop, rows) => {
+        if (rows <= 0)
+            return null;
+        const edge = await (0, sharp_1.default)(png).extract({ left: 0, top: fromTop ? 0 : height - 4, width, height: 4 }).png().toBuffer();
+        // a soft wash of the edge colours: average a few rows, blur across, then hold that colour down the margin
+        const one = (0, sharp_1.default)(edge).resize(width, 1, { fit: 'fill' });
+        return (smooth ? one.blur(Math.max(4, width / 40)) : one).resize(width, rows, { fit: 'fill', kernel: 'nearest' }).png().toBuffer();
+    };
+    const [t, b] = await Promise.all([strip(true, top), strip(false, bottom)]);
+    const layers = [{ input: png, left: 0, top }];
+    if (t)
+        layers.unshift({ input: t, left: 0, top: 0 });
+    if (b)
+        layers.unshift({ input: b, left: 0, top: top + height });
+    const base = await (0, sharp_1.default)({ create: { width, height: height + top + bottom, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+    return (0, sharp_1.default)(base).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
+}
 /** Renders a card and returns it as PNG bytes. */
 async function renderTemplateCard(input) {
     const layout = layoutOverrides_1.LAYOUTS[input.design];
@@ -321,7 +396,7 @@ async function renderTemplateCard(input) {
         }
     }
     // QR code
-    if (layout.qr && input.qr) {
+    if (layout.qr && input.qr && !input.hideQr) {
         layers.push({ input: await qrImage(input.qr, layout.qr.size, scale), left: Math.round(layout.qr.x * scale), top: Math.round(layout.qr.y * scale) });
     }
     // text
@@ -350,7 +425,21 @@ async function renderTemplateCard(input) {
         });
     }
     const background = await loadBackground(layout, scale);
-    return (0, sharp_1.default)(background).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
+    const card = await (0, sharp_1.default)(background).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
+    const band = input.hideQr ? QR_BANDS[input.design] : undefined;
+    if (!band)
+        return card;
+    // close the band up, then give the freed height back as margin (see addMargins)
+    const joined = await cutBand(card, band, scale);
+    const joinedHeight = (await (0, sharp_1.default)(joined).metadata()).height || 0;
+    const freed = height - joinedHeight;
+    if (freed <= 0)
+        return joined;
+    // the room is given back above the content and between the two groups, never below: the details block at the foot of the card
+    // follows the artwork directly, so margin there would show as an empty band above it
+    const top = Math.round(freed * band.top);
+    const gapped = await openGap(joined, Math.round(band.from * scale), freed - top, band.smooth);
+    return addMargins(gapped, top, 0, band.smooth);
 }
 /** The designers' sample text for each slot, used for template previews. */
 function sampleTexts(design) {

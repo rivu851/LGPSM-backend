@@ -88,6 +88,17 @@ export const resendVerificationRateLimiter = rateLimit({
   skip: skipInTest,
 });
 
+/** Changing the address of a pending sign-up: it sends mail and takes a password, so it is limited like a resend */
+export const changePendingEmailRateLimiter = rateLimit({
+  handler: logged('changePendingEmailRateLimiter'),
+  windowMs: 10 * 60 * 1000,
+  max: 8,
+  message: { success: false, message: 'Too many attempts. Please try again in 10 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipInTest,
+});
+
 /**
  * Public contact form, two layers (in-memory stores: per server instance, which matches the single
  * Render instance this API runs on). Both are skipped under test unless a test opts in with
