@@ -9,6 +9,13 @@ export const registerSchema = z.object({
   role: z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
   // How the organizer will send invitations (asked at signup); the send screen starts with this choice
   invitationChannel: z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
+  // Individual, or an organization (then its name is required); the name is shown on the organizer's cards, invitations and lists
+  organizationType: z.enum(['INDIVIDUAL', 'ORGANIZATION']).optional(),
+  organizationName: z.string().trim().max(150, 'Organization name is too long').optional(),
+}).superRefine((d, ctx) => {
+  if (d.organizationType === 'ORGANIZATION' && !(d.organizationName && d.organizationName.trim().length >= 2)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['organizationName'], message: 'Enter the organization name' });
+  }
 });
 
 // Mobile number is the primary identifier; email remains a valid alternative.

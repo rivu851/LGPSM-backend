@@ -98,6 +98,8 @@ export const inviteeService = {
     sessionAccessId?: string;
     /** From the actual dispatch records: SENT = an invitation was delivered to them, NOT_SENT = none was */
     invitation?: 'SENT' | 'NOT_SENT';
+    /** Only the guests of one uploaded list (an ObjectId), or 'MANUAL' for the guests added by hand (they belong to no list) */
+    inviteeSet?: string;
   } = {}, role?: string) {
     const event = await findManageableEvent(eventId, organizerId, role);
     if (!event) {
@@ -111,6 +113,8 @@ export const inviteeService = {
     const filter: any = {};
     if (options.rsvpStatus) filter.rsvpStatus = options.rsvpStatus;
     if (options.invitationStatus) filter.invitationStatus = options.invitationStatus;
+    if (options.inviteeSet === 'MANUAL') filter.inviteeSetId = null;
+    else if (options.inviteeSet) filter.inviteeSetId = new mongoose.Types.ObjectId(options.inviteeSet);
     const andConditions: any[] = [];
     if (options.sessionAccessId) {
       andConditions.push({

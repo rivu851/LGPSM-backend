@@ -41,6 +41,8 @@ export interface InvitationEmailInput {
   /** false when the organizer chose cards without a QR ("Select data to show on card"): the email then has no QR either */
   showQr?: boolean;
   isReminder?: boolean;
+  /** the sessions this guest may attend (name and the times as the card prints them): listed in the details panel */
+  sessions?: { name: string; startTime?: string; endTime?: string }[];
 }
 
 const FONT = "'Google Sans', Roboto, 'Helvetica Neue', Arial, sans-serif";
@@ -123,6 +125,10 @@ export function buildInvitationEmail(input: InvitationEmailInput): string {
     when ? row('event', e(when.date), e(when.time.charAt(0).toUpperCase() + when.time.slice(1))) : '',
     input.isVirtual ? row('place', 'Online', 'The joining link is on your invitation page')
       : venueParts?.length ? row('place', venueParts[0], venueParts.slice(1).join(', ') || 'Venue') : '',
+    // the guest's own sessions (when the event has any for them), so the email says which parts of the event they are invited to
+    input.sessions && input.sessions.length > 0
+      ? row('event', input.sessions.map((x) => e(x.name)).join(', '), input.sessions.map((x) => `${e(x.name)}${x.startTime ? ` · ${e(x.startTime)}${x.endTime ? ` to ${e(x.endTime)}` : ''}` : ''}`).join('<br>'))
+      : '',
     host ? row('person', host, 'Hosted by') : '',
     // a saved choice is shown as the guest's own; otherwise (the usual case at first invitation) the email says where to choose it
     dietary ? row('restaurant', dietary, 'Your food preference')

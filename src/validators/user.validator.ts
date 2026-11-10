@@ -29,10 +29,15 @@ export const createUserSchema = z.object({
   organizerId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
   profile: z.object({
     organizationName: z.string().max(150).optional(),
+    organizationType: z.enum(['INDIVIDUAL', 'ORGANIZATION']).optional(),
     logoKey: z.string().max(200).optional(),
     invitationChannel: z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional()
   }).strict().optional()
-}).strict();
+}).strict().superRefine((d, ctx) => {
+  if (d.role === Role.ORGANIZER && d.profile?.organizationType === 'ORGANIZATION' && !(d.profile.organizationName && d.profile.organizationName.trim().length >= 2)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['profile', 'organizationName'], message: 'Enter the organization name' });
+  }
+});
 
 export const updateUserSchema = z.object({
   fullName: z.string().trim().min(2, 'Full name must be at least 2 characters').max(120, 'Full name is too long').optional(),
@@ -42,10 +47,15 @@ export const updateUserSchema = z.object({
   isActive: z.boolean().optional(),
   profile: z.object({
     organizationName: z.string().max(150).optional(),
+    organizationType: z.enum(['INDIVIDUAL', 'ORGANIZATION']).optional(),
     logoKey: z.string().max(200).optional(),
     invitationChannel: z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional()
   }).strict().optional()
-}).strict();
+}).strict().superRefine((d, ctx) => {
+  if (d.profile?.organizationType === 'ORGANIZATION' && d.profile.organizationName !== undefined && d.profile.organizationName.trim().length < 2) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['profile', 'organizationName'], message: 'Enter the organization name' });
+  }
+});
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),

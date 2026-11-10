@@ -141,6 +141,8 @@ export const authService = {
     phone?: string;
     role?: string;
     invitationChannel?: 'EMAIL' | 'WHATSAPP' | 'BOTH';
+    organizationType?: 'INDIVIDUAL' | 'ORGANIZATION';
+    organizationName?: string;
   }) {
     // Self-registration only creates organizers.
     if (data.role && data.role !== Role.ORGANIZER) {
@@ -181,7 +183,12 @@ export const authService = {
       role: Role.ORGANIZER,
       isActive: true,
       isEmailVerified: false,
-      profile: { invitationChannel: data.invitationChannel || 'BOTH' },
+      profile: {
+        invitationChannel: data.invitationChannel || 'BOTH',
+        organizationType: data.organizationType || 'INDIVIDUAL',
+        // only an organization has a name (an individual's own name is used wherever a name is shown)
+        ...(data.organizationType === 'ORGANIZATION' && data.organizationName?.trim() ? { organizationName: data.organizationName.trim() } : {}),
+      },
     });
 
     // Generate OTP, hash it, store the hash

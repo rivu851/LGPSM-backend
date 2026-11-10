@@ -150,6 +150,7 @@ export const inviteeController = {
         sessionId: queryObjectId(req.query.sessionId, 'sessionId'),
         checkInStatus,
         sessionAccessId: queryObjectId(req.query.sessionAccessId, 'sessionAccessId'),
+        inviteeSet: queryString(req.query.inviteeSet) === 'MANUAL' ? 'MANUAL' : queryObjectId(req.query.inviteeSet, 'inviteeSet'),
         invitation: req.query.invitation === 'SENT' || req.query.invitation === 'NOT_SENT' ? (req.query.invitation as 'SENT' | 'NOT_SENT') : undefined,
       };
 

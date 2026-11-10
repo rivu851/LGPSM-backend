@@ -347,7 +347,10 @@ export const userService = {
     }
     // Only the organizer details an admin manages; the rest of the profile (avatar, etc.) is left as is
     if (data.profile && actor.role === Role.ADMIN) {
+      if ((data.profile as any).organizationType !== undefined) updatePayload['profile.organizationType'] = (data.profile as any).organizationType;
       if (data.profile.organizationName !== undefined) updatePayload['profile.organizationName'] = data.profile.organizationName;
+      // an individual has no organization name: switching to Individual clears it
+      if ((data.profile as any).organizationType === 'INDIVIDUAL') updatePayload['profile.organizationName'] = '';
       if ((data.profile as any).invitationChannel !== undefined) updatePayload['profile.invitationChannel'] = (data.profile as any).invitationChannel;
       if (data.profile.logoKey !== undefined) updatePayload['profile.logoKey'] = data.profile.logoKey;
     }

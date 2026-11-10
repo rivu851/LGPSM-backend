@@ -22,7 +22,7 @@ export interface TemplatePreviewInput {
   companyName?: string;
   cardInfo?: CardInfo;
   contactNumber?: string;
-  cardDisplay?: { title?: boolean; qr?: boolean; dateTime?: boolean; location?: boolean };
+  cardDisplay?: { title?: boolean; qr?: boolean; dateTime?: boolean; location?: boolean; inviteeName?: boolean };
 }
 
 /**
@@ -47,7 +47,7 @@ export async function renderTemplatePreview(templateId: string | null, input: Te
   const invitationUrl = previewSampleUrl();
   return invitationCardService.generateInvitationCardPNG({
     // The Add/Edit Event form's "Additional Info" choice shows its sample lines until there are real guests
-    invitee: input.cardInfo ? cardGuestLines(null, input.cardInfo) : { name: input.guestName?.trim() || 'Guest Name', companyName: input.companyName?.trim() || '' },
+    invitee: input.cardInfo ? cardGuestLines(null, input.cardInfo, input.cardDisplay) : { name: input.guestName?.trim() || 'Guest Name', companyName: input.companyName?.trim() || '' },
     event: {
       title: input.title?.trim() || 'Your event title',
       venue: input.venue,

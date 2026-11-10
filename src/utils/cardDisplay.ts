@@ -5,9 +5,11 @@ export interface CardDisplay {
   qr: boolean;
   dateTime: boolean;
   location: boolean;
+  /** print the guest's name (a checkbox of its own; "Additional Information" is for the other details) */
+  inviteeName: boolean;
 }
 
-export const CARD_DISPLAY_DEFAULTS: CardDisplay = { title: true, qr: true, dateTime: true, location: true };
+export const CARD_DISPLAY_DEFAULTS: CardDisplay = { title: true, qr: true, dateTime: true, location: true, inviteeName: true };
 
 export function cardDisplayOf(raw?: Partial<CardDisplay> | null): CardDisplay {
   const r = raw || {};
@@ -16,6 +18,7 @@ export function cardDisplayOf(raw?: Partial<CardDisplay> | null): CardDisplay {
     qr: r.qr !== false,
     dateTime: r.dateTime !== false,
     location: r.location !== false,
+    inviteeName: r.inviteeName !== false,
   };
 }
 

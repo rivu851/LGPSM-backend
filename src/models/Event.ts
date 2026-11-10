@@ -55,7 +55,7 @@ export interface IEvent extends Document {
   /** Which guest details the card prints on its two guest lines ("Additional Info"); unset = name, then company */
   cardInfo?: CardInfo;
   /** Which event details the cards print (see utils/cardDisplay.ts); absent = all */
-  cardDisplay?: { title?: boolean; qr?: boolean; dateTime?: boolean; location?: boolean };
+  cardDisplay?: { title?: boolean; qr?: boolean; dateTime?: boolean; location?: boolean; inviteeName?: boolean };
   media: {
     logoKey?: string;
     bannerKey?: string;
@@ -126,7 +126,9 @@ const EventSchema: Schema = new Schema(
       title: { type: Boolean },
       qr: { type: Boolean },
       dateTime: { type: Boolean },
-      location: { type: Boolean }
+      location: { type: Boolean },
+      // print the guest's name on the card; absent on events made before this option existed (see utils/cardInfo.ts)
+      inviteeName: { type: Boolean }
     },
     cardInfo: {
       primary: { type: String, enum: [...CARD_INFO_FIELDS, null] },

@@ -63,7 +63,7 @@ export async function renderTemplateForEvent(input: RenderForEventInput): Promis
     locationSub: content.locationSub,
     isVirtual: (event as any).format === 'VIRTUAL',
     organizerName: cardHostName(organizer as any),
-    invitee: parsed.spec.kind === 'INVITATION' ? cardGuestLines(null, (event as any).cardInfo) : { name: undefined }
+    invitee: parsed.spec.kind === 'INVITATION' ? cardGuestLines(null, (event as any).cardInfo, (event as any).cardDisplay) : { name: undefined }
   });
 
   let qr: Buffer | undefined;

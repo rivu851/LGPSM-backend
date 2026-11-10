@@ -54,6 +54,7 @@ export function buildFormalInvitationEmailHTML(params: {
   rsvpBy?: string | Date | null;
   /** false when the cards are printed without a QR: the email has none either */
   showQr?: boolean;
+  sessions?: { name: string; startTime?: string; endTime?: string }[];
 }): string {
   // The letter itself lives in services/email/invitationEmail.ts (one template for invitations and reminders)
   return buildInvitationEmail({ ...params, qrCid: params.cid });
@@ -152,7 +153,7 @@ export const invitationService = {
   async renderPassCard(event: any, invitee: any, rawToken: string): Promise<Buffer> {
     const cardContext = await loadCardContext(event);
     const eventPhotoBase64 = await resolveImageKeyBase64((event as any).media?.logoKey);
-    const guestLines = cardGuestLines(invitee, (event as any).cardInfo);
+    const guestLines = cardGuestLines(invitee, (event as any).cardInfo, (event as any).cardDisplay);
     const allSessions = await Session.find({ eventId: event._id }).sort({ 'schedule.start': 1 }).lean();
     const { eventDate, dayOfWeek, eventTime, venue, locationSub, sessions: assignedSessions } =
       buildInvitationContent(event as any, allSessions as any, invitee);
@@ -288,7 +289,7 @@ export const invitationService = {
       let cardBuffer: Buffer;
       try {
         cardBuffer = await invitationCardService.generateInvitationCardPNG({
-          invitee: { id: (invitee._id as any).toString(), ...cardGuestLines(invitee, (event as any).cardInfo) },
+          invitee: { id: (invitee._id as any).toString(), ...cardGuestLines(invitee, (event as any).cardInfo, (event as any).cardDisplay) },
           event: {
             id: (event._id as any).toString(),
             title: event.title,
@@ -352,6 +353,7 @@ export const invitationService = {
             contactNumber: (event as any).contactNumber,
             rsvpBy: (event as any).rsvp?.enabled ? (event as any).rsvp?.acceptanceLastDate : undefined,
             showQr: (event as any).cardDisplay?.qr !== false,
+            sessions: assignedSessions,
           });
 
           const attachments = [
@@ -601,7 +603,7 @@ export const invitationService = {
       let cardBuffer: Buffer;
       try {
         cardBuffer = await invitationCardService.generateInvitationCardPNG({
-          invitee: { id: (invitee._id as any).toString(), ...cardGuestLines(invitee, (event as any).cardInfo) },
+          invitee: { id: (invitee._id as any).toString(), ...cardGuestLines(invitee, (event as any).cardInfo, (event as any).cardDisplay) },
           event: {
             id: (event._id as any).toString(),
             title: event.title,
@@ -664,6 +666,7 @@ export const invitationService = {
             contactNumber: (event as any).contactNumber,
             rsvpBy: (event as any).rsvp?.enabled ? (event as any).rsvp?.acceptanceLastDate : undefined,
             showQr: (event as any).cardDisplay?.qr !== false,
+            sessions: assignedSessions,
           });
 
           const attachments = [
@@ -878,7 +881,7 @@ export const invitationService = {
     if (inviteeId && mongoose.Types.ObjectId.isValid(inviteeId)) {
       invitee = await Invitee.findOne({ _id: inviteeId, eventId }).select('+qrTokenCipher');
     }
-    const guestLines = cardGuestLines(invitee, (event as any).cardInfo);
+    const guestLines = cardGuestLines(invitee, (event as any).cardInfo, (event as any).cardDisplay);
 
     const allSessions = await Session.find({ eventId }).sort({ 'schedule.start': 1 }).lean();
     const { eventDate, dayOfWeek, eventTime, venue, locationSub, sessions: assignedSessions } =
