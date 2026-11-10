@@ -69,7 +69,15 @@ export const createEventSchema = z.object({
     schedule: z.object({
       start: z.string().optional(),
       end: z.string().optional()
-    }).optional(),
+    }).refine((s) => {
+      // a new event is created now: it cannot start before that (one minute of grace) ...
+      const t = s.start ? Date.parse(s.start) : NaN;
+      return Number.isNaN(t) || t >= Date.now() - 60_000;
+    }, { message: 'The event cannot start before it is created (it cannot start in the past)', path: ['start'] }).refine((s) => {
+      // ... and must end after that
+      const t = s.end ? Date.parse(s.end) : NaN;
+      return Number.isNaN(t) || t > Date.now() - 60_000;
+    }, { message: 'The event must end after it is created (it cannot end in the past)', path: ['end'] }).optional(),
     admission: admissionSchema.optional(),
     rsvp: z.object({
       enabled: z.boolean().optional(),
