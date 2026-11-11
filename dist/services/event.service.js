@@ -253,6 +253,18 @@ class EventService {
             if (admissionError)
                 throw { statusCode: 400, message: admissionError };
         }
+        // An event cannot start before it was created, and must end after both its start and its creation
+        if (updateData.schedule) {
+            const created = existingEvent.createdAt ? new Date(existingEvent.createdAt).getTime() : NaN;
+            const startMs = new Date(updateData.schedule.start ?? existingEvent.schedule?.start).getTime();
+            const endMs = new Date(updateData.schedule.end ?? existingEvent.schedule?.end).getTime();
+            if (!Number.isNaN(created) && !Number.isNaN(startMs) && startMs < created)
+                throw { statusCode: 400, message: 'The event cannot start before it was created.' };
+            if (!Number.isNaN(created) && !Number.isNaN(endMs) && endMs <= created)
+                throw { statusCode: 400, message: 'The event must end after it was created.' };
+            if (!Number.isNaN(startMs) && !Number.isNaN(endMs) && endMs <= startMs)
+                throw { statusCode: 400, message: 'The event must end after it starts.' };
+        }
         // Disallow updating organizerId, _id, createdAt and the locked rate
         delete updateData.organizerId;
         delete updateData._id;

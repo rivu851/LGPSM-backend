@@ -8,7 +8,7 @@ const cardInfo_1 = require("../utils/cardInfo");
 const Event_1 = require("../models/Event");
 const objectIdSchema = zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ObjectId format');
 // "Additional Info": a ticked line names the guest detail it prints; null leaves that line empty
-const cardDisplaySchema = zod_1.z.object({ title: zod_1.z.boolean().optional(), qr: zod_1.z.boolean().optional(), dateTime: zod_1.z.boolean().optional(), location: zod_1.z.boolean().optional() }).strict();
+const cardDisplaySchema = zod_1.z.object({ title: zod_1.z.boolean().optional(), qr: zod_1.z.boolean().optional(), dateTime: zod_1.z.boolean().optional(), location: zod_1.z.boolean().optional(), inviteeName: zod_1.z.boolean().optional() }).strict();
 const cardInfoSchema = zod_1.z.object({
     primary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(),
     secondary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(),
@@ -66,7 +66,15 @@ exports.createEventSchema = zod_1.z.object({
         schedule: zod_1.z.object({
             start: zod_1.z.string().optional(),
             end: zod_1.z.string().optional()
-        }).optional(),
+        }).refine((s) => {
+            // a new event is created now: it cannot start before that (one minute of grace) ...
+            const t = s.start ? Date.parse(s.start) : NaN;
+            return Number.isNaN(t) || t >= Date.now() - 60_000;
+        }, { message: 'The event cannot start before it is created (it cannot start in the past)', path: ['start'] }).refine((s) => {
+            // ... and must end after that
+            const t = s.end ? Date.parse(s.end) : NaN;
+            return Number.isNaN(t) || t > Date.now() - 60_000;
+        }, { message: 'The event must end after it is created (it cannot end in the past)', path: ['end'] }).optional(),
         admission: exports.admissionSchema.optional(),
         rsvp: zod_1.z.object({
             enabled: zod_1.z.boolean().optional(),

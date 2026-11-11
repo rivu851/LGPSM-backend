@@ -29,10 +29,15 @@ exports.createUserSchema = zod_1.z.object({
     organizerId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
     profile: zod_1.z.object({
         organizationName: zod_1.z.string().max(150).optional(),
+        organizationType: zod_1.z.enum(['INDIVIDUAL', 'ORGANIZATION']).optional(),
         logoKey: zod_1.z.string().max(200).optional(),
         invitationChannel: zod_1.z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional()
     }).strict().optional()
-}).strict();
+}).strict().superRefine((d, ctx) => {
+    if (d.role === User_1.Role.ORGANIZER && d.profile?.organizationType === 'ORGANIZATION' && !(d.profile.organizationName && d.profile.organizationName.trim().length >= 2)) {
+        ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ['profile', 'organizationName'], message: 'Enter the organization name' });
+    }
+});
 exports.updateUserSchema = zod_1.z.object({
     fullName: zod_1.z.string().trim().min(2, 'Full name must be at least 2 characters').max(120, 'Full name is too long').optional(),
     email: zod_1.z.string().email('Invalid email address').optional(),
@@ -41,10 +46,15 @@ exports.updateUserSchema = zod_1.z.object({
     isActive: zod_1.z.boolean().optional(),
     profile: zod_1.z.object({
         organizationName: zod_1.z.string().max(150).optional(),
+        organizationType: zod_1.z.enum(['INDIVIDUAL', 'ORGANIZATION']).optional(),
         logoKey: zod_1.z.string().max(200).optional(),
         invitationChannel: zod_1.z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional()
     }).strict().optional()
-}).strict();
+}).strict().superRefine((d, ctx) => {
+    if (d.profile?.organizationType === 'ORGANIZATION' && d.profile.organizationName !== undefined && d.profile.organizationName.trim().length < 2) {
+        ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ['profile', 'organizationName'], message: 'Enter the organization name' });
+    }
+});
 exports.changePasswordSchema = zod_1.z.object({
     currentPassword: zod_1.z.string().min(1, 'Current password is required'),
     newPassword: zod_1.z.string().min(8, 'New password must be at least 8 characters')

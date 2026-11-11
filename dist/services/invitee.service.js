@@ -129,6 +129,10 @@ exports.inviteeService = {
             filter.rsvpStatus = options.rsvpStatus;
         if (options.invitationStatus)
             filter.invitationStatus = options.invitationStatus;
+        if (options.inviteeSet === 'MANUAL')
+            filter.inviteeSetId = null;
+        else if (options.inviteeSet)
+            filter.inviteeSetId = new mongoose_1.default.Types.ObjectId(options.inviteeSet);
         const andConditions = [];
         if (options.sessionAccessId) {
             andConditions.push({
@@ -448,6 +452,16 @@ exports.inviteeService = {
                     }
                 }
             });
+            // Extra columns whose heading is not one of the known words (e.g. "Employee ID", "Department") still carry the card's
+            // additional information: they fill the free primary / secondary slot in sheet order so the card never prints a blank line
+            const taken = new Set([nameColIdx, emailColIdx, mobileColIdx, companyColIdx, identityColIdx, secondIdentityColIdx, ...sessionColMap.keys()]);
+            const extras = firstRowCols.map((c, i) => (c && !taken.has(i) ? i : -1)).filter((i) => i !== -1);
+            for (const idx of extras) {
+                if (identityColIdx === -1)
+                    identityColIdx = idx;
+                else if (secondIdentityColIdx === -1)
+                    secondIdentityColIdx = idx;
+            }
         }
         else {
             nameColIdx = 0;

@@ -93,7 +93,7 @@ exports.previewTemplateCardSchema = zod_1.z
     guestName: zod_1.z.string().max(100).optional(),
     companyName: zod_1.z.string().max(100).optional(),
     contactNumber: zod_1.z.string().trim().max(30).optional(),
-    cardDisplay: zod_1.z.object({ title: zod_1.z.boolean().optional(), qr: zod_1.z.boolean().optional(), dateTime: zod_1.z.boolean().optional(), location: zod_1.z.boolean().optional() }).strict().optional(),
+    cardDisplay: zod_1.z.object({ title: zod_1.z.boolean().optional(), qr: zod_1.z.boolean().optional(), dateTime: zod_1.z.boolean().optional(), location: zod_1.z.boolean().optional(), inviteeName: zod_1.z.boolean().optional() }).strict().optional(),
     cardInfo: zod_1.z.object({ primary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(), secondary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(), identityLabel: zod_1.z.string().trim().max(40).nullable().optional(), secondaryIdentityLabel: zod_1.z.string().trim().max(40).nullable().optional() }).strict().optional()
 })
     .strict();

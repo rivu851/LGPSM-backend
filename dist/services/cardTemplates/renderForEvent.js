@@ -48,7 +48,7 @@ async function renderTemplateForEvent(input) {
         locationSub: content.locationSub,
         isVirtual: event.format === 'VIRTUAL',
         organizerName: (0, context_1.cardHostName)(organizer),
-        invitee: parsed.spec.kind === 'INVITATION' ? (0, cardInfo_1.cardGuestLines)(null, event.cardInfo) : { name: undefined }
+        invitee: parsed.spec.kind === 'INVITATION' ? (0, cardInfo_1.cardGuestLines)(null, event.cardInfo, event.cardDisplay) : { name: undefined }
     });
     let qr;
     let qrKind = 'NONE';

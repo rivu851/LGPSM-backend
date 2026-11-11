@@ -18,7 +18,44 @@ const SAMPLE = {
  * company). With a choice, each line carries the chosen detail, or stays empty when unticked or when the guest has no
  * value for it — nothing is invented. `guest` null means a preview with no real guest: the design's sample labels.
  */
-function cardGuestLines(guest, cardInfo) {
+function cardGuestLines(guest, cardInfo, cardDisplay) {
+    const legacy = cardDisplay?.inviteeName === undefined;
+    if (!legacy)
+        return guestLinesWithNameChoice(guest, cardInfo, cardDisplay.inviteeName !== false);
+    return legacyGuestLines(guest, cardInfo);
+}
+/**
+ * Events made after "Invitee name" became a checkbox of its own (Settings > Select data to show on card): the name is printed when it is
+ * ticked, and "Additional Information" supplies the other details. The card has two guest lines, so the values fill them in order
+ * (name first, then the primary and secondary details); a third value is joined onto the second line with a dot.
+ */
+function guestLinesWithNameChoice(guest, cardInfo, showName) {
+    const values = [];
+    if (showName)
+        values.push(guest ? (guest.name || '').trim() : SAMPLE.INVITEE_NAME);
+    for (const field of [cardInfo?.primary, cardInfo?.secondary]) {
+        if (!field || field === 'INVITEE_NAME')
+            continue; // the name is its own checkbox now, never repeated here
+        const v = guest ? detailOf(guest, field) : sampleOf(field, cardInfo);
+        if (v)
+            values.push(v);
+    }
+    return { name: values[0] || '', companyName: values.slice(1).join(' · ') };
+}
+const sampleOf = (field, cardInfo) => {
+    const title = field === 'PROFESSIONAL_IDENTITY' ? cardInfo?.identityLabel : field === 'SECONDARY_IDENTITY' ? cardInfo?.secondaryIdentityLabel : null;
+    return title?.trim() || SAMPLE[field];
+};
+const detailOf = (guest, field) => {
+    if (field === 'COMPANY_NAME')
+        return (guest.companyName || guest.company || '').trim();
+    if (field === 'SECONDARY_IDENTITY')
+        return (guest.secondaryIdentity || '').trim();
+    if (field === 'INVITEE_NAME')
+        return (guest.name || '').trim();
+    return (guest.professionalIdentity || '').trim();
+};
+function legacyGuestLines(guest, cardInfo) {
     const configured = !!cardInfo && (cardInfo.primary !== undefined || cardInfo.secondary !== undefined);
     if (!configured) {
         return guest

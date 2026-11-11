@@ -127,7 +127,7 @@ exports.invitationService = {
     async renderPassCard(event, invitee, rawToken) {
         const cardContext = await (0, context_1.loadCardContext)(event);
         const eventPhotoBase64 = await (0, resolveImageBase64_1.resolveImageKeyBase64)(event.media?.logoKey);
-        const guestLines = (0, cardInfo_1.cardGuestLines)(invitee, event.cardInfo);
+        const guestLines = (0, cardInfo_1.cardGuestLines)(invitee, event.cardInfo, event.cardDisplay);
         const allSessions = await Session_1.Session.find({ eventId: event._id }).sort({ 'schedule.start': 1 }).lean();
         const { eventDate, dayOfWeek, eventTime, venue, locationSub, sessions: assignedSessions } = (0, invitationContent_1.buildInvitationContent)(event, allSessions, invitee);
         const invitationUrl = (0, qrPayload_1.admissionPayloadFor)(rawToken); // the QR carries the admission credential, nothing else
@@ -246,7 +246,7 @@ exports.invitationService = {
             let cardBuffer;
             try {
                 cardBuffer = await invitationCard_service_1.invitationCardService.generateInvitationCardPNG({
-                    invitee: { id: invitee._id.toString(), ...(0, cardInfo_1.cardGuestLines)(invitee, event.cardInfo) },
+                    invitee: { id: invitee._id.toString(), ...(0, cardInfo_1.cardGuestLines)(invitee, event.cardInfo, event.cardDisplay) },
                     event: {
                         id: event._id.toString(),
                         title: event.title,
@@ -309,6 +309,7 @@ exports.invitationService = {
                         contactNumber: event.contactNumber,
                         rsvpBy: event.rsvp?.enabled ? event.rsvp?.acceptanceLastDate : undefined,
                         showQr: event.cardDisplay?.qr !== false,
+                        sessions: assignedSessions,
                     });
                     const attachments = [
                         {
@@ -546,7 +547,7 @@ exports.invitationService = {
                 let cardBuffer;
                 try {
                     cardBuffer = await invitationCard_service_1.invitationCardService.generateInvitationCardPNG({
-                        invitee: { id: invitee._id.toString(), ...(0, cardInfo_1.cardGuestLines)(invitee, event.cardInfo) },
+                        invitee: { id: invitee._id.toString(), ...(0, cardInfo_1.cardGuestLines)(invitee, event.cardInfo, event.cardDisplay) },
                         event: {
                             id: event._id.toString(),
                             title: event.title,
@@ -608,6 +609,7 @@ exports.invitationService = {
                             contactNumber: event.contactNumber,
                             rsvpBy: event.rsvp?.enabled ? event.rsvp?.acceptanceLastDate : undefined,
                             showQr: event.cardDisplay?.qr !== false,
+                            sessions: assignedSessions,
                         });
                         const attachments = [
                             {
@@ -813,7 +815,7 @@ exports.invitationService = {
         if (inviteeId && mongoose_1.default.Types.ObjectId.isValid(inviteeId)) {
             invitee = await Invitee_1.Invitee.findOne({ _id: inviteeId, eventId }).select('+qrTokenCipher');
         }
-        const guestLines = (0, cardInfo_1.cardGuestLines)(invitee, event.cardInfo);
+        const guestLines = (0, cardInfo_1.cardGuestLines)(invitee, event.cardInfo, event.cardDisplay);
         const allSessions = await Session_1.Session.find({ eventId }).sort({ 'schedule.start': 1 }).lean();
         const { eventDate, dayOfWeek, eventTime, venue, locationSub, sessions: assignedSessions } = (0, invitationContent_1.buildInvitationContent)(event, allSessions, invitee);
         // A guest who has been sent an invitation gets their current, check-in-valid QR. Otherwise the

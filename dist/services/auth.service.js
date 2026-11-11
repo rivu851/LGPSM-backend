@@ -149,7 +149,12 @@ exports.authService = {
             role: User_1.Role.ORGANIZER,
             isActive: true,
             isEmailVerified: false,
-            profile: { invitationChannel: data.invitationChannel || 'BOTH' },
+            profile: {
+                invitationChannel: data.invitationChannel || 'BOTH',
+                organizationType: data.organizationType || 'INDIVIDUAL',
+                // only an organization has a name (an individual's own name is used wherever a name is shown)
+                ...(data.organizationType === 'ORGANIZATION' && data.organizationName?.trim() ? { organizationName: data.organizationName.trim() } : {}),
+            },
         });
         // Generate OTP, hash it, store the hash
         const otp = generateOtpPlaintext();

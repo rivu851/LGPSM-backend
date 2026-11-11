@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.QR_SLOTS = exports.LOCATION_SLOTS = exports.DATE_SLOTS = exports.TITLE_SLOTS = exports.CARD_DISPLAY_DEFAULTS = void 0;
 exports.cardDisplayOf = cardDisplayOf;
 exports.withoutHidden = withoutHidden;
-exports.CARD_DISPLAY_DEFAULTS = { title: true, qr: true, dateTime: true, location: true };
+exports.CARD_DISPLAY_DEFAULTS = { title: true, qr: true, dateTime: true, location: true, inviteeName: true };
 function cardDisplayOf(raw) {
     const r = raw || {};
     return {
@@ -11,6 +11,7 @@ function cardDisplayOf(raw) {
         qr: r.qr !== false,
         dateTime: r.dateTime !== false,
         location: r.location !== false,
+        inviteeName: r.inviteeName !== false,
     };
 }
 /** The text slots of the fixed designs and the text roles of custom designs, by the detail they print */
