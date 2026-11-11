@@ -589,7 +589,7 @@ describe('real events: rendering, QR codes and exports', () => {
   beforeAll(async () => {
     const j = await generated(orgA, { ...brief, prompt: 'rendering test invitation in gold' });
     template = (await api('post', `/api/v1/template-generations/${j.id}/variants/0/save`, orgA).send({ name: 'Render Gold', publish: true })).body.data;
-    event = await Event.create({ organizerId: orgA._id, title: 'Roy & Dola Wedding Reception', description: 'An evening of celebration with family', categoryId: new mongoose.Types.ObjectId(), format: 'PHYSICAL', location: { type: 'Point', address: '24 Shanti Pally, Kolkata', coordinates: [0, 0] } as any, schedule: { start: new Date('2026-11-07T12:30:00Z'), end: new Date('2026-11-07T16:30:00Z') }, templateId: template._id });
+    event = await Event.create({ organizerId: orgA._id, title: 'Roy & Dola Wedding Reception', description: 'An evening of celebration with family', categoryId: new mongoose.Types.ObjectId(), format: 'PHYSICAL', location: { type: 'Point', address: '24 Shanti Pally, Kolkata', coordinates: [0, 0] } as any, schedule: { start: new Date(Date.now() + 30 * 86400000), end: new Date(Date.now() + 30 * 86400000 + 4 * 3600000) }, templateId: template._id });
   });
 
   it('draws the template with the real event at full size, as PNG and JPEG', async () => {

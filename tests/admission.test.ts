@@ -491,11 +491,15 @@ describe('P0.2 — admission windows and secure QR admission', () => {
 
     it('is checked when an event is edited together with its schedule', async () => {
       await Invitation.deleteMany({});
+      // dates in the future (the API refuses a start in the past), relative to now so the test does not age
+      const day = Date.now() + 30 * 86400000;
+      const iso = (hours: number) => new Date(day + hours * 3600000).toISOString();
+      await Event.updateOne({ _id: event._id }, { 'admission.opensAt': new Date(day + 1 * 3600000) });
       const bad = await request(app).patch(`/api/v1/events/${event._id}`).set(auth(tOrg))
-        .send({ schedule: { start: '2026-10-31T05:30:00.000Z', end: '2026-10-31T06:30:00.000Z' } }); // stored opensAt 03:30Z stays valid
+        .send({ schedule: { start: iso(2), end: iso(3) } }); // stored opening (1h) stays valid
       expect(bad.status).toBe(200);
       const worse = await request(app).patch(`/api/v1/events/${event._id}`).set(auth(tOrg))
-        .send({ schedule: { start: '2026-10-30T01:00:00.000Z', end: '2026-10-30T02:00:00.000Z' } }); // ends before the stored opening
+        .send({ schedule: { start: iso(-5), end: iso(-4) } }); // ends before the stored opening
       expect(worse.status).toBe(400);
     });
 

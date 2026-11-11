@@ -7,6 +7,7 @@ import app from '../src/app';
 import { User, Role } from '../src/models/User';
 import { Event } from '../src/models/Event';
 import { Invitee } from '../src/models/Invitee';
+import { Session } from '../src/models/Session';
 import { CheckIn } from '../src/models/CheckIn';
 import { AuditLog } from '../src/models/AuditLog';
 import { CredentialEvent } from '../src/models/CredentialEvent';
@@ -64,13 +65,16 @@ describe('release journey: admin, organizer, staff and attendee', () => {
   });
 
   it('organizer: creates an event with a session and food options, imports guests, assigns staff', async () => {
-    const start = new Date(Date.now() - 3600e3).toISOString(), end = new Date(Date.now() + 4 * 3600e3).toISOString();
+    // the API refuses a start in the past, so the event is made ahead of time and then moved to "already started" directly
+    const start = new Date(Date.now() + 3600e3).toISOString(), end = new Date(Date.now() + 6 * 3600e3).toISOString();
+    const startedAgo = { start: new Date(Date.now() - 3600e3), end: new Date(Date.now() + 4 * 3600e3) };
     const ev = await call(request(app).post('/api/v1/events').set(auth(tOrg)).send({ title: 'Release Summit', description: 'journey', format: 'PHYSICAL', location: { address: 'Grand Hall', addressDetails: 'Gate 3' }, contactNumber: '123456789', schedule: { start, end }, rsvp: { enabled: true, allowAllInvited: true, allowNotResponded: true, allowDeclined: true }, dietaryPreference: { enabled: true, title: 'Food', options: ['Veg', 'Non-Veg'] } }));
     expect(ev.status).toBe(201);
     eventId = ev.body.data.eventId || ev.body.data._id;
     expect((await call(request(app).patch(`/api/v1/events/${eventId}`).set(auth(tOther)).send({ title: 'Hijacked' }))).status).toBeGreaterThanOrEqual(403);
     const ses = await call(request(app).post(`/api/v1/events/${eventId}/sessions`).set(auth(tOrg)).send({ name: 'Main Hall', schedule: { start, end }, accessControl: 'ONLY_ONCE', validateAgainstOtherSessions: false }));
     expect(ses.status).toBe(201); sessionId = ses.body.data._id || ses.body.data.sessionId;
+    await Event.updateOne({ _id: eventId }, { schedule: startedAgo }); await Session.updateOne({ _id: sessionId }, { schedule: startedAgo });
     const imp = await call(request(app).post(`/api/v1/events/${eventId}/invitees/import`).set(auth(tOrg)).field('mode', 'APPEND').attach('file', sheet([['Name', 'Email', 'Mobile'], ['Alice Attendee', 'alice@guest.test', '9871100001'], ['Bob Replaced', 'bob@guest.test', '9871100002'], ['Cara Revoked', 'cara@guest.test', '9871100003'], ['Dan Declines', 'dan@guest.test', '9871100004']]), 'guests.xlsx'));
     expect(imp.status).toBe(200); expect(imp.body.data.imported).toBe(4);
     expect((await call(request(app).post(`/api/v1/events/${eventId}/assignments`).set(auth(tOrg)).send({ userId: staffId, sessionIds: [] }))).status).toBeLessThan(300);
@@ -179,9 +183,12 @@ describe('release journey: admin, organizer, staff and attendee', () => {
   });
 
   it('cancellation: guests who were invited are told once, passes stop working, history is kept', async () => {
-    const start = new Date(Date.now() - 3600e3).toISOString(), end = new Date(Date.now() + 4 * 3600e3).toISOString();
+    // the API refuses a start in the past, so the event is made ahead of time and then moved to "already started" directly
+    const start = new Date(Date.now() + 3600e3).toISOString(), end = new Date(Date.now() + 6 * 3600e3).toISOString();
+    const startedAgo = { start: new Date(Date.now() - 3600e3), end: new Date(Date.now() + 4 * 3600e3) };
     const ev2 = (await call(request(app).post('/api/v1/events').set(auth(tOrg)).send({ title: 'Called Off', description: 'd', format: 'PHYSICAL', location: { address: 'Hall' }, contactNumber: '123456789', schedule: { start, end } }))).body.data;
     const id2 = ev2.eventId || ev2._id;
+    await Event.updateOne({ _id: id2 }, { schedule: startedAgo });
     await call(request(app).post(`/api/v1/events/${id2}/invitees`).set(auth(tOrg)).send({ name: 'Eve Event', email: 'eve@guest.test', mobile: '9871100009' }));
     const eve: any = await Invitee.findOne({ name: 'Eve Event' });
     await call(request(app).post(`/api/v1/events/${id2}/invitations/send`).set(auth(tOrg)).send({ inviteeIds: [String(eve._id)], channel: 'EMAIL' }));

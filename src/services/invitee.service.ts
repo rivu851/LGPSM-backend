@@ -466,6 +466,14 @@ export const inviteeService = {
           }
         }
       });
+      // Extra columns whose heading is not one of the known words (e.g. "Employee ID", "Department") still carry the card's
+      // additional information: they fill the free primary / secondary slot in sheet order so the card never prints a blank line
+      const taken = new Set<number>([nameColIdx, emailColIdx, mobileColIdx, companyColIdx, identityColIdx, secondIdentityColIdx, ...sessionColMap.keys()]);
+      const extras = firstRowCols.map((c: string, i: number) => (c && !taken.has(i) ? i : -1)).filter((i: number) => i !== -1);
+      for (const idx of extras) {
+        if (identityColIdx === -1) identityColIdx = idx;
+        else if (secondIdentityColIdx === -1) secondIdentityColIdx = idx;
+      }
     } else {
       nameColIdx = 0; emailColIdx = 1; mobileColIdx = 2; companyColIdx = 3;
     }
