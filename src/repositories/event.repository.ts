@@ -73,9 +73,10 @@ export class EventRepository {
     return await Event.findOne({ _id: eventId, organizerId }).exec();
   }
 
-  async updateByIdAndOrganizer(eventId: string, organizerId: string | mongoose.Types.ObjectId, updateData: Partial<IEvent>): Promise<IEvent | null> {
+  /** `expectedUpdatedAt`: only apply the change if nobody has saved the event since the editor opened it (decided by the database, in the same operation). */
+  async updateByIdAndOrganizer(eventId: string, organizerId: string | mongoose.Types.ObjectId, updateData: Partial<IEvent>, expectedUpdatedAt?: Date): Promise<IEvent | null> {
     return await Event.findOneAndUpdate(
-      { _id: eventId, organizerId },
+      { _id: eventId, organizerId, ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}) },
       { $set: updateData },
       { new: true, runValidators: true }
     ).exec();

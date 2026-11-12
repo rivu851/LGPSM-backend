@@ -14,7 +14,14 @@ exports.ticketTierService = {
             throw new Error('EVENT_NOT_FOUND');
         return await ticketTier_repository_1.ticketTierRepository.create({ ...data, eventId: event._id });
     },
-    async getTicketTiers(eventId, activeOnly = true) {
+    /** Price, capacity and sales of an event belong to its organizer (and the admin): anyone else is told the event does not exist. */
+    async getTicketTiers(eventId, user, activeOnly = true) {
+        const isOrganizer = user.role !== User_1.Role.ADMIN && user.role !== 'ADMIN';
+        const event = isOrganizer
+            ? await Event_1.Event.findOne({ _id: eventId, organizerId: user.userId }).select('_id')
+            : await Event_1.Event.findById(eventId).select('_id');
+        if (!event)
+            throw new Error('EVENT_NOT_FOUND');
         return await ticketTier_repository_1.ticketTierRepository.findByEventId(eventId, activeOnly);
     },
     async updateTicketTier(id, user, updateData) {

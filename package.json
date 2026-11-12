@@ -11,6 +11,7 @@
     "check:deployed-layout": "node scripts/check-deployed-layout.js",
     "migrate:invitee-uniqueness": "node scripts/migrate-invitee-uniqueness.js",
     "migrate:user-contact-uniqueness": "node scripts/migrate-user-contact-uniqueness.js",
+    "migrate:staff-uniqueness": "node scripts/migrate-staff-uniqueness.js",
     "inventory:credentials": "node scripts/credential-inventory.js"
   },
   "keywords": [],

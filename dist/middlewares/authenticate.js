@@ -36,7 +36,7 @@ const authenticate = async (req, res, next) => {
         }
         if (!account.isActive) {
             (0, securityLog_1.securityEvent)('AUTH_INACTIVE_USER', req, { subject: String(payload.userId) });
-            res.status(403).json({ success: false, message: 'User account is inactive.' });
+            res.status(403).json({ success: false, code: 'ACCOUNT_INACTIVE', message: 'User account is inactive.' });
             return;
         }
         // The role is read from the database, not the token, so demotions apply immediately instead of

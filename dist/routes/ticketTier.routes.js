@@ -16,7 +16,8 @@ const validate = (schema) => (req, res, next) => {
     next();
 };
 exports.eventTicketTierRoutes = (0, express_1.Router)({ mergeParams: true });
-exports.eventTicketTierRoutes.get('/', ticketTier_controller_1.ticketTierController.getTicketTiers);
+// Ticket prices and sales are management data: organizer (own events) and admin only; the service checks ownership
+exports.eventTicketTierRoutes.get('/', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), ticketTier_controller_1.ticketTierController.getTicketTiers);
 exports.eventTicketTierRoutes.post('/', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER, User_1.Role.ADMIN), validate(ticketTier_validator_1.createTicketTierSchema), ticketTier_controller_1.ticketTierController.createTicketTier);
 exports.ticketTierRoutes = (0, express_1.Router)();
 exports.ticketTierRoutes.use(authenticate_1.authenticate);

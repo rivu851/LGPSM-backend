@@ -1,3 +1,4 @@
+import { PLATFORM_CURRENCY } from '../constants/currency';
 import crypto from 'crypto';
 import { orderRepository } from '../repositories/order.repository';
 import { paymentRepository } from '../repositories/payment.repository';
@@ -82,7 +83,7 @@ export const paymentService = {
     }
 
     const totalAmount = tier.price * quantity;
-    const currency = tier.currency || 'INR';
+    const currency = tier.currency || PLATFORM_CURRENCY;
 
     // Order must exist at the provider before we record anything locally
     getRazorpayCredentials();

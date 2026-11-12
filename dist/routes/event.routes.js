@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const auditAction_1 = require("../middlewares/auditAction");
+const idempotency_1 = require("../middlewares/idempotency");
 const express_1 = require("express");
 const event_controller_1 = require("../controllers/event.controller");
 const authenticate_1 = require("../middlewares/authenticate");
@@ -31,7 +32,7 @@ router.post('/:eventId/delete', (0, authorizeRoles_1.authorizeRoles)(User_1.Role
 router.patch('/:eventId/admission', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(event_validator_1.updateAdmissionSchema), (0, auditAction_1.auditAction)({ action: 'EVENT_ADMISSION_UPDATE', entityType: 'Event', entityParam: 'eventId', critical: true, describe: 'Check-in window changed', meta: (req) => ({ opensAt: req.body?.opensAt, closesAt: req.body?.closesAt }) }), event_controller_1.eventController.updateAdmission);
 router.post('/:eventId/close', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), (0, auditAction_1.auditAction)({ action: 'EVENT_CLOSE', entityType: 'Event', entityParam: 'eventId', critical: true, describe: 'Event closed (data retained)' }), event_controller_1.eventController.closeEvent);
 // Routes accessible to ADMIN and ORGANIZER
-router.post('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(event_validator_1.createEventSchema), (0, auditAction_1.auditAction)({ action: 'EVENT_CREATE', entityType: 'Event' }), event_controller_1.eventController.createEvent);
+router.post('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), validate(event_validator_1.createEventSchema), (0, idempotency_1.idempotent)('events.create'), (0, auditAction_1.auditAction)({ action: 'EVENT_CREATE', entityType: 'Event' }), event_controller_1.eventController.createEvent);
 router.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), event_controller_1.eventController.getEvents);
 // SYSTEM_USER may read details of events they are assigned to (for check-in)
 router.get('/:eventId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER, User_1.Role.SYSTEM_USER), event_controller_1.eventController.getEventById);

@@ -1,3 +1,4 @@
+import { auditLogService } from './auditLog.service';
 import mongoose from 'mongoose';
 import { userRepository } from '../repositories/user.repository';
 import { Role, User } from '../models/User';
@@ -88,6 +89,25 @@ async function findManageableUser(actor: Actor, userId: string) {
 }
 
 /** A deleted (switched off) staff account added again by the same organizer: brought back with the new details and a new password */
+
+/**
+ * Every switch of an account on or off is written to the audit log as its own entry (who, which account, from what to what, and by which
+ * route), on top of the generic entry the route itself leaves. Best effort: a failed audit write is logged and never undoes the change.
+ */
+async function auditStateChange(actor: Actor, target: any, active: boolean, via: 'DELETE' | 'PATCH' | 'RE_ADD') {
+  const owner = target.role === Role.SYSTEM_USER ? target.createdBy : target.role === Role.ORGANIZER ? target._id : undefined;
+  await auditLogService.record({
+    actorId: actor.userId,
+    actorRole: actor.role,
+    organizerId: owner,
+    action: active ? 'USER_REACTIVATED' : 'USER_DEACTIVATED',
+    entityType: 'User',
+    entityId: target._id,
+    description: `${target.role === Role.SYSTEM_USER ? 'Staff member' : 'Account'} ${active ? 'activated' : 'deactivated'}`,
+    metadata: { targetRole: target.role, from: !active, to: active, via }
+  });
+}
+
 async function reactivateStaff(existing: any, data: any, ownerId: string) {
   const phone = data.phone ? normalizePhoneNumber(data.phone) : undefined;
   const { hashPassword } = await import('../utils/password');
@@ -205,7 +225,16 @@ export const userService = {
       // other accounts, and other organizers' staff, may share this email; the same organizer's own list shows a person once
       if (mine.some((u) => u.isActive !== false)) throw { statusCode: 400, message: 'This person is already one of your system users.' };
       const inactiveStaff = mine.find((u) => u.isActive === false);
-      if (inactiveStaff) return reactivateStaff(inactiveStaff, data, ownerId);
+      if (inactiveStaff) {
+        // Bringing a deactivated account back is an administrator's decision. An organizer adding the same person again would do exactly
+        // that (by reusing the old account, or by making a new one to get round the deactivation), so it is refused.
+        if (actor.role !== Role.ADMIN) {
+          throw { statusCode: 403, code: 'STAFF_DEACTIVATED_ADMIN_ONLY', message: 'This person was deactivated earlier. Only an administrator can bring them back; please ask one to reactivate them.' };
+        }
+        const back = await reactivateStaff(inactiveStaff, data, ownerId);
+        await auditStateChange(actor, inactiveStaff, true, 'RE_ADD');
+        return back;
+      }
     }
 
     const phone = data.phone ? normalizePhoneNumber(data.phone) : undefined;
@@ -301,6 +330,7 @@ export const userService = {
       throw { statusCode: 404, message: 'User not found' };
     }
     await tokenRepository.revokeAllForUser(userId);
+    if ((target as any).isActive !== false) await auditStateChange(actor, target, false, 'DELETE');
     if (target.role === Role.ORGANIZER && actor.role === Role.ADMIN) {
       const { alertService } = await import('./alert.service');
       await alertService.notifyAdmins('deactivatedOrganizerBySuperAdmin', {
@@ -341,9 +371,19 @@ export const userService = {
     if (data.phone !== undefined) {
       updatePayload.phone = normalizePhoneNumber(data.phone);
     }
-    if (data.isActive !== undefined && actor.role === Role.ADMIN) {
-      if (data.isActive === false) await assertNotLastAdmin(target);
-      updatePayload.isActive = data.isActive;
+    if (data.isActive !== undefined) {
+      if (actor.role === Role.ADMIN) {
+        if (data.isActive === false) await assertNotLastAdmin(target);
+        updatePayload.isActive = data.isActive;
+      } else if (data.isActive === false) {
+        // An organizer may take their own staff member off (the same effect as Remove: signed out, no access, history and assignments
+        // kept). The ownership check above has already run, and an organizer can only reach staff accounts.
+        updatePayload.isActive = false;
+      } else {
+        // Bringing an account back is an administrator's call; an organizer adds the person again instead. Say so rather than answer
+        // "200" and leave the account as it was.
+        throw { statusCode: 403, message: 'Only an administrator can reactivate an account. To bring a removed staff member back, add them again.' };
+      }
     }
     // Only the organizer details an admin manages; the rest of the profile (avatar, etc.) is left as is
     if (data.profile && actor.role === Role.ADMIN) {
@@ -362,6 +402,9 @@ export const userService = {
     if (updatePayload.passwordHash || updatePayload.isActive === false) await tokenRepository.revokeAllForUser(userId);
     if (!user) {
       throw { statusCode: 404, message: 'User not found' };
+    }
+    if (updatePayload.isActive !== undefined && (target as any).isActive !== updatePayload.isActive) {
+      await auditStateChange(actor, target, updatePayload.isActive, 'PATCH');
     }
     return user;
   }

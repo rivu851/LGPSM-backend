@@ -121,11 +121,24 @@ exports.eventController = {
         try {
             const organizerId = req.user.userId;
             const eventId = req.params.eventId;
-            const event = await event_service_1.eventService.updateEvent(eventId, organizerId, req.body, req.user.role);
+            // Optional `If-Match: <updatedAt of the version the editor opened>`; without it the edit is applied as before
+            let expected;
+            const ifMatch = req.header('If-Match');
+            if (ifMatch) {
+                expected = new Date(ifMatch.trim().replace(/^W\//, '').replace(/^"|"$/g, ''));
+                if (Number.isNaN(expected.getTime())) {
+                    res.status(400).json({ success: false, error: 'Bad Request', code: 'IF_MATCH_INVALID', message: 'If-Match must be the updatedAt value of the event you opened.' });
+                    return;
+                }
+            }
+            const event = await event_service_1.eventService.updateEvent(eventId, organizerId, req.body, req.user.role, expected);
             res.status(200).json({ success: true, data: event });
         }
         catch (error) {
-            if (error.message === 'EVENT_NOT_FOUND') {
+            if (error.message === 'EVENT_EDIT_CONFLICT') {
+                res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_EDIT_CONFLICT', message: 'This event was changed by someone else since you opened it. Reload it to see the latest version, then make your change again.', currentVersion: error.currentVersion });
+            }
+            else if (error.message === 'EVENT_NOT_FOUND') {
                 res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
             }
             else if (error.message === 'EVENT_CLOSED') {

@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.platformSettingsService = void 0;
+const currency_1 = require("../constants/currency");
 const mongoose_1 = __importDefault(require("mongoose"));
 const PlatformSettings_1 = require("../models/PlatformSettings");
 const PriceRateChange_1 = require("../models/PriceRateChange");
@@ -40,7 +41,7 @@ exports.platformSettingsService = {
         const history = await PriceRateChange_1.PriceRateChange.find().sort({ createdAt: -1 }).limit(100).populate('changedBy', 'fullName email').lean();
         return {
             ratePerInvitee: settings.pricing?.ratePerInvitee ?? null,
-            currency: settings.pricing?.currency || 'USD',
+            currency: currency_1.PLATFORM_CURRENCY,
             updatedAt: settings.pricing?.updatedAt || null,
             history
         };
@@ -52,7 +53,7 @@ exports.platformSettingsService = {
         if (previous !== null && Math.abs(previous - ratePerInvitee) < 0.00001) {
             return this.getPricing();
         }
-        const currency = settings.pricing?.currency || 'USD';
+        const currency = currency_1.PLATFORM_CURRENCY;
         await PlatformSettings_1.PlatformSettings.updateOne({ key: KEY }, { $set: { 'pricing.ratePerInvitee': ratePerInvitee, 'pricing.updatedAt': new Date(), 'pricing.updatedBy': new mongoose_1.default.Types.ObjectId(actorId) } });
         await PriceRateChange_1.PriceRateChange.create({ previousRate: previous, newRate: ratePerInvitee, currency, changedBy: actorId });
         return this.getPricing();
@@ -60,7 +61,7 @@ exports.platformSettingsService = {
     // Rate snapshot stored on a newly created event
     async currentRateSnapshot() {
         const settings = await load();
-        return { ratePerInvitee: settings.pricing?.ratePerInvitee ?? null, currency: settings.pricing?.currency || 'USD', lockedAt: new Date() };
+        return { ratePerInvitee: settings.pricing?.ratePerInvitee ?? null, currency: currency_1.PLATFORM_CURRENCY, lockedAt: new Date() };
     },
     // For events created before rates were locked on events: the rate that was in effect at that time
     async rateInEffectAt(when) {

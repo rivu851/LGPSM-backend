@@ -470,6 +470,11 @@ exports.inviteeService = {
             companyColIdx = 3;
         }
         const dataRows = isHeaderPresent ? nonBlankRows.slice(1) : nonBlankRows;
+        // A sheet with only its heading row has nothing to import. Refuse it before anything is read or written, so a Replace can never be
+        // taken for "replace the list with nothing".
+        if (dataRows.length === 0) {
+            throw { statusCode: 400, message: 'The sheet has a heading row but no invitee rows under it. Add at least one invitee and upload it again.' };
+        }
         results.totalRows = dataRows.length;
         const cell = (row, idx) => (idx !== -1 && row[idx] !== undefined ? cleanCellValue(row[idx]) : '');
         const existingInvitees = await Invitee_1.Invitee.find({ eventId });

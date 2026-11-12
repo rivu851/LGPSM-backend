@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.paymentService = void 0;
+const currency_1 = require("../constants/currency");
 const crypto_1 = __importDefault(require("crypto"));
 const order_repository_1 = require("../repositories/order.repository");
 const payment_repository_1 = require("../repositories/payment.repository");
@@ -81,7 +82,7 @@ exports.paymentService = {
             throw new Error('TIER_CAPACITY_EXCEEDED');
         }
         const totalAmount = tier.price * quantity;
-        const currency = tier.currency || 'INR';
+        const currency = tier.currency || currency_1.PLATFORM_CURRENCY;
         // Order must exist at the provider before we record anything locally
         getRazorpayCredentials();
         const receipt = `rcpt_${Date.now()}`;

@@ -52,8 +52,9 @@ class EventRepository {
     async findByIdAndOrganizer(eventId, organizerId) {
         return await Event_1.Event.findOne({ _id: eventId, organizerId }).exec();
     }
-    async updateByIdAndOrganizer(eventId, organizerId, updateData) {
-        return await Event_1.Event.findOneAndUpdate({ _id: eventId, organizerId }, { $set: updateData }, { new: true, runValidators: true }).exec();
+    /** `expectedUpdatedAt`: only apply the change if nobody has saved the event since the editor opened it (decided by the database, in the same operation). */
+    async updateByIdAndOrganizer(eventId, organizerId, updateData, expectedUpdatedAt) {
+        return await Event_1.Event.findOneAndUpdate({ _id: eventId, organizerId, ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}) }, { $set: updateData }, { new: true, runValidators: true }).exec();
     }
     async softDeleteByIdAndOrganizer(eventId, organizerId) {
         return await Event_1.Event.findOneAndUpdate({ _id: eventId, organizerId }, { $set: { status: Event_1.EventStatus.CANCELLED } }, { new: true }).exec();

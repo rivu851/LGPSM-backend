@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.reportService = void 0;
+const currency_1 = require("../constants/currency");
 const sessionAccess_1 = require("../utils/sessionAccess");
 const invitationContent_1 = require("../utils/invitationContent");
 const mongoose_1 = __importDefault(require("mongoose"));
@@ -169,7 +170,7 @@ exports.reportService = {
         ]);
         const sentByEvent = new Map(sentCounts.map((c) => [String(c._id), c.count]));
         const settings = await PlatformSettings_1.PlatformSettings.findOne({ key: 'global' }).lean();
-        const currency = settings?.pricing?.currency || 'USD';
+        const currency = currency_1.PLATFORM_CURRENCY; // one platform currency; the stored setting is not consulted for it
         const rows = await Promise.all(events.map(async (e) => {
             const locked = e.pricing && e.pricing.lockedAt;
             const rate = locked ? e.pricing.ratePerInvitee ?? null : await platformSettings_service_1.platformSettingsService.rateInEffectAt(new Date(e.createdAt));

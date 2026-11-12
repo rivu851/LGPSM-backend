@@ -15,7 +15,13 @@ export const ticketTierService = {
     return await ticketTierRepository.create({ ...data, eventId: event._id as any });
   },
 
-  async getTicketTiers(eventId: string, activeOnly: boolean = true): Promise<ITicketTier[]> {
+  /** Price, capacity and sales of an event belong to its organizer (and the admin): anyone else is told the event does not exist. */
+  async getTicketTiers(eventId: string, user: { userId: string; role: string }, activeOnly: boolean = true): Promise<ITicketTier[]> {
+    const isOrganizer = user.role !== Role.ADMIN && user.role !== 'ADMIN';
+    const event = isOrganizer
+      ? await Event.findOne({ _id: eventId, organizerId: user.userId }).select('_id')
+      : await Event.findById(eventId).select('_id');
+    if (!event) throw new Error('EVENT_NOT_FOUND');
     return await ticketTierRepository.findByEventId(eventId, activeOnly);
   },
 

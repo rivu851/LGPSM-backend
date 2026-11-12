@@ -1,3 +1,4 @@
+import { PLATFORM_CURRENCY } from '../constants/currency';
 import mongoose, { Document, Schema } from 'mongoose';
 
 // Platform-wide settings managed by the Super Admin. Stored as a single document (key: 'global').
@@ -63,7 +64,7 @@ const PlatformSettingsSchema = new Schema<IPlatformSettings>(
     },
     pricing: {
       ratePerInvitee: { type: Number, default: null, min: 0 },
-      currency: { type: String, default: 'USD' },
+      currency: { type: String, default: PLATFORM_CURRENCY },
       updatedAt: { type: Date },
       updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
     }

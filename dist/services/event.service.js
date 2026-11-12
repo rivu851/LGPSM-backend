@@ -216,7 +216,7 @@ class EventService {
             delete category.subcategories;
         return json;
     }
-    async updateEvent(eventId, organizerId, rawUpdateData, role) {
+    async updateEvent(eventId, organizerId, rawUpdateData, role, expectedUpdatedAt) {
         const updateData = pickEventFields(rawUpdateData);
         const existingEvent = await (0, eventAccess_1.findManageableEvent)(eventId, organizerId, role);
         if (!existingEvent)
@@ -228,6 +228,10 @@ class EventService {
         // the event, so guests' cards and passes always match what was sent. The web edit form applies the same rule.
         if (await this.invitationsStarted(existingEvent._id))
             throw new Error('EVENT_LOCKED');
+        // The editor opened a version of the event; if someone has saved it since, this edit would silently overwrite their change
+        const staleCheck = () => { throw Object.assign(new Error('EVENT_EDIT_CONFLICT'), { currentVersion: existingEvent.updatedAt }); };
+        if (expectedUpdatedAt && new Date(existingEvent.updatedAt).getTime() !== expectedUpdatedAt.getTime())
+            staleCheck();
         // Validate references if they are being updated
         const categoryChanged = !!updateData.categoryId && updateData.categoryId !== existingEvent.categoryId?.toString();
         const subcategoryChanged = !!updateData.subcategoryId && updateData.subcategoryId !== existingEvent.subcategoryId?.toString();
@@ -271,8 +275,14 @@ class EventService {
         delete updateData.createdAt;
         delete updateData.pricing;
         await platformSettings_service_1.platformSettingsService.applyEventFeatureRules(updateData);
-        const updatedEvent = await event_repository_1.eventRepository.updateByIdAndOrganizer(eventId, existingEvent.organizerId, updateData);
+        const updatedEvent = await event_repository_1.eventRepository.updateByIdAndOrganizer(eventId, existingEvent.organizerId, updateData, expectedUpdatedAt);
         if (!updatedEvent) {
+            // the version check is part of the update itself, so a save that lost the race to another one lands here
+            if (expectedUpdatedAt) {
+                const latest = await Event_1.Event.findById(eventId).select('updatedAt').lean();
+                if (latest && latest.updatedAt && new Date(latest.updatedAt).getTime() !== expectedUpdatedAt.getTime())
+                    throw Object.assign(new Error('EVENT_EDIT_CONFLICT'), { currentVersion: latest.updatedAt });
+            }
             throw new Error('UPDATE_FAILED');
         }
         return updatedEvent;

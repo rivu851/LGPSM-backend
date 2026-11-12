@@ -1,3 +1,4 @@
+import { PLATFORM_CURRENCY } from '../constants/currency';
 import { inviteesAllowedFilter } from '../utils/sessionAccess';
 import { startOfTodayInAppZone } from '../utils/invitationContent';
 import mongoose from 'mongoose';
@@ -189,7 +190,7 @@ export const reportService = {
     ]);
     const sentByEvent = new Map(sentCounts.map((c) => [String(c._id), c.count as number]));
     const settings = await PlatformSettings.findOne({ key: 'global' }).lean();
-    const currency = settings?.pricing?.currency || 'USD';
+    const currency = PLATFORM_CURRENCY; // one platform currency; the stored setting is not consulted for it
 
     const rows = await Promise.all(events.map(async (e: any) => {
       const locked = e.pricing && e.pricing.lockedAt;

@@ -18,9 +18,11 @@ export const ticketTierController = {
     try {
       const eventId = req.params.eventId as string;
       const activeOnly = req.query.activeOnly !== 'false';
-      const tiers = await ticketTierService.getTicketTiers(eventId, activeOnly);
+      const user = { userId: (req as any).user.userId, role: (req as any).user.role };
+      const tiers = await ticketTierService.getTicketTiers(eventId, user, activeOnly);
       return res.status(200).json({ success: true, data: tiers });
     } catch (error: any) {
+      if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
       console.error('Request failed:', error?.message);
       return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }

@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PlatformSettings = void 0;
+const currency_1 = require("../constants/currency");
 const mongoose_1 = __importStar(require("mongoose"));
 const on = { type: Boolean, default: true };
 const off = { type: Boolean, default: false };
@@ -59,7 +60,7 @@ const PlatformSettingsSchema = new mongoose_1.Schema({
     },
     pricing: {
         ratePerInvitee: { type: Number, default: null, min: 0 },
-        currency: { type: String, default: 'USD' },
+        currency: { type: String, default: currency_1.PLATFORM_CURRENCY },
         updatedAt: { type: Date },
         updatedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }
     }

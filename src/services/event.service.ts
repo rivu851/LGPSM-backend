@@ -215,7 +215,7 @@ export class EventService {
     return json;
   }
 
-  async updateEvent(eventId: string, organizerId: string, rawUpdateData: any, role?: string): Promise<IEvent> {
+  async updateEvent(eventId: string, organizerId: string, rawUpdateData: any, role?: string, expectedUpdatedAt?: Date): Promise<IEvent> {
     const updateData: any = pickEventFields(rawUpdateData);
     const existingEvent = await findManageableEvent(eventId, organizerId, role);
     if (!existingEvent) throw new Error('EVENT_NOT_FOUND');
@@ -224,6 +224,9 @@ export class EventService {
     // Feedback 14: once invitations have gone out (or were attempted), neither the organizer nor an admin can edit
     // the event, so guests' cards and passes always match what was sent. The web edit form applies the same rule.
     if (await this.invitationsStarted(existingEvent._id as any)) throw new Error('EVENT_LOCKED');
+    // The editor opened a version of the event; if someone has saved it since, this edit would silently overwrite their change
+    const staleCheck = () => { throw Object.assign(new Error('EVENT_EDIT_CONFLICT'), { currentVersion: (existingEvent as any).updatedAt }); };
+    if (expectedUpdatedAt && new Date((existingEvent as any).updatedAt).getTime() !== expectedUpdatedAt.getTime()) staleCheck();
 
     // Validate references if they are being updated
     const categoryChanged = !!updateData.categoryId && updateData.categoryId !== existingEvent.categoryId?.toString();
@@ -270,8 +273,13 @@ export class EventService {
     delete updateData.pricing;
     await platformSettingsService.applyEventFeatureRules(updateData);
 
-    const updatedEvent = await eventRepository.updateByIdAndOrganizer(eventId, existingEvent.organizerId, updateData);
+    const updatedEvent = await eventRepository.updateByIdAndOrganizer(eventId, existingEvent.organizerId, updateData, expectedUpdatedAt);
     if (!updatedEvent) {
+      // the version check is part of the update itself, so a save that lost the race to another one lands here
+      if (expectedUpdatedAt) {
+        const latest: any = await Event.findById(eventId).select('updatedAt').lean();
+        if (latest && latest.updatedAt && new Date(latest.updatedAt).getTime() !== expectedUpdatedAt.getTime()) throw Object.assign(new Error('EVENT_EDIT_CONFLICT'), { currentVersion: latest.updatedAt });
+      }
       throw new Error('UPDATE_FAILED');
     }
     

@@ -75,4 +75,13 @@ UserSchema.post(
 // accounts are outside this index: they may share an email with an organizer and with each other.
 UserSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { role: 'ORGANIZER' }, name: 'uniq_organizer_email' });
 
+// One listing of a person per organizer's staff, enforced by the database as well: two requests at once (a double click, an admin and an
+// organizer adding the same person) cannot both get through the check-then-insert in userService. The boundary is the organizer who owns
+// the account (createdBy), so the same e-mail may still belong to staff of other organizers, to an organizer and to an admin; and a
+// removed (inactive) account does not block adding the person again. Staff rows with no owner (not created by the app) are outside it.
+UserSchema.index(
+  { email: 1, createdBy: 1 },
+  { unique: true, partialFilterExpression: { role: 'SYSTEM_USER', isActive: true, createdBy: { $type: 'objectId' } }, name: 'uniq_active_staff_per_owner' }
+);
+
 export const User = mongoose.model<IUser>('User', UserSchema);

@@ -44,7 +44,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     }
     if (!account.isActive) {
       securityEvent('AUTH_INACTIVE_USER', req, { subject: String(payload.userId) });
-      res.status(403).json({ success: false, message: 'User account is inactive.' });
+      res.status(403).json({ success: false, code: 'ACCOUNT_INACTIVE', message: 'User account is inactive.' });
       return;
     }
 

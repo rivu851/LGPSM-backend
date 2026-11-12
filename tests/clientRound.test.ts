@@ -197,11 +197,14 @@ describe('one person can be an invitee and a system user', () => {
 });
 
 describe('adding system users with shared contact details', () => {
-  it('a deleted staff member added again by the same organizer comes back (not "email already in use")', async () => {
+  it('a deleted staff member can only be brought back by an administrator (approved policy: organizers may not reactivate); the old account is reused, not "email already in use"', async () => {
     const first = await request(app).post('/api/users').set(auth(a)).send({ fullName: 'Old Name', email: 'staff@x.com', phone: '9876500001', password: 'password123', role: 'SYSTEM_USER' });
     expect(first.status).toBe(201);
     expect((await request(app).delete(`/api/users/${first.body.data._id}`).set(auth(a))).status).toBe(200);
-    const again = await request(app).post('/api/users').set(auth(a)).send({ fullName: 'New Name', email: 'staff@x.com', phone: '9876500002', password: 'password456', role: 'SYSTEM_USER' });
+    const refused = await request(app).post('/api/users').set(auth(a)).send({ fullName: 'New Name', email: 'staff@x.com', phone: '9876500002', password: 'password456', role: 'SYSTEM_USER' });
+    expect(refused.status).toBe(403);
+    expect((await User.findOne({ email: 'staff@x.com' }).lean() as any).isActive).toBe(false);
+    const again = await request(app).post('/api/users').set(auth(admin)).send({ fullName: 'New Name', email: 'staff@x.com', phone: '9876500002', password: 'password456', role: 'SYSTEM_USER', organizerId: String(a._id) });
     expect(again.status).toBe(201);
     const u: any = await User.findOne({ email: 'staff@x.com' }).lean();
     expect(u.isActive).toBe(true);

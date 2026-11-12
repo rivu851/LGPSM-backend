@@ -88,8 +88,8 @@ const allowedOrigins = [
 app.use((0, cors_1.default)({
     origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Authorization', 'Content-Type'],
-    exposedHeaders: ['X-Invitation-Qr'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'If-Match'],
+    exposedHeaders: ['X-Invitation-Qr', 'Idempotent-Replay'],
     credentials: true,
 }));
 // The raw bytes are kept so webhook signatures can be verified against exactly what the sender signed

@@ -1,3 +1,4 @@
+import { PLATFORM_CURRENCY } from '../constants/currency';
 import mongoose from 'mongoose';
 import { PlatformSettings, IEventFeatures, INotificationPreferences } from '../models/PlatformSettings';
 import { PriceRateChange } from '../models/PriceRateChange';
@@ -42,7 +43,7 @@ export const platformSettingsService = {
     const history = await PriceRateChange.find().sort({ createdAt: -1 }).limit(100).populate('changedBy', 'fullName email').lean();
     return {
       ratePerInvitee: settings.pricing?.ratePerInvitee ?? null,
-      currency: settings.pricing?.currency || 'USD',
+      currency: PLATFORM_CURRENCY,
       updatedAt: settings.pricing?.updatedAt || null,
       history
     };
@@ -55,7 +56,7 @@ export const platformSettingsService = {
     if (previous !== null && Math.abs(previous - ratePerInvitee) < 0.00001) {
       return this.getPricing();
     }
-    const currency = settings.pricing?.currency || 'USD';
+    const currency = PLATFORM_CURRENCY;
     await PlatformSettings.updateOne(
       { key: KEY },
       { $set: { 'pricing.ratePerInvitee': ratePerInvitee, 'pricing.updatedAt': new Date(), 'pricing.updatedBy': new mongoose.Types.ObjectId(actorId) } }
@@ -67,7 +68,7 @@ export const platformSettingsService = {
   // Rate snapshot stored on a newly created event
   async currentRateSnapshot() {
     const settings = await load();
-    return { ratePerInvitee: settings.pricing?.ratePerInvitee ?? null, currency: settings.pricing?.currency || 'USD', lockedAt: new Date() };
+    return { ratePerInvitee: settings.pricing?.ratePerInvitee ?? null, currency: PLATFORM_CURRENCY, lockedAt: new Date() };
   },
 
   // For events created before rates were locked on events: the rate that was in effect at that time

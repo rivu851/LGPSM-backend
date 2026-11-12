@@ -74,10 +74,16 @@ describe('creating accounts that share an email', () => {
     expect(again.body.message).toBe('This person is already one of your system users.');
     expect(await User.countDocuments({ email: SHARED, role: Role.SYSTEM_USER })).toBe(1);
   });
-  it('a deleted system user comes back when the same organizer adds them again, without touching the organizer account', async () => {
+  it('a deleted system user can only be brought back by an administrator (approved policy: organizers may not reactivate), without touching the organizer account', async () => {
     const first = await addStaff(orgA, { email: SHARED });
     await request(app).delete(`/api/users/${first.body.data._id}`).set(auth(orgA));
-    const back = await addStaff(orgA, { email: SHARED, password: 'NewStaffPass1!' });
+    // the organizer adding the same person again would reactivate them: refused
+    const refused = await addStaff(orgA, { email: SHARED, password: 'NewStaffPass1!' });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('STAFF_DEACTIVATED_ADMIN_ONLY');
+    expect((await login({ email: SHARED, password: 'NewStaffPass1!', role: 'SYSTEM_USER' })).status).toBeGreaterThanOrEqual(400);
+    // an administrator can, on behalf of that organizer
+    const back = await request(app).post('/api/users').set(auth(admin)).send({ fullName: 'Staff Again', email: SHARED, role: 'SYSTEM_USER', password: 'NewStaffPass1!', phone: '919000000042', organizerId: String(orgA._id) });
     expect(back.status).toBe(201);
     expect(String(back.body.data._id)).toBe(String(first.body.data._id));
     expect(await User.countDocuments({ email: SHARED })).toBe(2);

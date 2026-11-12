@@ -52,6 +52,10 @@ function resolveStatus(err: ErrorLike): { statusCode: number; message: string; c
     if (keys.length === 1 && keys[0] === 'email' && /uniq_organizer_email/.test(detail)) {
       return { statusCode: 409, message: 'An organizer account already uses this email address.', code: 'ORGANIZER_EMAIL_IN_USE' };
     }
+    // two requests adding the same person to one organizer's staff at once
+    if (/uniq_active_staff_per_owner/.test(detail) || (keys.includes('email') && keys.includes('createdBy'))) {
+      return { statusCode: 409, message: 'This person is already one of your system users.', code: 'STAFF_ALREADY_EXISTS' };
+    }
     if (keys.length === 1 && keys[0] === 'email' && /index: email_1\b/.test(detail)) {
       console.error('[users] The database still has the old unique index on users.email (email_1), so a second account on an existing email is refused. Run: npm run migrate:user-contact-uniqueness -- --apply');
       return { statusCode: 409, message: 'This email is already used by another account, and the system has not yet been updated to let one email belong to several accounts. Please ask your administrator to finish the update, then try again.', code: 'USER_EMAIL_INDEX_OUTDATED' };
