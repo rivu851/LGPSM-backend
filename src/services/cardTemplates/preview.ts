@@ -46,8 +46,8 @@ export async function renderTemplatePreview(templateId: string | null, input: Te
   });
   const invitationUrl = previewSampleUrl();
   return invitationCardService.generateInvitationCardPNG({
-    // The Add/Edit Event form's "Additional Info" choice shows its sample lines until there are real guests
-    invitee: input.cardInfo ? cardGuestLines(null, input.cardInfo, input.cardDisplay) : { name: input.guestName?.trim() || 'Guest Name', companyName: input.companyName?.trim() || '' },
+    // The Add/Edit Event form's "Additional Info" and "Invitee Name" choices show their sample lines until there are real guests (also when only the name box is set)
+    invitee: input.cardInfo || input.cardDisplay?.inviteeName !== undefined ? cardGuestLines(null, input.cardInfo, input.cardDisplay) : { name: input.guestName?.trim() || 'Guest Name', companyName: input.companyName?.trim() || '' },
     event: {
       title: input.title?.trim() || 'Your event title',
       venue: input.venue,

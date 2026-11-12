@@ -32,8 +32,8 @@ async function renderTemplatePreview(templateId, input, isAdmin, userId) {
     });
     const invitationUrl = (0, qrPayload_1.previewSampleUrl)();
     return invitationCard_service_1.invitationCardService.generateInvitationCardPNG({
-        // The Add/Edit Event form's "Additional Info" choice shows its sample lines until there are real guests
-        invitee: input.cardInfo ? (0, cardInfo_1.cardGuestLines)(null, input.cardInfo, input.cardDisplay) : { name: input.guestName?.trim() || 'Guest Name', companyName: input.companyName?.trim() || '' },
+        // The Add/Edit Event form's "Additional Info" and "Invitee Name" choices show their sample lines until there are real guests (also when only the name box is set)
+        invitee: input.cardInfo || input.cardDisplay?.inviteeName !== undefined ? (0, cardInfo_1.cardGuestLines)(null, input.cardInfo, input.cardDisplay) : { name: input.guestName?.trim() || 'Guest Name', companyName: input.companyName?.trim() || '' },
         event: {
             title: input.title?.trim() || 'Your event title',
             venue: input.venue,

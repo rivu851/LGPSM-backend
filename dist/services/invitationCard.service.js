@@ -72,7 +72,8 @@ async function buildClassicSVG(data) {
     const timeSub = show.dateTime ? data.event.timeSub || 'ONWARDS' : '';
     const venueMain = show.location ? data.event.venue || 'Venue to be announced' : '';
     const venueSub = show.location ? data.event.locationSub || '' : '';
-    const inviteeName = data.invitee.name || 'Guest';
+    // with "Invitee Name" unticked the name line is never filled with a placeholder
+    const inviteeName = show.inviteeName ? data.invitee.name || 'Guest' : data.invitee.name || '';
     const companyName = data.invitee.companyName || '';
     // 4. Process Sessions
     // Only the invitee's real sessions are printed; none means no session cards
