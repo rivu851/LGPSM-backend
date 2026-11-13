@@ -139,12 +139,45 @@ export const authService = {
       throw { statusCode: 403, message: 'Only organizer accounts can be self-registered' };
     }
 
+    const normalisedEmail = data.email.trim().toLowerCase();
+    const existingAdmin = await userRepository.findByRoleAndEmail(normalisedEmail, Role.ADMIN);
+    if (existingAdmin) {
+      throw {
+        statusCode: 400,
+        code: 'ADMIN_EMAIL_IN_USE',
+        message: 'This email belongs to an administrator account and cannot be used for organizer sign-up.',
+      };
+    }
+
+    const existingOrganizer = await userRepository.findByRoleAndEmail(normalisedEmail, Role.ORGANIZER);
+    if (existingOrganizer?.isEmailVerified) {
+      throw {
+        statusCode: 400,
+        code: 'ORGANIZER_EMAIL_IN_USE',
+        message: 'An organizer account already uses this email address. Sign in or use a different email.',
+      };
+    }
+
+    if (existingOrganizer) {
+      const pendingVerification = await emailVerificationRepository.findByEmail(normalisedEmail);
+      if (pendingVerification && pendingVerification.expiresAt > new Date()) {
+        throw {
+          statusCode: 400,
+          code: 'EMAIL_VERIFICATION_PENDING',
+          message: 'An organizer sign-up is already waiting for its verification code. Verify it or request a new code.',
+        };
+      }
+
+      await userRepository.deleteById(String(existingOrganizer._id));
+      await emailVerificationRepository.deleteByEmail(normalisedEmail);
+    }
+
     const hashedPassword = await hashPassword(data.password);
 
     // Create account as active but unverified (isActive is preserved for administrative activation semantics)
     const user = await userRepository.create({
       fullName: data.fullName,
-      email: data.email,
+      email: normalisedEmail,
       // Normalized at write time so phone-based login can do a direct
       // indexed lookup instead of scanning for every legacy raw format.
       phone: data.phone ? normalizePhoneNumber(data.phone) : undefined,
@@ -167,16 +200,16 @@ export const authService = {
     const codeHash = await hashOtp(otp);
 
     try {
-      await emailVerificationRepository.createOrReplace(data.email, codeHash);
-      await sendVerificationEmail(data.email, data.fullName, otp);
+      await emailVerificationRepository.createOrReplace(normalisedEmail, codeHash);
+      await sendVerificationEmail(normalisedEmail, data.fullName, otp);
     } catch (err) {
       // SMTP failure → undo account creation so the caller can retry.
       // We do not log or re-throw the OTP.
       await userRepository.deleteById(String(user._id)).catch(() => {});
-      await emailVerificationRepository.deleteByEmail(data.email).catch(() => {});
+      await emailVerificationRepository.deleteByEmail(normalisedEmail).catch(() => {});
       console.error(
         '[auth.service] Failed to send verification email for',
-        data.email,
+        normalisedEmail,
         ':',
         err instanceof Error ? err.message : 'unknown error'
       );
@@ -191,12 +224,12 @@ export const authService = {
     await alertService.notifyAdmins('newOrganizerRegistration', {
       type: 'SYSTEM',
       title: 'New organizer registered (pending verification)',
-      message: `${user.fullName} (${user.email}) created an organizer account and is awaiting email verification.`,
+      message: `${user.fullName} (${normalisedEmail}) created an organizer account and is awaiting email verification.`,
       entityType: 'User',
       entityId: user._id,
     });
 
-    return { pendingVerification: true as const, email: data.email };
+    return { pendingVerification: true as const, email: normalisedEmail };
   },
 
   /**
@@ -278,11 +311,15 @@ export const authService = {
     const next = data.newEmail.trim().toLowerCase();
     const refused = { statusCode: 401, message: 'We could not change the email address. Check the details and try again.' };
 
-    const user = await userRepository.findByEmail(current);
-    if (!user || user.role !== Role.ORGANIZER || user.isEmailVerified !== false || !(await verifyPassword(data.password, user.passwordHash ?? ''))) throw refused;
+    const user = await userRepository.findByRoleAndEmail(current, Role.ORGANIZER);
+    if (!user || user.isEmailVerified !== false || !(await verifyPassword(data.password, user.passwordHash ?? ''))) throw refused;
 
     if (next === current) throw { statusCode: 400, message: 'Enter a different email address.' };
-    if (await userRepository.findByEmail(next)) {
+    const [existingOrganizer, existingAdmin] = await Promise.all([
+      userRepository.findByRoleAndEmail(next, Role.ORGANIZER),
+      userRepository.findByRoleAndEmail(next, Role.ADMIN),
+    ]);
+    if (existingOrganizer || existingAdmin) {
       throw { statusCode: 409, message: 'This email address is already registered. Sign in, or use another address.' };
     }
 

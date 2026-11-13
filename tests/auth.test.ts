@@ -184,6 +184,7 @@ describe('Registration', () => {
     expect(res.statusCode).toBe(400);
     // (here the existing organizer is a sign-up still waiting for its code; for a verified one the message is "an organizer account already uses this email")
     expect(res.body.message).toMatch(/organizer account already uses this email|waiting for its verification code/);
+    expect(res.body.code).toBe('EMAIL_VERIFICATION_PENDING');
     expect(await User.countDocuments({ email: 'neworg@example.com' })).toBe(1);
   });
 

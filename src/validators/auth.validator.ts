@@ -3,7 +3,7 @@ import { optionalPhoneSchema } from './phone.validator';
 
 export const registerSchema = z.object({
   fullName: z.string().trim().min(2, 'Full name must be at least 2 characters').max(120, 'Full name is too long'),
-  email: z.string().email('Invalid email format'),
+  email: z.string().trim().toLowerCase().email('Invalid email format'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   phone: optionalPhoneSchema,
   role: z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
@@ -11,6 +11,14 @@ export const registerSchema = z.object({
   organizationName: z.string().trim().max(150, 'Organization name is too long').optional(),
   // How the organizer will send invitations (asked at signup); the send screen starts with this choice
   invitationChannel: z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
+}).superRefine((data, ctx) => {
+  if (data.organizationType === 'ORGANIZATION' && (data.organizationName?.length ?? 0) < 2) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['organizationName'],
+      message: 'Organization name must be at least 2 characters',
+    });
+  }
 });
 
 // Mobile number is the primary identifier; email remains a valid alternative.
