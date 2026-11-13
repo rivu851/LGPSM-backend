@@ -13,14 +13,6 @@ exports.registerSchema = zod_1.z.object({
     organizationName: zod_1.z.string().trim().max(150, 'Organization name is too long').optional(),
     // How the organizer will send invitations (asked at signup); the send screen starts with this choice
     invitationChannel: zod_1.z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
-}).superRefine((data, ctx) => {
-    if (data.organizationType === 'ORGANIZATION' && (data.organizationName?.length ?? 0) < 2) {
-        ctx.addIssue({
-            code: 'custom',
-            path: ['organizationName'],
-            message: 'Organization name must be at least 2 characters',
-        });
-    }
 });
 // Mobile number is the primary identifier; email remains a valid alternative.
 // "At least one of the two" is enforced in authService.login(), not here —
@@ -37,6 +29,8 @@ exports.refreshTokenSchema = zod_1.z.object({
 });
 exports.forgotPasswordSchema = zod_1.z.object({
     email: zod_1.z.string().email('Invalid email format'),
+    /** the portal asking, when an email is shared by several accounts (mobile app: SYSTEM_USER) */
+    role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });
 exports.resetPasswordSchema = zod_1.z.object({
     token: zod_1.z.string().min(1, 'Reset token is required'),
@@ -64,4 +58,5 @@ exports.changePendingEmailSchema = zod_1.z.object({
 exports.verifyResetOtpSchema = zod_1.z.object({
     email: zod_1.z.string().email('Invalid email format'),
     code: zod_1.z.string().regex(/^\d{4}$/, 'Enter the 4-digit code'),
+    role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });

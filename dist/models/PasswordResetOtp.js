@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PasswordResetOtp = exports.RESET_OTP_RESEND_COOLDOWN_SECONDS = exports.MAX_RESET_OTP_ATTEMPTS = exports.RESET_OTP_EXPIRY_MINUTES = exports.RESET_OTP_LENGTH = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
+const User_1 = require("./User");
 /**
  * A pending password-reset code (mobile "Forgot password" flow).
  *
@@ -50,6 +51,7 @@ exports.MAX_RESET_OTP_ATTEMPTS = 5;
 exports.RESET_OTP_RESEND_COOLDOWN_SECONDS = 30;
 const PasswordResetOtpSchema = new mongoose_1.Schema({
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    role: { type: String, enum: Object.values(User_1.Role) },
     codeHash: { type: String, required: true },
     expiresAt: { type: Date, required: true, index: { expires: 0 } },
     attempts: { type: Number, default: 0 },

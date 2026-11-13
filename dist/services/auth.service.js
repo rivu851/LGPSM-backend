@@ -387,13 +387,15 @@ exports.authService = {
      * It always returns normally, so the response never reveals whether the email is registered; repeat
      * requests inside the cooldown are ignored the same way.
      */
-    async requestPasswordResetOtp(email) {
+    async requestPasswordResetOtp(email, role) {
         const normalised = email.toLowerCase().trim();
-        const user = await user_repository_1.userRepository.findByEmail(normalised);
+        const user = role
+            ? await user_repository_1.userRepository.findByRoleAndEmail(normalised, role)
+            : (await user_repository_1.userRepository.findByRoleAndEmail(normalised, User_1.Role.SYSTEM_USER)) ?? await user_repository_1.userRepository.findByEmail(normalised);
         if (!user || !user.isActive)
             return;
         const existing = await PasswordResetOtp_1.PasswordResetOtp.findOne({ email: normalised });
-        if (existing && Date.now() - existing.lastSentAt.getTime() < PasswordResetOtp_1.RESET_OTP_RESEND_COOLDOWN_SECONDS * 1000)
+        if (existing?.role === user.role && Date.now() - existing.lastSentAt.getTime() < PasswordResetOtp_1.RESET_OTP_RESEND_COOLDOWN_SECONDS * 1000)
             return;
         // Bounds the mail one address can be sent, whatever IP addresses the requests come from
         if (!(await spendResetAllowance(normalised, 'codesSent', PasswordResetThrottle_1.MAX_RESET_CODES_PER_WINDOW)))
@@ -402,6 +404,7 @@ exports.authService = {
         const now = new Date();
         await PasswordResetOtp_1.PasswordResetOtp.findOneAndUpdate({ email: normalised }, {
             email: normalised,
+            role: user.role,
             codeHash: await hashOtp(otp),
             expiresAt: new Date(now.getTime() + PasswordResetOtp_1.RESET_OTP_EXPIRY_MINUTES * 60 * 1000),
             attempts: 0,
@@ -419,11 +422,16 @@ exports.authService = {
      * single-use reset token the emailed link carries, to be used with resetPassword. Every failure gives the
      * same message so a caller cannot tell a wrong code from an expired or unknown one.
      */
-    async verifyPasswordResetOtp(email, code) {
+    async verifyPasswordResetOtp(email, code, role) {
         const invalid = { statusCode: 400, message: 'Invalid or expired code.' };
         const normalised = email.toLowerCase().trim();
         // The guess is counted before it is checked, in one database step, so simultaneous requests cannot exceed the limit
-        const record = await PasswordResetOtp_1.PasswordResetOtp.findOneAndUpdate({ email: normalised, expiresAt: { $gt: new Date() }, attempts: { $lt: PasswordResetOtp_1.MAX_RESET_OTP_ATTEMPTS } }, { $inc: { attempts: 1 } }, { new: true });
+        const record = await PasswordResetOtp_1.PasswordResetOtp.findOneAndUpdate({
+            email: normalised,
+            ...(role ? { role } : {}),
+            expiresAt: { $gt: new Date() },
+            attempts: { $lt: PasswordResetOtp_1.MAX_RESET_OTP_ATTEMPTS },
+        }, { $inc: { attempts: 1 } }, { new: true });
         if (!record)
             throw invalid;
         const throttled = await PasswordResetThrottle_1.PasswordResetThrottle.findOne({ email: normalised }).select('failedGuesses').lean();
@@ -440,7 +448,9 @@ exports.authService = {
         // single use: a verified code is gone immediately, and whoever holds the mailbox starts afresh
         await PasswordResetOtp_1.PasswordResetOtp.deleteOne({ _id: record._id });
         await PasswordResetThrottle_1.PasswordResetThrottle.deleteOne({ email: normalised });
-        const user = await user_repository_1.userRepository.findByEmail(normalised);
+        const user = record.role
+            ? await user_repository_1.userRepository.findByRoleAndEmail(normalised, record.role)
+            : await user_repository_1.userRepository.findByEmail(normalised);
         if (!user || !user.isActive)
             throw invalid;
         return { resetToken: (0, token_1.generatePasswordResetToken)(user._id.toString(), user.role, user.passwordHash) };
