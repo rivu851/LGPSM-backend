@@ -14,7 +14,7 @@ import {
   verifyPasswordResetToken,
 } from '../utils/token';
 import { sendEmail } from '../utils/email.provider';
-import { AuthProvider, Role, User } from '../models/User';
+import { AuthProvider, Role } from '../models/User';
 import { MAX_OTP_ATTEMPTS, OTP_EXPIRY_MINUTES } from '../models/EmailVerification';
 import {
   PasswordResetOtp,
@@ -111,16 +111,6 @@ async function sendVerificationEmail(
   await sendEmail(email, 'Verify your LGPSM organizer account', html);
 }
 
-/**
- * Which account a password-reset code is for when an email has several. The portal named in the request decides; with none named
- * the mobile app's own users (system users) are preferred, else the only active account. Inactive accounts are never chosen.
- */
-function pickResetAccount<T extends { role: string; isActive?: boolean }>(accounts: T[], role?: string): T | null {
-  const active = accounts.filter((u) => u.isActive !== false);
-  if (role) return active.find((u) => u.role === role) ?? null;
-  return active.find((u) => u.role === Role.SYSTEM_USER) ?? active[0] ?? null;
-}
-
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export const authService = {
@@ -149,24 +139,37 @@ export const authService = {
       throw { statusCode: 403, message: 'Only organizer accounts can be self-registered' };
     }
 
-    // One organizer account per email (the email is how that organizer is identified; staff and admin accounts may still share it).
-    // An earlier sign-up that never got its code is not an organizer yet: once its code has run out it is cleared away so the real
-    // owner of the address can sign up. While a code is still valid the address is taken, so nobody can overwrite a sign-up
-    // (and so its password) that is waiting to be verified.
-    const email = data.email.trim().toLowerCase();
-    // an administrator's email is never shared with another account
-    if (await User.exists({ email, role: Role.ADMIN })) {
-      throw { statusCode: 400, message: 'This email address belongs to an administrator account, so it cannot be used for another account.' };
+    const normalisedEmail = data.email.trim().toLowerCase();
+    const existingAdmin = await userRepository.findByRoleAndEmail(normalisedEmail, Role.ADMIN);
+    if (existingAdmin) {
+      throw {
+        statusCode: 400,
+        code: 'ADMIN_EMAIL_IN_USE',
+        message: 'This email belongs to an administrator account and cannot be used for organizer sign-up.',
+      };
     }
-    const existing = await User.find({ email, role: Role.ORGANIZER });
-    if (existing.some((u) => u.isEmailVerified !== false)) throw { statusCode: 400, message: 'An organizer account already uses this email address. Sign in, or use another email.' };
-    if (existing.length) {
-      const record = await emailVerificationRepository.findByEmail(email);
-      if (record && record.expiresAt > new Date()) {
-        throw { statusCode: 400, message: 'A sign-up for this email is waiting for its verification code. Enter the code we sent, or try again in a few minutes.' };
+
+    const existingOrganizer = await userRepository.findByRoleAndEmail(normalisedEmail, Role.ORGANIZER);
+    if (existingOrganizer?.isEmailVerified) {
+      throw {
+        statusCode: 400,
+        code: 'ORGANIZER_EMAIL_IN_USE',
+        message: 'An organizer account already uses this email address. Sign in or use a different email.',
+      };
+    }
+
+    if (existingOrganizer) {
+      const pendingVerification = await emailVerificationRepository.findByEmail(normalisedEmail);
+      if (pendingVerification && pendingVerification.expiresAt > new Date()) {
+        throw {
+          statusCode: 400,
+          code: 'EMAIL_VERIFICATION_PENDING',
+          message: 'An organizer sign-up is already waiting for its verification code. Verify it or request a new code.',
+        };
       }
-      for (const stale of existing) await userRepository.deleteById(String(stale._id));
-      await emailVerificationRepository.deleteByEmail(email).catch(() => {});
+
+      await userRepository.deleteById(String(existingOrganizer._id));
+      await emailVerificationRepository.deleteByEmail(normalisedEmail);
     }
 
     const hashedPassword = await hashPassword(data.password);
@@ -174,7 +177,7 @@ export const authService = {
     // Create account as active but unverified (isActive is preserved for administrative activation semantics)
     const user = await userRepository.create({
       fullName: data.fullName,
-      email: data.email,
+      email: normalisedEmail,
       // Normalized at write time so phone-based login can do a direct
       // indexed lookup instead of scanning for every legacy raw format.
       phone: data.phone ? normalizePhoneNumber(data.phone) : undefined,
@@ -185,9 +188,10 @@ export const authService = {
       isEmailVerified: false,
       profile: {
         invitationChannel: data.invitationChannel || 'BOTH',
-        organizationType: data.organizationType || 'INDIVIDUAL',
-        // only an organization has a name (an individual's own name is used wherever a name is shown)
-        ...(data.organizationType === 'ORGANIZATION' && data.organizationName?.trim() ? { organizationName: data.organizationName.trim() } : {}),
+        ...(data.organizationType ? { organizationType: data.organizationType } : {}),
+        ...(data.organizationType === 'ORGANIZATION' && data.organizationName
+          ? { organizationName: data.organizationName }
+          : {}),
       },
     });
 
@@ -196,16 +200,16 @@ export const authService = {
     const codeHash = await hashOtp(otp);
 
     try {
-      await emailVerificationRepository.createOrReplace(data.email, codeHash, user._id);
-      await sendVerificationEmail(data.email, data.fullName, otp);
+      await emailVerificationRepository.createOrReplace(normalisedEmail, codeHash);
+      await sendVerificationEmail(normalisedEmail, data.fullName, otp);
     } catch (err) {
       // SMTP failure → undo account creation so the caller can retry.
       // We do not log or re-throw the OTP.
       await userRepository.deleteById(String(user._id)).catch(() => {});
-      await emailVerificationRepository.deleteByEmail(data.email).catch(() => {});
+      await emailVerificationRepository.deleteByEmail(normalisedEmail).catch(() => {});
       console.error(
         '[auth.service] Failed to send verification email for',
-        data.email,
+        normalisedEmail,
         ':',
         err instanceof Error ? err.message : 'unknown error'
       );
@@ -220,12 +224,12 @@ export const authService = {
     await alertService.notifyAdmins('newOrganizerRegistration', {
       type: 'SYSTEM',
       title: 'New organizer registered (pending verification)',
-      message: `${user.fullName} (${user.email}) created an organizer account and is awaiting email verification.`,
+      message: `${user.fullName} (${normalisedEmail}) created an organizer account and is awaiting email verification.`,
       entityType: 'User',
       entityId: user._id,
     });
 
-    return { pendingVerification: true as const, email: data.email };
+    return { pendingVerification: true as const, email: normalisedEmail };
   },
 
   /**
@@ -285,7 +289,7 @@ export const authService = {
     }
 
     // Correct code — mark email as verified
-    await userRepository.verifyOrganizerEmail(normalised, record.userId);
+    await userRepository.verifyOrganizerEmail(normalised);
 
     // Remove OTP record
     await emailVerificationRepository.deleteByEmail(normalised);
@@ -307,22 +311,16 @@ export const authService = {
     const next = data.newEmail.trim().toLowerCase();
     const refused = { statusCode: 401, message: 'We could not change the email address. Check the details and try again.' };
 
-    // Accounts can share an email: the sign-up being changed is the unverified organizer on this address whose password this is
-    const waiting = await userRepository.findUnverifiedOrganizers(current);
-    let user: (typeof waiting)[number] | null = null;
-    for (const candidate of waiting) {
-      if (await verifyPassword(data.password, candidate.passwordHash ?? UNKNOWN_ACCOUNT_HASH)) { user = candidate; break; }
-    }
-    if (!waiting.length) await verifyPassword(data.password, UNKNOWN_ACCOUNT_HASH);
-    if (!user) throw refused;
+    const user = await userRepository.findByRoleAndEmail(current, Role.ORGANIZER);
+    if (!user || user.isEmailVerified !== false || !(await verifyPassword(data.password, user.passwordHash ?? ''))) throw refused;
 
     if (next === current) throw { statusCode: 400, message: 'Enter a different email address.' };
-    // an administrator's email is never shared; one organizer account per email (system users on the new address do not matter)
-    if (await User.exists({ email: next, role: Role.ADMIN })) {
-      throw { statusCode: 409, message: 'This email address belongs to an administrator account, so it cannot be used for another account.' };
-    }
-    if (await User.exists({ email: next, role: Role.ORGANIZER })) {
-      throw { statusCode: 409, message: 'An organizer account already uses this email address. Sign in, or use another email.' };
+    const [existingOrganizer, existingAdmin] = await Promise.all([
+      userRepository.findByRoleAndEmail(next, Role.ORGANIZER),
+      userRepository.findByRoleAndEmail(next, Role.ADMIN),
+    ]);
+    if (existingOrganizer || existingAdmin) {
+      throw { statusCode: 409, message: 'This email address is already registered. Sign in, or use another address.' };
     }
 
     const otp = generateOtpPlaintext();
@@ -334,11 +332,14 @@ export const authService = {
       throw { statusCode: 503, exposeMessage: true, message: 'Unable to send verification email. Please try again later.' };
     }
 
-    await userRepository.updateById(String(user._id), { email: next } as any);
-    // the old address's code goes with the sign-up that left it (not one belonging to another sign-up still waiting there)
-    const oldRecord = await emailVerificationRepository.findByEmail(current);
-    if (oldRecord && (!oldRecord.userId || String(oldRecord.userId) === String(user._id))) await emailVerificationRepository.deleteByEmail(current).catch(() => {});
-    await emailVerificationRepository.createOrReplace(next, codeHash, user._id);
+    try {
+      await userRepository.updateById(String(user._id), { email: next } as any);
+    } catch (err: any) {
+      if (err?.code === 11000) throw { statusCode: 409, message: 'This email address is already registered. Sign in, or use another address.' };
+      throw err;
+    }
+    await emailVerificationRepository.deleteByEmail(current).catch(() => {});
+    await emailVerificationRepository.createOrReplace(next, codeHash);
     return { email: next };
   },
 
@@ -353,16 +354,14 @@ export const authService = {
   async resendVerificationCode(email: string) {
     const normalised = email.trim().toLowerCase();
 
-    // Accounts can share an email: the code goes to the organizer sign-up that is waiting for one (the one its last code was sent for,
-    // else the oldest), never to a staff account or an organizer who is already verified
-    const waiting = await userRepository.findUnverifiedOrganizers(normalised);
-    const pendingRecord = await emailVerificationRepository.findByEmail(normalised);
-    const user = waiting.find((u) => pendingRecord?.userId && String(u._id) === String(pendingRecord.userId)) ?? waiting[0] ?? null;
+    const user = await userRepository.findByRoleAndEmail(normalised, Role.ORGANIZER);
 
-    if (!user) {
-      const verified = await userRepository.findByRoleAndEmail(normalised, Role.ORGANIZER);
+    if (!user || user.role !== Role.ORGANIZER) {
       // Return success-shaped response to avoid email enumeration
-      if (!verified) return { sent: true as const };
+      return { sent: true as const };
+    }
+
+    if (user.isEmailVerified) {
       throw { statusCode: 400, message: 'This account is already verified.' };
     }
 
@@ -397,7 +396,7 @@ export const authService = {
       };
     }
 
-    await emailVerificationRepository.createOrReplace(normalised, codeHash, user._id);
+    await emailVerificationRepository.createOrReplace(normalised, codeHash);
 
     return { sent: true as const };
   },
@@ -497,28 +496,18 @@ export const authService = {
   },
 
   async forgotPassword(email: string) {
-    // Accounts can share an email (an organizer who is also someone's system user): the mail offers a reset link for each
-    // account that can sign in, named by what it is, and each link changes only its own account
-    const accounts = (await userRepository.findAllByEmail(email.trim().toLowerCase())).filter((u) => u.isActive !== false);
-    if (!accounts.length) return;
+    const user = await userRepository.findByEmail(email);
+    if (!user) return;
 
-    const portalOf = (role: string) => (role === Role.ADMIN ? 'admin' : role === Role.ORGANIZER ? 'organizer' : 'app');
-    const kindOf = (u: any) => (u.role === Role.ADMIN ? 'Administrator account' : u.role === Role.ORGANIZER ? `Organizer account${u.profile?.organizationName ? ` (${u.profile.organizationName})` : ''}` : 'System user account');
-    const entries = accounts.map((user) => {
-      const resetToken = generatePasswordResetToken((user as any)._id.toString(), user.role, user.passwordHash);
-      const resetUrl = `${env.FRONTEND_URL}/forgot-password?mode=${portalOf(user.role)}&token=${encodeURIComponent(resetToken)}`;
-      return { user, resetUrl };
-    });
-    const first = entries[0].user;
-    const body = entries.length === 1
-      ? `<p><a href="${escapeHtml(entries[0].resetUrl)}">Reset password</a></p>`
-      : `<p>This email address is used by ${entries.length} accounts. Choose the one you want to reset:</p><ul>${entries.map((e) => `<li style="margin-bottom:8px">${escapeHtml(kindOf(e.user))}: <a href="${escapeHtml(e.resetUrl)}">Reset password</a></li>`).join('')}</ul>`;
+    const resetToken = generatePasswordResetToken((user as any)._id.toString(), user.role, user.passwordHash);
+    const portal = user.role === Role.ADMIN ? 'admin' : user.role === Role.ORGANIZER ? 'organizer' : 'app';
+    const resetUrl = `${env.FRONTEND_URL}/forgot-password?mode=${portal}&token=${encodeURIComponent(resetToken)}`;
 
     // Not awaited: waiting for the mail server would reveal, by the response time, that this address has an account
     void sendEmail(
-      first.email,
+      user.email,
       'Reset your LGPSM password',
-      `<p>Hello ${escapeHtml(first.fullName)},</p><p>Use the link below to reset your password. It expires in 15 minutes.</p>${body}<p>If you did not request this, you can ignore this email.</p>`
+      `<p>Hello ${escapeHtml(user.fullName)},</p><p>Use the link below to reset your password. It expires in 15 minutes.</p><p><a href="${escapeHtml(resetUrl)}">Reset password</a></p><p>If you did not request this, you can ignore this email.</p>`
     ).catch((err) => console.error('Password reset email could not be sent:', (err as Error).message));
   },
 
@@ -528,13 +517,15 @@ export const authService = {
    * It always returns normally, so the response never reveals whether the email is registered; repeat
    * requests inside the cooldown are ignored the same way.
    */
-  async requestPasswordResetOtp(email: string, role?: string) {
+  async requestPasswordResetOtp(email: string, role?: Role) {
     const normalised = email.toLowerCase().trim();
-    const user = pickResetAccount(await userRepository.findAllByEmail(normalised), role);
-    if (!user) return;
+    const user = role
+      ? await userRepository.findByRoleAndEmail(normalised, role)
+      : (await userRepository.findByRoleAndEmail(normalised, Role.SYSTEM_USER)) ?? await userRepository.findByEmail(normalised);
+    if (!user || !user.isActive) return;
 
     const existing = await PasswordResetOtp.findOne({ email: normalised });
-    if (existing && Date.now() - existing.lastSentAt.getTime() < RESET_OTP_RESEND_COOLDOWN_SECONDS * 1000) return;
+    if (existing?.role === user.role && Date.now() - existing.lastSentAt.getTime() < RESET_OTP_RESEND_COOLDOWN_SECONDS * 1000) return;
     // Bounds the mail one address can be sent, whatever IP addresses the requests come from
     if (!(await spendResetAllowance(normalised, 'codesSent', MAX_RESET_CODES_PER_WINDOW))) return;
 
@@ -544,6 +535,7 @@ export const authService = {
       { email: normalised },
       {
         email: normalised,
+        role: user.role,
         codeHash: await hashOtp(otp),
         expiresAt: new Date(now.getTime() + RESET_OTP_EXPIRY_MINUTES * 60 * 1000),
         attempts: 0,
@@ -569,13 +561,18 @@ export const authService = {
    * single-use reset token the emailed link carries, to be used with resetPassword. Every failure gives the
    * same message so a caller cannot tell a wrong code from an expired or unknown one.
    */
-  async verifyPasswordResetOtp(email: string, code: string, role?: string): Promise<{ resetToken: string }> {
+  async verifyPasswordResetOtp(email: string, code: string, role?: Role): Promise<{ resetToken: string }> {
     const invalid = { statusCode: 400, message: 'Invalid or expired code.' };
     const normalised = email.toLowerCase().trim();
 
     // The guess is counted before it is checked, in one database step, so simultaneous requests cannot exceed the limit
     const record = await PasswordResetOtp.findOneAndUpdate(
-      { email: normalised, expiresAt: { $gt: new Date() }, attempts: { $lt: MAX_RESET_OTP_ATTEMPTS } },
+      {
+        email: normalised,
+        ...(role ? { role } : {}),
+        expiresAt: { $gt: new Date() },
+        attempts: { $lt: MAX_RESET_OTP_ATTEMPTS },
+      },
       { $inc: { attempts: 1 } },
       { new: true }
     );
@@ -596,8 +593,10 @@ export const authService = {
     await PasswordResetOtp.deleteOne({ _id: record._id });
     await PasswordResetThrottle.deleteOne({ email: normalised });
 
-    const user = pickResetAccount(await userRepository.findAllByEmail(normalised), role);
-    if (!user) throw invalid;
+    const user = record.role
+      ? await userRepository.findByRoleAndEmail(normalised, record.role)
+      : await userRepository.findByEmail(normalised);
+    if (!user || !user.isActive) throw invalid;
     return { resetToken: generatePasswordResetToken((user as any)._id.toString(), user.role, user.passwordHash) };
   },
 

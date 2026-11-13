@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import { Role } from './User';
 
 /**
  * A pending password-reset code (mobile "Forgot password" flow).
@@ -16,6 +17,7 @@ export const RESET_OTP_RESEND_COOLDOWN_SECONDS = 30;
 
 export interface IPasswordResetOtp extends Document {
   email: string;
+  role?: Role;
   codeHash: string;
   expiresAt: Date;
   attempts: number;
@@ -25,6 +27,7 @@ export interface IPasswordResetOtp extends Document {
 const PasswordResetOtpSchema = new Schema<IPasswordResetOtp>(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    role: { type: String, enum: Object.values(Role) },
     codeHash: { type: String, required: true },
     expiresAt: { type: Date, required: true, index: { expires: 0 } },
     attempts: { type: Number, default: 0 },

@@ -82,6 +82,68 @@ describe('Registration', () => {
     expect(JSON.stringify(res.body)).not.toMatch(/\d{6}/);
   });
 
+  it('accepts and saves the organization fields sent by the signup form', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        fullName: 'Rivu Chattopadhyay',
+        email: 'orgsignup@example.com',
+        password: 'password123',
+        phone: '9903107102',
+        role: 'ORGANIZER',
+        organizationType: 'ORGANIZATION',
+        organizationName: 'Rivu Events',
+      });
+
+    expect(res.statusCode).toBe(201);
+    const user = await User.findOne({ email: 'orgsignup@example.com' });
+    expect(user?.profile).toMatchObject({
+      organizationType: 'ORGANIZATION',
+      organizationName: 'Rivu Events',
+    });
+  });
+
+  it('rejects organization signup when its required name is missing', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        fullName: 'Organization User',
+        email: 'missingorgname@example.com',
+        password: 'password123',
+        organizationType: 'ORGANIZATION',
+      });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.errors.organizationName._errors).toContain(
+      'Organization name must be at least 2 characters'
+    );
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it('returns field validation errors for malformed registration input', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        fullName: 'A',
+        email: 'not-an-email',
+        password: 'short',
+        phone: '123',
+      });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.errors.fullName._errors).toContain(
+      'Full name must be at least 2 characters'
+    );
+    expect(res.body.errors.email._errors).toContain('Invalid email format');
+    expect(res.body.errors.password._errors).toContain(
+      'Password must be at least 8 characters'
+    );
+    expect(res.body.errors.phone._errors).toContain(
+      'Enter a valid phone number (7–15 digits)'
+    );
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
   it('creates the user as active and unverified in the database', async () => {
     const user = await User.findOne({ email: 'neworg@example.com' });
     expect(user).not.toBeNull();
@@ -122,6 +184,7 @@ describe('Registration', () => {
     expect(res.statusCode).toBe(400);
     // (here the existing organizer is a sign-up still waiting for its code; for a verified one the message is "an organizer account already uses this email")
     expect(res.body.message).toMatch(/organizer account already uses this email|waiting for its verification code/);
+    expect(res.body.code).toBe('EMAIL_VERIFICATION_PENDING');
     expect(await User.countDocuments({ email: 'neworg@example.com' })).toBe(1);
   });
 

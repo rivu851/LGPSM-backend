@@ -3,18 +3,21 @@ import { optionalPhoneSchema } from './phone.validator';
 
 export const registerSchema = z.object({
   fullName: z.string().trim().min(2, 'Full name must be at least 2 characters').max(120, 'Full name is too long'),
-  email: z.string().email('Invalid email format'),
+  email: z.string().trim().toLowerCase().email('Invalid email format'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   phone: optionalPhoneSchema,
   role: z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
-  // How the organizer will send invitations (asked at signup); the send screen starts with this choice
-  invitationChannel: z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
-  // Individual, or an organization (then its name is required); the name is shown on the organizer's cards, invitations and lists
   organizationType: z.enum(['INDIVIDUAL', 'ORGANIZATION']).optional(),
   organizationName: z.string().trim().max(150, 'Organization name is too long').optional(),
-}).superRefine((d, ctx) => {
-  if (d.organizationType === 'ORGANIZATION' && !(d.organizationName && d.organizationName.trim().length >= 2)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['organizationName'], message: 'Enter the organization name' });
+  // How the organizer will send invitations (asked at signup); the send screen starts with this choice
+  invitationChannel: z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
+}).superRefine((data, ctx) => {
+  if (data.organizationType === 'ORGANIZATION' && (data.organizationName?.length ?? 0) < 2) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['organizationName'],
+      message: 'Organization name must be at least 2 characters',
+    });
   }
 });
 

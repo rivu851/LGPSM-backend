@@ -224,6 +224,7 @@ describe('organizer sign-up on an email another account already uses', () => {
   it('an organizer who is already verified keeps their email: signing up on it is refused, whatever the capitals', async () => {
     const r = await signup({ email: 'SAM@x.com' });
     expect(r.status).toBe(400); expect(r.body.message).toMatch(/organizer account already uses this email/);
+    expect(r.body.code).toBe('ORGANIZER_EMAIL_IN_USE');
     expect(await User.countDocuments({ email: SHARED, role: Role.ORGANIZER })).toBe(1);
   });
   it('the database itself refuses two organizers on one email, but accepts staff and admin on it', async () => {

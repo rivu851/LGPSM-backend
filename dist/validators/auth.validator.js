@@ -9,15 +9,10 @@ exports.registerSchema = zod_1.z.object({
     password: zod_1.z.string().min(8, 'Password must be at least 8 characters'),
     phone: phone_validator_1.optionalPhoneSchema,
     role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
-    // How the organizer will send invitations (asked at signup); the send screen starts with this choice
-    invitationChannel: zod_1.z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
-    // Individual, or an organization (then its name is required); the name is shown on the organizer's cards, invitations and lists
     organizationType: zod_1.z.enum(['INDIVIDUAL', 'ORGANIZATION']).optional(),
     organizationName: zod_1.z.string().trim().max(150, 'Organization name is too long').optional(),
-}).superRefine((d, ctx) => {
-    if (d.organizationType === 'ORGANIZATION' && !(d.organizationName && d.organizationName.trim().length >= 2)) {
-        ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ['organizationName'], message: 'Enter the organization name' });
-    }
+    // How the organizer will send invitations (asked at signup); the send screen starts with this choice
+    invitationChannel: zod_1.z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
 });
 // Mobile number is the primary identifier; email remains a valid alternative.
 // "At least one of the two" is enforced in authService.login(), not here —
