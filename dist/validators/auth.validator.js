@@ -9,14 +9,17 @@ exports.registerSchema = zod_1.z.object({
     password: zod_1.z.string().min(8, 'Password must be at least 8 characters'),
     phone: phone_validator_1.optionalPhoneSchema,
     role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
-    // How the organizer will send invitations (asked at signup); the send screen starts with this choice
-    invitationChannel: zod_1.z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
-    // Individual, or an organization (then its name is required); the name is shown on the organizer's cards, invitations and lists
     organizationType: zod_1.z.enum(['INDIVIDUAL', 'ORGANIZATION']).optional(),
     organizationName: zod_1.z.string().trim().max(150, 'Organization name is too long').optional(),
-}).superRefine((d, ctx) => {
-    if (d.organizationType === 'ORGANIZATION' && !(d.organizationName && d.organizationName.trim().length >= 2)) {
-        ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ['organizationName'], message: 'Enter the organization name' });
+    // How the organizer will send invitations (asked at signup); the send screen starts with this choice
+    invitationChannel: zod_1.z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
+}).superRefine((data, ctx) => {
+    if (data.organizationType === 'ORGANIZATION' && (data.organizationName?.length ?? 0) < 2) {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['organizationName'],
+            message: 'Organization name must be at least 2 characters',
+        });
     }
 });
 // Mobile number is the primary identifier; email remains a valid alternative.
@@ -34,8 +37,6 @@ exports.refreshTokenSchema = zod_1.z.object({
 });
 exports.forgotPasswordSchema = zod_1.z.object({
     email: zod_1.z.string().email('Invalid email format'),
-    /** the portal asking, when an email is shared by several accounts (mobile app: SYSTEM_USER) */
-    role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });
 exports.resetPasswordSchema = zod_1.z.object({
     token: zod_1.z.string().min(1, 'Reset token is required'),
@@ -63,5 +64,4 @@ exports.changePendingEmailSchema = zod_1.z.object({
 exports.verifyResetOtpSchema = zod_1.z.object({
     email: zod_1.z.string().email('Invalid email format'),
     code: zod_1.z.string().regex(/^\d{4}$/, 'Enter the 4-digit code'),
-    role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });
