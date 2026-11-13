@@ -201,7 +201,7 @@ class EventService {
         const event = await this.getEventById(eventId, organizerId, role);
         await event.populate([
             { path: 'categoryId', select: 'name subcategories ownerId' },
-            { path: 'templateId', select: 'name previewImageKey isActive' },
+            { path: 'templateId', select: 'name previewImageKey isActive templateData' },
             { path: 'organizerId', select: 'fullName email profile.organizationName profile.logoKey profile.invitationChannel' },
         ]);
         const json = event.toJSON();

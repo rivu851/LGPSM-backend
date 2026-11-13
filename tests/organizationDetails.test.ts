@@ -19,18 +19,19 @@ describe('organization details on the organizer profile', () => {
 
   it('saves organization fields without touching the personal name or the logo', async () => {
     const org = await mk(Role.ORGANIZER, { logoKey: 'logo-1', organizationName: 'Old' });
-    const res = await patch(org, { organization: { name: 'Acme', phone: '9876543210', email: 'hi@acme.com', address: '1 Road', website: 'https://acme.com' } });
+    const res = await patch(org, { organization: { name: 'Acme', phone: '9876543210', whatsapp: '9123456780', email: 'hi@acme.com', address: '1 Road', website: 'https://acme.com' } });
     expect(res.status).toBe(200);
     const saved: any = await User.findById(org._id).lean();
     expect(saved.fullName).toBe('P');
     expect(saved.profile.logoKey).toBe('logo-1');
     expect(saved.profile.organizationName).toBe('Acme');
-    expect(saved.profile.organization).toEqual({ phone: '9876543210', email: 'hi@acme.com', address: '1 Road', website: 'https://acme.com' });
+    expect(saved.profile.organization).toEqual({ phone: '9876543210', whatsapp: '9123456780', email: 'hi@acme.com', address: '1 Road', website: 'https://acme.com' });
   });
 
   it('rejects an invalid email, website, or an empty name', async () => {
     const org = await mk(Role.ORGANIZER);
     expect((await patch(org, { organization: { name: 'A', email: 'nope' } })).status).toBe(400);
+    expect((await patch(org, { organization: { name: 'A', whatsapp: 'abc' } })).status).toBe(400);
     expect((await patch(org, { organization: { name: 'A', website: 'javascript:alert(1)' } })).status).toBe(400);
     expect((await patch(org, { organization: { name: ' ' } })).status).toBe(400);
   });

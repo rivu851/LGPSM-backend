@@ -229,11 +229,15 @@ exports.inviteeSetService = {
             Invitee_1.Invitee.countDocuments(filter)
         ]);
         const activity = await loadActivity(eid, guests);
+        // which uploaded list each guest came from (guests added by hand before lists existed are "Earlier invitees")
+        const listIds = [...new Set(guests.map((g) => g.inviteeSetId).filter(Boolean).map(String))];
+        const lists = listIds.length ? await InviteeSet_1.InviteeSet.find({ _id: { $in: listIds } }).select('name').lean() : [];
+        const listName = new Map(lists.map((l) => [String(l._id), l.name]));
         return {
             total, page, limit: lim,
             members: guests.map((g) => {
                 const a = activity.get(String(g._id));
-                return { id: String(g._id), name: g.name, email: g.email || null, mobile: g.mobile || null, company: g.companyName || g.company || null, delivery: (0, exports.deliveryStateOf)(a), rsvpStatus: g.rsvpStatus, checkedIn: a.checkedIn };
+                return { id: String(g._id), name: g.name, email: g.email || null, mobile: g.mobile || null, company: g.companyName || g.company || null, delivery: (0, exports.deliveryStateOf)(a), rsvpStatus: g.rsvpStatus, checkedIn: a.checkedIn, setId: (0, exports.setKeyOf)(g), setName: g.inviteeSetId ? listName.get(String(g.inviteeSetId)) || 'Removed list' : 'Earlier invitees' };
             })
         };
     },

@@ -18,7 +18,8 @@ export const createTemplateSchema = z.object({
 
 // "Upload your own template": a name, the event type it is for, and the uploaded design (an image this person uploaded)
 export const uploadTemplateSchema = z.object({
-  name: z.string().trim().min(2).max(100),
+  // optional: an unnamed upload is called "Uploaded template" with the date
+  name: z.string().trim().min(2).max(100).optional().or(z.literal('')),
   categoryId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
   subcategoryId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
   imageKey: z.string().refine((k) => /^media:[0-9a-fA-F]{24}$/.test(k), 'Upload the design as an image first')
@@ -101,6 +102,6 @@ export const previewTemplateCardSchema = z
     companyName: z.string().max(100).optional(),
     contactNumber: z.string().trim().max(30).optional(),
     cardDisplay: z.object({ title: z.boolean().optional(), qr: z.boolean().optional(), dateTime: z.boolean().optional(), location: z.boolean().optional(), inviteeName: z.boolean().optional() }).strict().optional(),
-    cardInfo: z.object({ primary: z.enum(CARD_INFO_FIELDS).nullable(), secondary: z.enum(CARD_INFO_FIELDS).nullable(), identityLabel: z.string().trim().max(40).nullable().optional(), secondaryIdentityLabel: z.string().trim().max(40).nullable().optional() }).strict().optional()
+    cardInfo: z.object({ primary: z.enum(CARD_INFO_FIELDS).nullable(), secondary: z.enum(CARD_INFO_FIELDS).nullable(), identityLabel: z.string().trim().max(40).nullable().optional(), secondaryIdentityLabel: z.string().trim().max(40).nullable().optional(), showIdentityLabel: z.boolean().optional(), showSecondaryIdentityLabel: z.boolean().optional() }).strict().optional()
   })
   .strict();

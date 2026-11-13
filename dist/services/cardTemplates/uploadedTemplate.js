@@ -148,7 +148,7 @@ async function createUploadedTemplate(actor, input) {
         })()
         : buildUploadedSpec(input.imageKey, media.width, media.height);
     return Template_1.Template.create({
-        name: input.name.trim(),
+        name: input.name?.trim() || `Uploaded template ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`,
         ...(input.categoryId ? { categoryId: new mongoose_1.default.Types.ObjectId(input.categoryId) } : {}),
         ...(input.subcategoryId ? { subcategoryId: new mongoose_1.default.Types.ObjectId(input.subcategoryId) } : {}),
         previewImageKey: input.imageKey,
@@ -158,8 +158,8 @@ async function createUploadedTemplate(actor, input) {
         // lets the Templates screen tell an uploaded design from an AI-made one
         templateData: { uploaded: true, ...(dynamic ? { dynamicDetails: true } : {}) },
         ownerId: new mongoose_1.default.Types.ObjectId(actor.userId),
-        // private to the person who uploaded it
-        isSystemTemplate: false,
+        // an organizer's upload is private to them; an admin's is shared: every organizer can use it (for its category / subcategory)
+        isSystemTemplate: dynamic,
         isPublished: true,
         isActive: true
     });

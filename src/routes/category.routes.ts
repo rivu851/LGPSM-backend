@@ -20,8 +20,12 @@ const validate = (schema: any) => (req: Request, res: Response, next: NextFuncti
 const withViewer = (req: Request, res: Response, next: NextFunction) => (req.headers.authorization ? authenticate(req, res, next) : next());
 
 // Organizers' own categories and subcategories (visible to them only)
-router.post('/custom', authenticate, authorizeRoles(Role.ORGANIZER), validate(customCategorySchema), categoryController.createCustomCategory);
-router.post('/:id/custom-subcategories', authenticate, authorizeRoles(Role.ORGANIZER), validate(customSubcategorySchema), categoryController.addCustomSubcategory);
+// Organizers no longer add their own categories or subcategories (admins manage them). Entries made earlier keep working and can still be
+// removed. Set ALLOW_ORGANIZER_CUSTOM_CATEGORIES=true to switch creation back on.
+const noOrganizerCreation = (_req: Request, res: Response, next: NextFunction) =>
+  process.env.ALLOW_ORGANIZER_CUSTOM_CATEGORIES === 'true' ? next() : res.status(403).json({ success: false, message: 'Categories and subcategories are added by the administrator.' });
+router.post('/custom', authenticate, authorizeRoles(Role.ORGANIZER), noOrganizerCreation, validate(customCategorySchema), categoryController.createCustomCategory);
+router.post('/:id/custom-subcategories', authenticate, authorizeRoles(Role.ORGANIZER), noOrganizerCreation, validate(customSubcategorySchema), categoryController.addCustomSubcategory);
 router.delete('/custom/:id', authenticate, authorizeRoles(Role.ORGANIZER), categoryController.deleteCustomCategory);
 router.delete('/:id/custom-subcategories/:subId', authenticate, authorizeRoles(Role.ORGANIZER), categoryController.deleteCustomSubcategory);
 

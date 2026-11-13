@@ -13,6 +13,7 @@ exports.updateProfileSchema = zod_1.z.object({
     organization: zod_1.z.object({
         name: zod_1.z.string().trim().min(1, 'Organization name is required').max(150),
         phone: phone_validator_1.optionalPhoneSchema,
+        whatsapp: phone_validator_1.optionalPhoneSchema,
         email: zod_1.z.string().trim().email('Enter a valid organization email').max(150).optional().or(zod_1.z.literal('')),
         address: zod_1.z.string().trim().max(300).optional(),
         website: zod_1.z.string().trim().max(200).regex(/^https?:\/\/[^\s]+$/i, 'Website must start with http:// or https://').optional().or(zod_1.z.literal(''))

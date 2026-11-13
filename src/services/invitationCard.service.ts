@@ -349,6 +349,8 @@ async function buildClassicSVG(data: InvitationCardData): Promise<string> {
  * else the event has to say (dates, times, place, guest lines) is composed here, and the contact line always closes the card.
  */
 function withInfoFooter(png: Buffer, data: InvitationCardData, covered: Coverage, style: FooterStyle): Promise<Buffer> {
+  // every kind of row this design can carry, found with a full set of sample details (whatever the event actually includes)
+  const reserve = detailRows({ title: 'x', startIso: '2030-01-01T10:00:00.000Z', endIso: '2030-01-02T12:00:00.000Z', venue: 'x', locationSub: 'x', isVirtual: false, contactNumber: '9876543210', guestName: 'x', guestMeta: 'x' }, covered).map((r) => r.kind);
   const show = cardDisplayOf(data.cardDisplay);
   const hidden = new Set([...(show.title ? [] : ['title']), ...(show.dateTime ? [] : ['when']), ...(show.location ? [] : ['where'])]);
   return appendInfoFooter(png, detailRows({
@@ -361,7 +363,7 @@ function withInfoFooter(png: Buffer, data: InvitationCardData, covered: Coverage
     contactNumber: data.event.contactNumber,
     guestName: data.invitee.name,
     guestMeta: data.invitee.companyName
-  }, covered).filter((row) => !hidden.has(row.kind)), style);
+  }, covered).filter((row) => !hidden.has(row.kind)), style, reserve);
 }
 
 const dataUrlToBuffer = (dataUrl?: string): Buffer | undefined => {
@@ -453,7 +455,7 @@ export const invitationCardService = {
       let png = await renderFromTemplate(data.cardDesign, data);
       let covered = coverageOfDesign(data.cardDesign);
       // a design with no place for the guest's name gets a band for it inside the card, in large type, rather than a line at the bottom
-      if (!covered.guest && (data.invitee.name || data.invitee.companyName)) {
+      if (!covered.guest) {
         const banded = await insertGuestBand(png, data.cardDesign, data.invitee.name, data.invitee.companyName, FOOTER_STYLES[data.cardDesign]);
         if (banded !== png) { png = banded; covered = { ...covered, guest: true, meta: true }; }
       }

@@ -14,6 +14,7 @@ import { Event } from '../src/models/Event';
 import { invitationService } from '../src/services/invitation.service';
 import { generateAccessToken } from '../src/utils/token';
 
+process.env.ALLOW_ORGANIZER_CUSTOM_CATEGORIES = 'true'; // these tests exercise the (switched-off by default) organizer creation
 jest.setTimeout(60000);
 const auth = (u: any) => ({ Authorization: `Bearer ${generateAccessToken(String(u._id), u.role)}` });
 
@@ -170,40 +171,33 @@ describe('custom (per-organizer) categories', () => {
     const event = (extra: any = {}) => ({ title: 'Event', description: 'd', categoryId: String(corporate._id), format: 'PHYSICAL', contactNumber: '9007000891', location: { address: 'Kolkata' }, schedule: { start: new Date(Date.now() + 864e5), end: new Date(Date.now() + 2 * 864e5) }, ...extra });
     const adminDesign = async () => (await request(app).post('/api/v1/templates/upload').set(auth(admin)).send({ name: 'Admin design', imageKey: await upload(admin), categoryId: String(corporate._id) })).body.data;
 
-    it('is kept: each organizer gets one copy of their own, and the card uses it', async () => {
+    it('is shared: every organizer sees it, events use it directly (no copies), and the card uses it', async () => {
       const t = await adminDesign();
       const first = await request(app).post('/api/v1/events').set(auth(admin)).send(event({ organizerIds: [String(a._id), String(b._id)], templateId: t._id }));
       expect(first.status).toBe(201);
       const [evA, evB]: any[] = await Promise.all(first.body.data.eventIds.map((id: string) => Event.findById(id)));
-      expect(String(evA.templateId)).not.toBe(t._id);
-      const copyA: any = await Template.findById(evA.templateId);
-      expect(String(copyA.ownerId)).toBe(String(a._id));
-      expect(copyA.isSystemTemplate).toBe(false);
-      expect(String((await Template.findById(evB.templateId))?.ownerId)).toBe(String(b._id));
+      expect(String(evA.templateId)).toBe(t._id);
+      expect(String(evB.templateId)).toBe(t._id);
+      expect(await Template.countDocuments({ ownerId: { $in: [a._id, b._id] } })).toBe(0);
 
-      // a second event for the same organizer reuses the copy
-      const second = await request(app).post('/api/v1/events').set(auth(admin)).send(event({ organizerIds: [String(a._id)], templateId: t._id }));
-      expect(String((await Event.findById(second.body.data.eventId))?.templateId)).toBe(String(copyA._id));
-      expect(await Template.countDocuments({ ownerId: a._id })).toBe(1);
-
-      // the organizer sees it as theirs, and the other organizer never sees theirs
-      const mine = await request(app).get('/api/v1/templates').set(auth(a));
-      expect(mine.body.data.map((x: any) => x._id)).toContain(String(copyA._id));
-      expect(mine.body.data.map((x: any) => x._id)).not.toContain(String(evB.templateId));
+      // both organizers see it in their template list
+      for (const who of [a, b]) {
+        const list = await request(app).get('/api/v1/templates').set(auth(who));
+        expect(list.body.data.map((x: any) => x._id)).toContain(t._id);
+      }
 
       // the card really is the uploaded design (custom canvas), not the fallback for the event type (786 wide)
       const { png } = await invitationService.previewInvitationCard(String(evA._id), String(a._id));
       expect((await sharp(png).metadata()).width).not.toBe(786);
     });
 
-    it('also works when an admin changes the template while editing, and the original can be deleted safely', async () => {
+    it('also works when an admin changes the template while editing, and an organizer picks it on their own event', async () => {
       const created = await request(app).post('/api/v1/events').set(auth(admin)).send(event({ organizerIds: [String(a._id)] }));
       const t = await adminDesign();
       expect((await request(app).patch(`/api/v1/events/${created.body.data.eventId}`).set(auth(admin)).send({ templateId: t._id })).status).toBe(200);
-      const saved: any = await Event.findById(created.body.data.eventId);
-      expect(String((await Template.findById(saved.templateId))?.ownerId)).toBe(String(a._id));
-      await request(app).delete(`/api/v1/templates/${t._id}`).set(auth(admin));
-      expect((await Template.findById(saved.templateId))?.isActive).toBe(true);
+      expect(String((await Event.findById(created.body.data.eventId))?.templateId)).toBe(t._id);
+      const own = await request(app).post('/api/v1/events').set(auth(b)).send(event({ templateId: t._id }));
+      expect(String((await Event.findById(own.body.data.eventId))?.templateId)).toBe(t._id);
     });
 
     it("an organizer's private design is still refused on someone else's event, and an organizer cannot use another's", async () => {

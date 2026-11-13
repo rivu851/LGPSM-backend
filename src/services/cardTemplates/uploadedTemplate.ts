@@ -118,7 +118,7 @@ export class UploadError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-export async function createUploadedTemplate(actor: { userId: string; role?: string }, input: { name: string; imageKey: string; categoryId?: string; subcategoryId?: string }) {
+export async function createUploadedTemplate(actor: { userId: string; role?: string }, input: { name?: string; imageKey: string; categoryId?: string; subcategoryId?: string }) {
   const mediaId = mediaIdFromKey(input.imageKey);
   if (!mediaId) throw new UploadError(400, 'Upload the design as an image first');
   // the image must be one this person uploaded as a template: nobody can build a template out of someone else's picture
@@ -134,7 +134,7 @@ export async function createUploadedTemplate(actor: { userId: string; role?: str
       })()
     : buildUploadedSpec(input.imageKey, media.width, media.height);
   return Template.create({
-    name: input.name.trim(),
+    name: input.name?.trim() || `Uploaded template ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`,
     ...(input.categoryId ? { categoryId: new mongoose.Types.ObjectId(input.categoryId) } : {}),
     ...(input.subcategoryId ? { subcategoryId: new mongoose.Types.ObjectId(input.subcategoryId) } : {}),
     previewImageKey: input.imageKey,
@@ -144,8 +144,8 @@ export async function createUploadedTemplate(actor: { userId: string; role?: str
     // lets the Templates screen tell an uploaded design from an AI-made one
     templateData: { uploaded: true, ...(dynamic ? { dynamicDetails: true } : {}) },
     ownerId: new mongoose.Types.ObjectId(actor.userId),
-    // private to the person who uploaded it
-    isSystemTemplate: false,
+    // an organizer's upload is private to them; an admin's is shared: every organizer can use it (for its category / subcategory)
+    isSystemTemplate: dynamic,
     isPublished: true,
     isActive: true
   });

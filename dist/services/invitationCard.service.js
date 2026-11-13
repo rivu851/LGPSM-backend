@@ -291,6 +291,8 @@ async function buildClassicSVG(data) {
  * else the event has to say (dates, times, place, guest lines) is composed here, and the contact line always closes the card.
  */
 function withInfoFooter(png, data, covered, style) {
+    // every kind of row this design can carry, found with a full set of sample details (whatever the event actually includes)
+    const reserve = (0, coverage_1.detailRows)({ title: 'x', startIso: '2030-01-01T10:00:00.000Z', endIso: '2030-01-02T12:00:00.000Z', venue: 'x', locationSub: 'x', isVirtual: false, contactNumber: '9876543210', guestName: 'x', guestMeta: 'x' }, covered).map((r) => r.kind);
     const show = (0, cardDisplay_1.cardDisplayOf)(data.cardDisplay);
     const hidden = new Set([...(show.title ? [] : ['title']), ...(show.dateTime ? [] : ['when']), ...(show.location ? [] : ['where'])]);
     return (0, infoFooter_1.appendInfoFooter)(png, (0, coverage_1.detailRows)({
@@ -303,7 +305,7 @@ function withInfoFooter(png, data, covered, style) {
         contactNumber: data.event.contactNumber,
         guestName: data.invitee.name,
         guestMeta: data.invitee.companyName
-    }, covered).filter((row) => !hidden.has(row.kind)), style);
+    }, covered).filter((row) => !hidden.has(row.kind)), style, reserve);
 }
 const dataUrlToBuffer = (dataUrl) => {
     const match = dataUrl ? /^data:[^;]+;base64,(.+)$/.exec(dataUrl) : null;
@@ -389,7 +391,7 @@ exports.invitationCardService = {
             let png = await renderFromTemplate(data.cardDesign, data);
             let covered = (0, coverage_1.coverageOfDesign)(data.cardDesign);
             // a design with no place for the guest's name gets a band for it inside the card, in large type, rather than a line at the bottom
-            if (!covered.guest && (data.invitee.name || data.invitee.companyName)) {
+            if (!covered.guest) {
                 const banded = await (0, infoFooter_1.insertGuestBand)(png, data.cardDesign, data.invitee.name, data.invitee.companyName, infoFooter_1.FOOTER_STYLES[data.cardDesign]);
                 if (banded !== png) {
                     png = banded;

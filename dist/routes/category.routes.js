@@ -18,8 +18,11 @@ const validate = (schema) => (req, res, next) => {
 // Anyone can read the platform's list; a signed-in organizer also gets their own custom categories
 const withViewer = (req, res, next) => (req.headers.authorization ? (0, authenticate_1.authenticate)(req, res, next) : next());
 // Organizers' own categories and subcategories (visible to them only)
-router.post('/custom', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER), validate(category_validator_1.customCategorySchema), category_controller_1.categoryController.createCustomCategory);
-router.post('/:id/custom-subcategories', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER), validate(category_validator_1.customSubcategorySchema), category_controller_1.categoryController.addCustomSubcategory);
+// Organizers no longer add their own categories or subcategories (admins manage them). Entries made earlier keep working and can still be
+// removed. Set ALLOW_ORGANIZER_CUSTOM_CATEGORIES=true to switch creation back on.
+const noOrganizerCreation = (_req, res, next) => process.env.ALLOW_ORGANIZER_CUSTOM_CATEGORIES === 'true' ? next() : res.status(403).json({ success: false, message: 'Categories and subcategories are added by the administrator.' });
+router.post('/custom', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER), noOrganizerCreation, validate(category_validator_1.customCategorySchema), category_controller_1.categoryController.createCustomCategory);
+router.post('/:id/custom-subcategories', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER), noOrganizerCreation, validate(category_validator_1.customSubcategorySchema), category_controller_1.categoryController.addCustomSubcategory);
 router.delete('/custom/:id', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER), category_controller_1.categoryController.deleteCustomCategory);
 router.delete('/:id/custom-subcategories/:subId', authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER), category_controller_1.categoryController.deleteCustomSubcategory);
 router.get('/', withViewer, category_controller_1.categoryController.getCategories);

@@ -12,6 +12,7 @@ export const updateProfileSchema = z.object({
   organization: z.object({
     name: z.string().trim().min(1, 'Organization name is required').max(150),
     phone: optionalPhoneSchema,
+    whatsapp: optionalPhoneSchema,
     email: z.string().trim().email('Enter a valid organization email').max(150).optional().or(z.literal('')),
     address: z.string().trim().max(300).optional(),
     website: z.string().trim().max(200).regex(/^https?:\/\/[^\s]+$/i, 'Website must start with http:// or https://').optional().or(z.literal(''))

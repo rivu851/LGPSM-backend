@@ -19,7 +19,8 @@ exports.createTemplateSchema = zod_1.z.object({
 });
 // "Upload your own template": a name, the event type it is for, and the uploaded design (an image this person uploaded)
 exports.uploadTemplateSchema = zod_1.z.object({
-    name: zod_1.z.string().trim().min(2).max(100),
+    // optional: an unnamed upload is called "Uploaded template" with the date
+    name: zod_1.z.string().trim().min(2).max(100).optional().or(zod_1.z.literal('')),
     categoryId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
     subcategoryId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
     imageKey: zod_1.z.string().refine((k) => /^media:[0-9a-fA-F]{24}$/.test(k), 'Upload the design as an image first')
@@ -94,6 +95,6 @@ exports.previewTemplateCardSchema = zod_1.z
     companyName: zod_1.z.string().max(100).optional(),
     contactNumber: zod_1.z.string().trim().max(30).optional(),
     cardDisplay: zod_1.z.object({ title: zod_1.z.boolean().optional(), qr: zod_1.z.boolean().optional(), dateTime: zod_1.z.boolean().optional(), location: zod_1.z.boolean().optional(), inviteeName: zod_1.z.boolean().optional() }).strict().optional(),
-    cardInfo: zod_1.z.object({ primary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(), secondary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(), identityLabel: zod_1.z.string().trim().max(40).nullable().optional(), secondaryIdentityLabel: zod_1.z.string().trim().max(40).nullable().optional() }).strict().optional()
+    cardInfo: zod_1.z.object({ primary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(), secondary: zod_1.z.enum(cardInfo_1.CARD_INFO_FIELDS).nullable(), identityLabel: zod_1.z.string().trim().max(40).nullable().optional(), secondaryIdentityLabel: zod_1.z.string().trim().max(40).nullable().optional(), showIdentityLabel: zod_1.z.boolean().optional(), showSecondaryIdentityLabel: zod_1.z.boolean().optional() }).strict().optional()
 })
     .strict();

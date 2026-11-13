@@ -180,7 +180,7 @@ exports.userService = {
             // dotted paths: the rest of the profile (logo, avatar) is left exactly as it is
             payload['profile.organizationName'] = organization.name;
             payload['profile.organization'] = {
-                phone: organization.phone || undefined, email: organization.email || undefined,
+                phone: organization.phone || undefined, whatsapp: organization.whatsapp || undefined, email: organization.email || undefined,
                 address: organization.address || undefined, website: organization.website || undefined
             };
             // the name is changed only through `organization`; the other profile fields sent with it are set one by one, because

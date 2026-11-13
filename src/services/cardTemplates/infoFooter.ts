@@ -88,9 +88,14 @@ const ROW_STYLE: Record<FooterRow['kind'], { size: number; min: number; weight: 
 
 interface Placed { kind: FooterRow['kind']; lines: string[]; size: number; baseline: number[]; raw: string }
 
-export async function appendInfoFooter(png: Buffer, allRows: FooterRow[], style: FooterStyle): Promise<Buffer> {
+/**
+ * `reserve` lists every kind of row this design can carry. The extension is then always as tall as those rows need at their fullest
+ * (whatever is included, hidden or not yet typed), so the card keeps the same size and the artwork never changes scale when a
+ * detail is switched on or off. Without it the extension is only as tall as what is printed.
+ */
+export async function appendInfoFooter(png: Buffer, allRows: FooterRow[], style: FooterStyle, reserve: FooterRow['kind'][] = []): Promise<Buffer> {
   const rows = allRows.map((r) => ({ ...r, text: clean(r.text) })).filter((r) => r.text);
-  if (!rows.length) return png;
+  if (!rows.length && !reserve.length) return png;
 
   await ensureCardFonts();
   const info = await sharp(png).metadata();
@@ -119,7 +124,16 @@ export async function appendInfoFooter(png: Buffer, allRows: FooterRow[], style:
     placed.push({ kind: row.kind, lines: fit.lines, size: fit.size, baseline, raw: row.text });
     y += st.gap * k;
   }
-  const footerHeight = Math.ceil(y + 22 * k); // padding below the last line
+  let footerHeight = Math.ceil(y + 22 * k); // padding below the last line
+  if (reserve.length) {
+    let ry = 18 * k;
+    for (const kind of reserve) {
+      const st = ROW_STYLE[kind];
+      if (kind === 'contact') { if (reserve.length > 1) ry += 4 * k; ry += st.size * k + 4 * k; continue; }
+      ry += st.size * k + (st.lines - 1) * st.size * k * 1.25 + st.gap * k;
+    }
+    footerHeight = Math.max(footerHeight, Math.ceil(ry + 22 * k));
+  }
 
   // 2. The extension carries the artwork on: the card's own bottom edge is stretched down and softened, so its colour or
   //    texture simply continues (no panel, no seam, nothing of the artwork repeated). A transparent edge stays transparent.
@@ -179,7 +193,7 @@ export async function insertGuestBand(png: Buffer, design: string, nameText: str
   const meta = clean(metaText);
   const layout = LAYOUTS[design];
   const label = layout?.texts?.scanLabel;
-  if ((!name && !meta) || !layout || !label) return png;
+  if (!layout || !label) return png;
   await ensureCardFonts();
   const info = await sharp(png).metadata();
   const width = info.width || 0;
@@ -193,9 +207,10 @@ export async function insertGuestBand(png: Buffer, design: string, nameText: str
   const nameFit = name ? await wrapFit(name, 700, 24 * k, 13 * k, maxWidth, 1) : null;
   const metaFit = meta ? await wrapFit(meta, 700, nameFit ? 15 * k : 20 * k, 10 * k, maxWidth, 1) : null;
   const pad = 8 * k;
-  const baselineName = pad + (nameFit?.size ?? 0);
-  const baselineMeta = baselineName + (metaFit ? (nameFit ? 5 * k : 0) + metaFit.size : 0);
-  const band = Math.ceil(baselineMeta + pad + 4 * k);
+  // the band is always tall enough for both lines, so the card is the same size whether or not the guest's name is printed
+  const baselineName = pad + 24 * k;
+  const baselineMeta = metaFit && !nameFit ? pad + 20 * k : baselineName + 5 * k + 15 * k;
+  const band = Math.ceil(baselineName + 5 * k + 15 * k + pad + 4 * k);
 
   // the row just above the cut is empty background: stretched, it carries the card's colour (and its frame edges) through the band
   // a textured background (paper, confetti) would show as streaks when stretched, so it is smoothed; flat designs keep their crisp frame edges

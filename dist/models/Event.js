@@ -100,7 +100,9 @@ const EventSchema = new mongoose_1.Schema({
         primary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] },
         secondary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] },
         identityLabel: { type: String, trim: true, maxlength: 40 },
-        secondaryIdentityLabel: { type: String, trim: true, maxlength: 40 }
+        secondaryIdentityLabel: { type: String, trim: true, maxlength: 40 },
+        showIdentityLabel: { type: Boolean },
+        showSecondaryIdentityLabel: { type: Boolean }
     },
     media: {
         logoKey: { type: String },

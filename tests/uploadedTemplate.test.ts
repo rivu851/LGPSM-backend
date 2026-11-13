@@ -57,7 +57,9 @@ describe('upload your own template', () => {
     const prev = await request(app).post(`/api/v1/templates/${res.body.data._id}/preview`).set(auth(a)).send({ title: 'Anything', cardInfo: { primary: 'INVITEE_NAME', secondary: null } }).buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
     expect(prev.status).toBe(200);
     const meta = await sharp(prev.body).metadata();
-    expect([meta.width, meta.height]).toEqual([1080, 1920]);
+    // the 1080 x 1920 picture, plus the details strip every card carries (reserved even with nothing in it, so the size never changes)
+    expect(meta.width).toBe(1080);
+    expect(meta.height!).toBeGreaterThanOrEqual(1920);
     const px = await sharp(prev.body).extract({ left: 20, top: 20, width: 1, height: 1 }).raw().toBuffer();
     expect([...px].slice(0, 3)).toEqual([0xcc, 0x11, 0x22]);
     expect(await decodeQr(prev.body)).toMatch(/^https?:\/\//);
@@ -67,6 +69,9 @@ describe('upload your own template', () => {
     const key = await upload(admin);
     const res = await make(admin, { name: 'Admin Dynamic', imageKey: key });
     expect(res.status).toBe(201);
+    // shared with every organizer, who can preview it with their own event's details
+    expect((await request(app).get('/api/v1/templates').set(auth(a))).body.data.map((x: any) => x.name)).toContain('Admin Dynamic');
+    expect((await request(app).post(`/api/v1/templates/${res.body.data._id}/preview`).set(auth(a)).send({ title: 'Mine' })).status).toBe(200);
     // admins' own uploads are listed for admins
     expect((await request(app).get('/api/v1/templates').set(auth(admin))).body.data.map((x: any) => x.name)).toContain('Admin Dynamic');
     const t: any = await Template.findById(res.body.data._id).lean();
@@ -85,6 +90,14 @@ describe('upload your own template', () => {
     expect(hidden.status).toBe(200);
     expect(Buffer.compare(full.body, hidden.body)).not.toBe(0);
     expect(await decodeQr(full.body)).toMatch(/^https?:\/\//);
+  });
+
+  it('needs no name and no category: an unnamed upload gets a dated name and suits every event type', async () => {
+    const res = await make(a, { imageKey: await upload(a) });
+    expect(res.status).toBe(201);
+    const t: any = await Template.findById(res.body.data._id).lean();
+    expect(t.name).toMatch(/^Uploaded template \d{2} \w{3} \d{4}$/);
+    expect(t.categoryId).toBeUndefined();
   });
 
   it('refuses an image someone else uploaded, a missing image, and other roles\' paths', async () => {

@@ -70,10 +70,14 @@ describe('guest band inside the artwork', () => {
     const out = await sharp(await insertGuestBand(await art(), 'WEDDING', '', 'Acme Pvt Ltd', { ink: '#202020', accent: '#6B5B3E' })).metadata();
     expect(out.height!).toBeGreaterThan(1364);
   });
-  it('leaves the card alone with no name, or a design without a place to cut', async () => {
+  it('leaves a design without a place to cut alone, and keeps the same size with or without a name', async () => {
     const png = await art();
-    expect(await insertGuestBand(png, 'WEDDING', '  ', '', { ink: '#000', accent: '#000' })).toBe(png);
     expect(await insertGuestBand(png, 'CORPORATE_V1', 'Name', undefined, { ink: '#000', accent: '#000' })).toBe(png);
+    // the band is reserved even when there is no name, so the card never changes size when the name is switched off
+    const blank = await sharp(await insertGuestBand(png, 'WEDDING', '  ', '', { ink: '#000', accent: '#000' })).metadata();
+    const named = await sharp(await insertGuestBand(png, 'WEDDING', 'Anita', 'Acme', { ink: '#000', accent: '#000' })).metadata();
+    const oneLine = await sharp(await insertGuestBand(png, 'WEDDING', 'Anita', '', { ink: '#000', accent: '#000' })).metadata();
+    expect([blank.height, oneLine.height]).toEqual([named.height, named.height]);
   });
 });
 

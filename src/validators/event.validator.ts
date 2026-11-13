@@ -13,7 +13,10 @@ const cardInfoSchema = z.object({
   secondary: z.enum(CARD_INFO_FIELDS).nullable(),
   // The organizer's own title for the custom detail (PROFESSIONAL_IDENTITY): the Excel column and form label, e.g. "Designation"
   identityLabel: z.string().trim().max(40).nullable().optional(),
-  secondaryIdentityLabel: z.string().trim().max(40).nullable().optional()
+  secondaryIdentityLabel: z.string().trim().max(40).nullable().optional(),
+  // print the custom detail's title in front of its value on the card
+  showIdentityLabel: z.boolean().optional(),
+  showSecondaryIdentityLabel: z.boolean().optional()
 }).strict();
 
 const validateDietaryOptions = (preference: { enabled?: boolean; options?: any[] }, ctx: z.RefinementCtx) => {

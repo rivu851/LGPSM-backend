@@ -70,13 +70,13 @@ exports.templateService = {
         return template;
     },
     /**
-     * `ownerId`'s own template handed to `organizerId` as their own copy (one copy per organizer, however many events use it).
+     * `ownerId`'s own private template handed to `organizerId` as their own copy (one copy per organizer, however many events use it).
      * Null when `ownerId` does not own an active template with this id. Deleting the original later does not affect the copy.
      */
     async copyOwnTemplateFor(templateId, ownerId, organizerId) {
         if (!mongoose_1.default.Types.ObjectId.isValid(templateId))
             return null;
-        const source = await Template_1.Template.findOne({ _id: templateId, ownerId, isActive: { $ne: false } }).lean();
+        const source = await Template_1.Template.findOne({ _id: templateId, ownerId, isSystemTemplate: { $ne: true }, isActive: { $ne: false } }).lean();
         if (!source)
             return null;
         const existing = await Template_1.Template.findOne({ ownerId: organizerId, copiedFromId: source._id, isActive: { $ne: false } }).select('_id').lean();
