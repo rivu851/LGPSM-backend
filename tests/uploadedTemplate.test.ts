@@ -46,10 +46,12 @@ describe('upload your own template', () => {
     expect(t).toMatchObject({ name: 'My Gala Card', cardDesign: 'CUSTOM', kind: 'INVITATION', isSystemTemplate: false, previewImageKey: key, templateData: { uploaded: true } });
     expect(String(t!.ownerId)).toBe(String(a._id));
 
-    // only its owner (and admins) see it
+    // only its owner sees it
     const mine = await request(app).get('/api/v1/templates').set(auth(a));
     expect(mine.body.data.map((x: any) => x.name)).toContain('My Gala Card');
     expect((await request(app).get('/api/v1/templates').set(auth(b))).body.data.map((x: any) => x.name)).not.toContain('My Gala Card');
+    // an admin does not see an organizer's private upload either
+    expect((await request(app).get('/api/v1/templates').set(auth(admin))).body.data.map((x: any) => x.name)).not.toContain('My Gala Card');
 
     // the card: the uploaded picture fills it, and the QR code on top scans
     const prev = await request(app).post(`/api/v1/templates/${res.body.data._id}/preview`).set(auth(a)).send({ title: 'Anything', cardInfo: { primary: 'INVITEE_NAME', secondary: null } }).buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
@@ -59,6 +61,30 @@ describe('upload your own template', () => {
     const px = await sharp(prev.body).extract({ left: 20, top: 20, width: 1, height: 1 }).raw().toBuffer();
     expect([...px].slice(0, 3)).toEqual([0xcc, 0x11, 0x22]);
     expect(await decodeQr(prev.body)).toMatch(/^https?:\/\//);
+  });
+
+  it('an admin upload is dynamic: event title, date, venue and guest name are drawn from the event, and follow the display flags', async () => {
+    const key = await upload(admin);
+    const res = await make(admin, { name: 'Admin Dynamic', imageKey: key });
+    expect(res.status).toBe(201);
+    // admins' own uploads are listed for admins
+    expect((await request(app).get('/api/v1/templates').set(auth(admin))).body.data.map((x: any) => x.name)).toContain('Admin Dynamic');
+    const t: any = await Template.findById(res.body.data._id).lean();
+    expect(t.templateData).toMatchObject({ uploaded: true, dynamicDetails: true });
+    const roles = t.designSpec.elements.filter((e: any) => e.type === 'text').map((e: any) => e.role);
+    expect(roles).toEqual(expect.arrayContaining(['title', 'dateTime', 'venue', 'inviteeName', 'inviteeMeta']));
+    // an organizer's upload stays "finished design + QR + name"
+    const org: any = await Template.findById((await make(a, { name: 'Org Plain', imageKey: await upload(a) })).body.data._id).lean();
+    expect(org.designSpec.elements.some((e: any) => e.role === 'title')).toBe(false);
+
+    const body = { title: 'Dynamic Gala Night', startIso: '2027-03-05T12:30:00.000Z', venue: 'Grand Hall' };
+    const render = (extra: object) => request(app).post(`/api/v1/templates/${res.body.data._id}/preview`).set(auth(admin)).send({ ...body, ...extra }).buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
+    const full = await render({});
+    const hidden = await render({ cardDisplay: { title: false, dateTime: false, location: false } });
+    expect(full.status).toBe(200);
+    expect(hidden.status).toBe(200);
+    expect(Buffer.compare(full.body, hidden.body)).not.toBe(0);
+    expect(await decodeQr(full.body)).toMatch(/^https?:\/\//);
   });
 
   it('refuses an image someone else uploaded, a missing image, and other roles\' paths', async () => {

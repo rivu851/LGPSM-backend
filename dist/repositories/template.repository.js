@@ -6,9 +6,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.templateRepository = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const Template_1 = require("../models/Template");
+const User_1 = require("../models/User");
 // A template only needs its category's name. The subcategory list is left out: it can hold other organizers' private subcategories.
 const CATEGORY_FIELDS = 'name description isActive';
-function listQuery(categoryId, viewer, options) {
+function listQuery(categoryId, viewer, options, adminIds) {
     const query = { isActive: true };
     if (categoryId)
         query.categoryId = categoryId;
@@ -18,6 +19,10 @@ function listQuery(categoryId, viewer, options) {
     if (options.mineOnly) {
         query.ownerId = own?.ownerId ?? { $exists: false, $eq: null };
         return query;
+    }
+    if (viewer.isAdmin && adminIds) {
+        // an organizer's private upload is theirs alone: an admin sees the shared (system / ownerless) templates and admins' own
+        query.$or = [{ ownerId: { $exists: false } }, { ownerId: null }, { isSystemTemplate: true }, { ownerId: { $in: adminIds } }];
     }
     if (!viewer.isAdmin) {
         // Templates created before the publish flag existed count as published. A template with an owner is a private
@@ -30,12 +35,17 @@ function listQuery(categoryId, viewer, options) {
     }
     return query;
 }
+async function adminIdsFor(viewer, options) {
+    if (!viewer.isAdmin || options.mineOnly)
+        return undefined;
+    return (await User_1.User.find({ role: User_1.Role.ADMIN }).select('_id').lean()).map((u) => u._id);
+}
 exports.templateRepository = {
     async create(data) {
         return await Template_1.Template.create(data);
     },
     async findAll(categoryId, viewer, options = {}) {
-        let cursor = Template_1.Template.find(listQuery(categoryId, viewer, options)).populate('categoryId', CATEGORY_FIELDS).sort({ createdAt: -1, _id: -1 });
+        let cursor = Template_1.Template.find(listQuery(categoryId, viewer, options, await adminIdsFor(viewer, options))).populate('categoryId', CATEGORY_FIELDS).sort({ createdAt: -1, _id: -1 });
         if (options.skip)
             cursor = cursor.skip(options.skip);
         if (options.limit)
@@ -43,7 +53,7 @@ exports.templateRepository = {
         return await cursor;
     },
     async count(categoryId, viewer, options = {}) {
-        return await Template_1.Template.countDocuments(listQuery(categoryId, viewer, options));
+        return await Template_1.Template.countDocuments(listQuery(categoryId, viewer, options, await adminIdsFor(viewer, options)));
     },
     async findById(id) {
         return await Template_1.Template.findById(id).populate('categoryId', CATEGORY_FIELDS);

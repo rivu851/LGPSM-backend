@@ -414,7 +414,7 @@ describe('saving, using, editing and deleting a template', () => {
     expect(await ids(orgA, '?scope=mine')).toContain(id);
     expect(await ids(orgA)).not.toContain(id); // a draft is not offered in the event form until it is published
     expect(await ids(orgB, '?scope=mine')).not.toContain(id);
-    expect(await ids(admin)).toContain(id);
+    expect(await ids(admin)).not.toContain(id); // an organizer's private design is not in the admin's lists (it can still be opened by id)
     expect(await ids(orgA, '?scope=mine&kind=POSTER')).not.toContain(id);
   });
 

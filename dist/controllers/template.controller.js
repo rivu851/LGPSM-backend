@@ -23,7 +23,7 @@ exports.templateController = {
     // An organizer's (or admin's) own uploaded design becomes a template only they can use
     async uploadTemplate(req, res) {
         try {
-            const template = await (0, uploadedTemplate_1.createUploadedTemplate)({ userId: req.user.userId }, req.body);
+            const template = await (0, uploadedTemplate_1.createUploadedTemplate)({ userId: req.user.userId, role: req.user.role }, req.body);
             return res.status(201).json({ success: true, data: template });
         }
         catch (error) {

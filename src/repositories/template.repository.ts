@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { Template, ITemplate } from '../models/Template';
+import { User, Role } from '../models/User';
 
 /**
  * Who is asking, for visibility. Admins see every template (drafts included); an organizer sees the published
@@ -21,7 +22,7 @@ export interface TemplateListOptions {
 // A template only needs its category's name. The subcategory list is left out: it can hold other organizers' private subcategories.
 const CATEGORY_FIELDS = 'name description isActive';
 
-function listQuery(categoryId: string | undefined, viewer: TemplateViewer, options: TemplateListOptions) {
+function listQuery(categoryId: string | undefined, viewer: TemplateViewer, options: TemplateListOptions, adminIds?: mongoose.Types.ObjectId[]) {
   const query: any = { isActive: true };
   if (categoryId) query.categoryId = categoryId;
   if (options.kind) query.kind = options.kind === 'INVITATION' ? { $in: ['INVITATION', null] } : 'POSTER';
@@ -29,6 +30,10 @@ function listQuery(categoryId: string | undefined, viewer: TemplateViewer, optio
   if (options.mineOnly) {
     query.ownerId = own?.ownerId ?? { $exists: false, $eq: null };
     return query;
+  }
+  if (viewer.isAdmin && adminIds) {
+    // an organizer's private upload is theirs alone: an admin sees the shared (system / ownerless) templates and admins' own
+    query.$or = [{ ownerId: { $exists: false } }, { ownerId: null }, { isSystemTemplate: true }, { ownerId: { $in: adminIds } }];
   }
   if (!viewer.isAdmin) {
     // Templates created before the publish flag existed count as published. A template with an owner is a private
@@ -41,20 +46,25 @@ function listQuery(categoryId: string | undefined, viewer: TemplateViewer, optio
   return query;
 }
 
+async function adminIdsFor(viewer: TemplateViewer, options: TemplateListOptions) {
+  if (!viewer.isAdmin || options.mineOnly) return undefined;
+  return (await User.find({ role: Role.ADMIN }).select('_id').lean()).map((u) => u._id as mongoose.Types.ObjectId);
+}
+
 export const templateRepository = {
   async create(data: Partial<ITemplate>): Promise<ITemplate> {
     return await Template.create(data);
   },
 
   async findAll(categoryId: string | undefined, viewer: TemplateViewer, options: TemplateListOptions = {}): Promise<ITemplate[]> {
-    let cursor = Template.find(listQuery(categoryId, viewer, options)).populate('categoryId', CATEGORY_FIELDS).sort({ createdAt: -1, _id: -1 });
+    let cursor = Template.find(listQuery(categoryId, viewer, options, await adminIdsFor(viewer, options))).populate('categoryId', CATEGORY_FIELDS).sort({ createdAt: -1, _id: -1 });
     if (options.skip) cursor = cursor.skip(options.skip);
     if (options.limit) cursor = cursor.limit(options.limit);
     return await cursor;
   },
 
   async count(categoryId: string | undefined, viewer: TemplateViewer, options: TemplateListOptions = {}): Promise<number> {
-    return await Template.countDocuments(listQuery(categoryId, viewer, options));
+    return await Template.countDocuments(listQuery(categoryId, viewer, options, await adminIdsFor(viewer, options)));
   },
 
   async findById(id: string): Promise<ITemplate | null> {
