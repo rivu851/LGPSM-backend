@@ -76,7 +76,7 @@ describe('"change email address" on the sign-up code page', () => {
     await signup();
     const res = await change({ email: 'rina.typo@example.com', newEmail: 'Taken@Example.com', password: 'StrongPass123!' });
     expect(res.status).toBe(409);
-    expect(res.body.message).toMatch(/organizer account already uses this email/);
+    expect(res.body.message).toMatch(/already registered/);
     expect(await User.findOne({ email: 'rina.typo@example.com' })).not.toBeNull();
     expect(await User.countDocuments({ email: 'taken@example.com' })).toBe(1);
   });

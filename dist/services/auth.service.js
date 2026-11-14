@@ -487,14 +487,19 @@ exports.authService = {
         }
     },
     async forgotPassword(email) {
-        const user = await user_repository_1.userRepository.findByEmail(email);
-        if (!user)
+        // One email can belong to several accounts (organizer, admin, staff): the mail offers one link per account
+        const users = (await user_repository_1.userRepository.findAllByEmail(email)).filter((u) => u.isActive !== false);
+        if (users.length === 0)
             return;
-        const resetToken = (0, token_1.generatePasswordResetToken)(user._id.toString(), user.role, user.passwordHash);
-        const portal = user.role === User_1.Role.ADMIN ? 'admin' : user.role === User_1.Role.ORGANIZER ? 'organizer' : 'app';
-        const resetUrl = `${env_1.env.FRONTEND_URL}/forgot-password?mode=${portal}&token=${encodeURIComponent(resetToken)}`;
+        const labelOf = (role) => (role === User_1.Role.ADMIN ? 'Admin account' : role === User_1.Role.ORGANIZER ? 'Organizer account' : 'Staff account');
+        const links = users.map((user) => {
+            const resetToken = (0, token_1.generatePasswordResetToken)(user._id.toString(), user.role, user.passwordHash);
+            const portal = user.role === User_1.Role.ADMIN ? 'admin' : user.role === User_1.Role.ORGANIZER ? 'organizer' : 'app';
+            const resetUrl = `${env_1.env.FRONTEND_URL}/forgot-password?mode=${portal}&token=${encodeURIComponent(resetToken)}`;
+            return `<p><a href="${(0, html_1.escapeHtml)(resetUrl)}">Reset password${users.length > 1 ? ` — ${labelOf(user.role)}` : ''}</a></p>`;
+        });
         // Not awaited: waiting for the mail server would reveal, by the response time, that this address has an account
-        void (0, email_provider_1.sendEmail)(user.email, 'Reset your LGPSM password', `<p>Hello ${(0, html_1.escapeHtml)(user.fullName)},</p><p>Use the link below to reset your password. It expires in 15 minutes.</p><p><a href="${(0, html_1.escapeHtml)(resetUrl)}">Reset password</a></p><p>If you did not request this, you can ignore this email.</p>`).catch((err) => console.error('Password reset email could not be sent:', err.message));
+        void (0, email_provider_1.sendEmail)(users[0].email, 'Reset your LGPSM password', `<p>Hello ${(0, html_1.escapeHtml)(users[0].fullName)},</p><p>Use the link below to reset your password. It expires in 15 minutes.</p>${links.join('')}<p>If you did not request this, you can ignore this email.</p>`).catch((err) => console.error('Password reset email could not be sent:', err.message));
     },
     /**
      * Mobile "Forgot password", step 1. Emails a short code when the address belongs to an active account.
