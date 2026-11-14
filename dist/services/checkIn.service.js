@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.checkInService = exports.AdmissionError = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
+const alert_service_1 = require("./alert.service");
 const CheckIn_1 = require("../models/CheckIn");
 const Event_1 = require("../models/Event");
 const Invitee_1 = require("../models/Invitee");
@@ -196,6 +197,11 @@ exports.checkInService = {
             }
             throw e;
         }
+        // the organizer and the administrators are told as guests arrive (a running count, never one notice per scan)
+        void (async () => {
+            const staff = await User_1.User.findById(actor.userId).select('fullName').lean();
+            await alert_service_1.alertService.guestCheckedIn(event, staff?.fullName || 'a staff member');
+        })().catch(() => undefined);
         return this.formatCheckInResponse(checkIn, invitee, session);
     },
     /**

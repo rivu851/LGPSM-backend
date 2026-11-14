@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { alertService } from './alert.service';
 import { CheckIn, CheckInMethod, ICheckIn } from '../models/CheckIn';
 import { Event, EventStatus } from '../models/Event';
 import { Invitee, IInvitee, RsvpStatus } from '../models/Invitee';
@@ -218,6 +219,12 @@ export const checkInService = {
       }
       throw e;
     }
+
+    // the organizer and the administrators are told as guests arrive (a running count, never one notice per scan)
+    void (async () => {
+      const staff: any = await User.findById(actor.userId).select('fullName').lean();
+      await alertService.guestCheckedIn(event as any, staff?.fullName || 'a staff member');
+    })().catch(() => undefined);
 
     return this.formatCheckInResponse(checkIn, invitee, session);
   },

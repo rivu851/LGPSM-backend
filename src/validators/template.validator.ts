@@ -101,7 +101,7 @@ export const previewTemplateCardSchema = z
     guestName: z.string().max(100).optional(),
     companyName: z.string().max(100).optional(),
     contactNumber: z.string().trim().max(30).optional(),
-    cardDisplay: z.object({ title: z.boolean().optional(), qr: z.boolean().optional(), dateTime: z.boolean().optional(), location: z.boolean().optional(), inviteeName: z.boolean().optional() }).strict().optional(),
+    cardDisplay: z.object({ title: z.boolean().optional(), qr: z.boolean().optional(), dateTime: z.boolean().optional(), location: z.boolean().optional(), inviteeName: z.boolean().optional(), logo: z.boolean().optional() }).strict().optional(),
     cardInfo: z.object({ primary: z.enum(CARD_INFO_FIELDS).nullable(), secondary: z.enum(CARD_INFO_FIELDS).nullable(), identityLabel: z.string().trim().max(40).nullable().optional(), secondaryIdentityLabel: z.string().trim().max(40).nullable().optional(), showIdentityLabel: z.boolean().optional(), showSecondaryIdentityLabel: z.boolean().optional() }).strict().optional()
   })
   .strict();

@@ -433,6 +433,26 @@ exports.userService = {
         if (updatePayload.isActive !== undefined && target.isActive !== updatePayload.isActive) {
             await auditStateChange(actor, target, updatePayload.isActive, 'PATCH');
         }
+        // an administrator changed an organizer's account: the organizer is told what kind of change it was
+        if (actor.role === User_1.Role.ADMIN && target.role === User_1.Role.ORGANIZER && String(actor.userId) !== String(userId)) {
+            const changed = [
+                data.fullName !== undefined ? 'name' : null,
+                data.email !== undefined ? 'email address' : null,
+                data.phone !== undefined ? 'phone number' : null,
+                data.profile ? 'organisation details' : null,
+                data.password ? 'password' : null,
+                updatePayload.isActive === true && target.isActive === false ? 'access (your account was reactivated)' : null
+            ].filter(Boolean);
+            if (changed.length > 0) {
+                await (await Promise.resolve().then(() => __importStar(require('./alert.service')))).alertService.notifyUser(userId, {
+                    type: 'ACCOUNT',
+                    title: 'An administrator updated your account',
+                    message: `An administrator changed your ${changed.join(', ')}. If you did not expect this, contact the administrator.`,
+                    entityType: 'User',
+                    entityId: userId
+                });
+            }
+        }
         return user;
     }
 };

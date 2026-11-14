@@ -42,10 +42,12 @@ const NotificationSchema = new mongoose_1.Schema({
     message: { type: String, required: true },
     entityType: { type: String },
     entityId: { type: mongoose_1.Schema.Types.ObjectId },
-    isRead: { type: Boolean, default: false }
+    isRead: { type: Boolean, default: false },
+    count: { type: Number }
 }, {
     timestamps: true
 });
 NotificationSchema.index({ userId: 1, isRead: 1 });
+NotificationSchema.index({ userId: 1, type: 1, entityId: 1, createdAt: -1 });
 NotificationSchema.index({ createdAt: -1 });
 exports.Notification = mongoose_1.default.model('Notification', NotificationSchema);

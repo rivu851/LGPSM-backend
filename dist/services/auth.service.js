@@ -105,11 +105,40 @@ exports.authService = {
         if (data.role && data.role !== User_1.Role.ORGANIZER) {
             throw { statusCode: 403, message: 'Only organizer accounts can be self-registered' };
         }
+        const normalisedEmail = data.email.trim().toLowerCase();
+        const existingAdmin = await user_repository_1.userRepository.findByRoleAndEmail(normalisedEmail, User_1.Role.ADMIN);
+        if (existingAdmin) {
+            throw {
+                statusCode: 400,
+                code: 'ADMIN_EMAIL_IN_USE',
+                message: 'This email belongs to an administrator account and cannot be used for organizer sign-up.',
+            };
+        }
+        const existingOrganizer = await user_repository_1.userRepository.findByRoleAndEmail(normalisedEmail, User_1.Role.ORGANIZER);
+        if (existingOrganizer?.isEmailVerified) {
+            throw {
+                statusCode: 400,
+                code: 'ORGANIZER_EMAIL_IN_USE',
+                message: 'An organizer account already uses this email address. Sign in or use a different email.',
+            };
+        }
+        if (existingOrganizer) {
+            const pendingVerification = await emailVerification_repository_1.emailVerificationRepository.findByEmail(normalisedEmail);
+            if (pendingVerification && pendingVerification.expiresAt > new Date()) {
+                throw {
+                    statusCode: 400,
+                    code: 'EMAIL_VERIFICATION_PENDING',
+                    message: 'An organizer sign-up is already waiting for its verification code. Verify it or request a new code.',
+                };
+            }
+            await user_repository_1.userRepository.deleteById(String(existingOrganizer._id));
+            await emailVerification_repository_1.emailVerificationRepository.deleteByEmail(normalisedEmail);
+        }
         const hashedPassword = await (0, password_1.hashPassword)(data.password);
         // Create account as active but unverified (isActive is preserved for administrative activation semantics)
         const user = await user_repository_1.userRepository.create({
             fullName: data.fullName,
-            email: data.email,
+            email: normalisedEmail,
             // Normalized at write time so phone-based login can do a direct
             // indexed lookup instead of scanning for every legacy raw format.
             phone: data.phone ? (0, whatsapp_service_1.normalizePhoneNumber)(data.phone) : undefined,
@@ -130,15 +159,15 @@ exports.authService = {
         const otp = generateOtpPlaintext();
         const codeHash = await hashOtp(otp);
         try {
-            await emailVerification_repository_1.emailVerificationRepository.createOrReplace(data.email, codeHash);
-            await sendVerificationEmail(data.email, data.fullName, otp);
+            await emailVerification_repository_1.emailVerificationRepository.createOrReplace(normalisedEmail, codeHash);
+            await sendVerificationEmail(normalisedEmail, data.fullName, otp);
         }
         catch (err) {
             // SMTP failure → undo account creation so the caller can retry.
             // We do not log or re-throw the OTP.
             await user_repository_1.userRepository.deleteById(String(user._id)).catch(() => { });
-            await emailVerification_repository_1.emailVerificationRepository.deleteByEmail(data.email).catch(() => { });
-            console.error('[auth.service] Failed to send verification email for', data.email, ':', err instanceof Error ? err.message : 'unknown error');
+            await emailVerification_repository_1.emailVerificationRepository.deleteByEmail(normalisedEmail).catch(() => { });
+            console.error('[auth.service] Failed to send verification email for', normalisedEmail, ':', err instanceof Error ? err.message : 'unknown error');
             throw {
                 statusCode: 503,
                 exposeMessage: true,
@@ -148,11 +177,11 @@ exports.authService = {
         await alert_service_1.alertService.notifyAdmins('newOrganizerRegistration', {
             type: 'SYSTEM',
             title: 'New organizer registered (pending verification)',
-            message: `${user.fullName} (${user.email}) created an organizer account and is awaiting email verification.`,
+            message: `${user.fullName} (${normalisedEmail}) created an organizer account and is awaiting email verification.`,
             entityType: 'User',
             entityId: user._id,
         });
-        return { pendingVerification: true, email: data.email };
+        return { pendingVerification: true, email: normalisedEmail };
     },
     /**
      * Verify an organizer's email address with the 6-digit OTP.
@@ -220,12 +249,16 @@ exports.authService = {
         const current = data.email.trim().toLowerCase();
         const next = data.newEmail.trim().toLowerCase();
         const refused = { statusCode: 401, message: 'We could not change the email address. Check the details and try again.' };
-        const user = await user_repository_1.userRepository.findByEmail(current);
-        if (!user || user.role !== User_1.Role.ORGANIZER || user.isEmailVerified !== false || !(await (0, password_1.verifyPassword)(data.password, user.passwordHash ?? '')))
+        const user = await user_repository_1.userRepository.findByRoleAndEmail(current, User_1.Role.ORGANIZER);
+        if (!user || user.isEmailVerified !== false || !(await (0, password_1.verifyPassword)(data.password, user.passwordHash ?? '')))
             throw refused;
         if (next === current)
             throw { statusCode: 400, message: 'Enter a different email address.' };
-        if (await user_repository_1.userRepository.findByEmail(next)) {
+        const [existingOrganizer, existingAdmin] = await Promise.all([
+            user_repository_1.userRepository.findByRoleAndEmail(next, User_1.Role.ORGANIZER),
+            user_repository_1.userRepository.findByRoleAndEmail(next, User_1.Role.ADMIN),
+        ]);
+        if (existingOrganizer || existingAdmin) {
             throw { statusCode: 409, message: 'This email address is already registered. Sign in, or use another address.' };
         }
         const otp = generateOtpPlaintext();

@@ -22,7 +22,7 @@ export interface TemplatePreviewInput {
   companyName?: string;
   cardInfo?: CardInfo;
   contactNumber?: string;
-  cardDisplay?: { title?: boolean; qr?: boolean; dateTime?: boolean; location?: boolean; inviteeName?: boolean };
+  cardDisplay?: { title?: boolean; qr?: boolean; dateTime?: boolean; location?: boolean; inviteeName?: boolean; logo?: boolean };
 }
 
 /**

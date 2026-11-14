@@ -33,6 +33,8 @@ const emailImages_1 = require("./email/emailImages");
 const invitationEmail_1 = require("./email/invitationEmail");
 const inviteeClaim_1 = require("../utils/inviteeClaim");
 const admissionWindow_1 = require("../utils/admissionWindow");
+// the platform charges in rupees (see constants/currency.ts)
+const PLATFORM_CURRENCY_SYMBOL = '₹';
 function buildFormalInvitationEmailHTML(params) {
     // The letter itself lives in services/email/invitationEmail.ts (one template for invitations and reminders)
     return (0, invitationEmail_1.buildInvitationEmail)({ ...params, qrCid: params.cid });
@@ -458,6 +460,21 @@ exports.invitationService = {
             };
             await alert_service_1.alertService.notifyUser(event.organizerId, content);
             await alert_service_1.alertService.notifyAdmins('invitationSendFailed', content);
+        }
+        // the administrators hear what was sent, for whom, and what it comes to at the event's locked rate
+        const sentCount = results.filter((r) => r.status === 'SENT').length;
+        if (sentCount > 0) {
+            const rate = Number(event.pricing?.ratePerInvitee);
+            const organizer = await User_1.User.findById(event.organizerId).select('fullName profile.organizationName').lean();
+            const who = organizer?.profile?.organizationName || organizer?.fullName || 'An organizer';
+            const charge = Number.isFinite(rate) && rate > 0 ? ` At ${PLATFORM_CURRENCY_SYMBOL}${rate} per invitee that is ${PLATFORM_CURRENCY_SYMBOL}${(rate * sentCount).toLocaleString('en-IN')}.` : '';
+            await alert_service_1.alertService.notifyAdmins('invitationsSent', {
+                type: 'INVITATION',
+                title: 'Invitations sent',
+                message: `${who} sent ${sentCount} invitation${sentCount === 1 ? '' : 's'} for "${event.title}".${charge}`,
+                entityType: 'Event',
+                entityId: event._id
+            }, { email: false });
         }
         return results;
     },

@@ -20,7 +20,10 @@ export const notificationPreferencesSchema = z.object({
   reportDownload: flag,
   customTemplateRequest: flag,
   // Added later than the other keys; optional so clients that don't send it yet keep working
-  newContactMessage: flag.optional()
+  newContactMessage: flag.optional(),
+  guestCheckIns: flag.optional(),
+  invitationsSent: flag.optional(),
+  eventCancelled: flag.optional()
 }).strict();
 
 export const pricingSchema = z.object({

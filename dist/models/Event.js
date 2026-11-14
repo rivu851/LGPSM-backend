@@ -94,7 +94,9 @@ const EventSchema = new mongoose_1.Schema({
         dateTime: { type: Boolean },
         location: { type: Boolean },
         // print the guest's name on the card; absent on events made before this option existed (see utils/cardInfo.ts)
-        inviteeName: { type: Boolean }
+        inviteeName: { type: Boolean },
+        // print the event's logo / picture; absent = yes
+        logo: { type: Boolean }
     },
     cardInfo: {
         primary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] },

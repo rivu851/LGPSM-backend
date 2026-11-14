@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { alertService } from './alert.service';
 import { templateRepository, TemplateViewer } from '../repositories/template.repository';
 import { ITemplate, Template } from '../models/Template';
 
@@ -10,9 +11,17 @@ export function templateVisibleTo(template: Pick<ITemplate, 'ownerId' | 'isPubli
   return template.isPublished !== false;
 }
 
+/** A published template everyone can use (an administrator's, not an organizer's private design) is announced to the organizers */
+export async function announceTemplate(t: Pick<ITemplate, 'name' | 'isPublished' | 'isSystemTemplate' | '_id'> & { ownerId?: unknown }) {
+  if (t.isPublished === false) return;
+  await alertService.notifyAllOrganizers({ type: 'TEMPLATE', title: 'New invitation template', message: `The template "${t.name}" is now available. Choose it when you create an event.`, entityType: 'Template', entityId: t._id });
+}
+
 export const templateService = {
   async createTemplate(data: Partial<ITemplate>): Promise<ITemplate> {
-    return await templateRepository.create(data);
+    const created = await templateRepository.create(data);
+    await announceTemplate(created);
+    return created;
   },
 
   async getTemplates(
@@ -41,8 +50,11 @@ export const templateService = {
   },
 
   async updateTemplate(id: string, updateData: Partial<ITemplate>): Promise<ITemplate> {
+    const before: any = updateData.isPublished === true ? await Template.findById(id).select('isPublished').lean() : null;
     const template = await templateRepository.update(id, updateData);
     if (!template) throw new Error('TEMPLATE_NOT_FOUND');
+    // a template that has just been published (it was a draft) is announced
+    if (before && before.isPublished === false) await announceTemplate(template);
     return template;
   },
 

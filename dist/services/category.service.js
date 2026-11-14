@@ -9,6 +9,7 @@ exports.canUseCategory = canUseCategory;
 const category_repository_1 = require("../repositories/category.repository");
 const mongoose_1 = __importDefault(require("mongoose"));
 const Category_1 = require("../models/Category");
+const alert_service_1 = require("./alert.service");
 const Template_1 = require("../models/Template");
 const escapeRegex = (v) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const same = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -131,7 +132,10 @@ exports.categoryService = {
             throw { statusCode: 409, message: `A category named "${existing.name}" already exists` };
         }
         try {
-            return await category_repository_1.categoryRepository.create({ ...data, name });
+            const created = await category_repository_1.categoryRepository.create({ ...data, name });
+            // a category the administrators add is available to every organizer: they are told
+            await alert_service_1.alertService.notifyAllOrganizers({ type: 'CATEGORY', title: 'New event category', message: `The category "${name}" is now available when you create an event.`, entityType: 'Category', entityId: created._id });
+            return created;
         }
         catch (e) {
             // only reachable until scripts/migrate-category-uniqueness.js has replaced the old index
@@ -152,6 +156,7 @@ exports.categoryService = {
         }
         category.subcategories.push({ name, isActive: true });
         await category.save();
+        await alert_service_1.alertService.notifyAllOrganizers({ type: 'CATEGORY', title: 'New event subcategory', message: `"${name}" was added under ${category.name}. You can choose it when you create an event.`, entityType: 'Category', entityId: category._id });
         return category;
     },
     async getCategories(activeOnly = true, viewerId) {

@@ -48,6 +48,8 @@ export interface TemplateCardInput {
    * sent never set this, so a guest never receives an invitation carrying a stranger's picture.
    */
   useSamplePhoto?: boolean;
+  /** The organizer turned the event logo off: the picture frame stays a plain shape and the logo slot stays empty */
+  hideImage?: boolean;
   /** Output scale relative to the 393 x 682 Figma frame */
   scale?: number;
 }
@@ -414,7 +416,7 @@ export async function renderTemplateCard(input: TemplateCardInput): Promise<Buff
   // photo (personal designs): the organizer's picture in the designers' frame, or a neutral placeholder
   if (layout.photo) {
     let placed = false;
-    const photo = input.photo || (input.useSamplePhoto && layout.samplePhoto ? readSamplePhoto(layout.samplePhoto) : null);
+    const photo = input.hideImage ? null : input.photo || (input.useSamplePhoto && layout.samplePhoto ? readSamplePhoto(layout.samplePhoto) : null);
     if (photo) {
       try {
         layers.push({ input: await shapedPhoto(photo, layout.photo, scale), left: Math.round(layout.photo.x * scale), top: Math.round(layout.photo.y * scale) });
@@ -435,8 +437,10 @@ export async function renderTemplateCard(input: TemplateCardInput): Promise<Buff
           ? `<ellipse cx="${round(x + w / 2)}" cy="${round(y + h / 2)}" rx="${round(w / 2)}" ry="${round(h / 2)}" fill="${palette.fill}"/>`
           : `<rect x="${round(x)}" y="${round(y)}" width="${round(w)}" height="${round(h)}" rx="${p.radius * scale}" fill="${palette.fill}"/>`
       );
-      const initials = cleanText(input.initials || '').slice(0, 3);
-      if (initials) {
+      const initials = input.hideImage ? '' : cleanText(input.initials || '').slice(0, 3);
+      if (input.hideImage) {
+        // a plain frame, no silhouette or letters
+      } else if (initials) {
         svg.push(`<text x="${round(x + w / 2)}" y="${round(y + h / 2 + h * 0.12)}" text-anchor="middle" font-family="${fontStack('Inter')}" font-weight="700" font-size="${round(h * 0.36)}" fill="${palette.ink}" fill-opacity="0.8">${escapeXml(initials)}</text>`);
       } else {
         svg.push(silhouette(x + w / 2, y + h / 2, Math.min(w, h) / 2, palette.ink));
@@ -445,7 +449,7 @@ export async function renderTemplateCard(input: TemplateCardInput): Promise<Buff
   }
 
   // logo (corporate designs)
-  if (layout.logo && input.logo) {
+  if (layout.logo && input.logo && !input.hideImage) {
     try {
       layers.push({ input: await containedImage(input.logo, layout.logo, scale), left: Math.round(layout.logo.x * scale), top: Math.round(layout.logo.y * scale) });
     } catch (err) {

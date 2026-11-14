@@ -104,7 +104,7 @@ async function buildClassicSVG(data: InvitationCardData): Promise<string> {
     }
 
     // 2. Process Logo
-    const logoHref = getLogoBase64();
+    const logoHref = show.logo ? getLogoBase64() : '';
 
     // 3. Process Event Title
     const fullTitle = show.title ? (data.event.title || '').trim() : '';
@@ -399,6 +399,7 @@ async function renderFromTemplate(design: TemplateDesign, data: InvitationCardDa
     texts,
     qr,
     hideQr: !show.qr,
+    hideImage: !show.logo,
     photo: eventImage,
     // corporate designs show the host's logo where personal designs show a photo; fall back to the LGPSM logo
     logo: eventImage || dataUrlToBuffer(getLogoBase64()),
@@ -412,7 +413,9 @@ async function renderFromSpec(fullSpec: DesignSpec, data: InvitationCardData): P
   const show = cardDisplayOf(data.cardDisplay);
   // a hidden QR takes its frame and its "scan" caption with it, and the card closes up where it was (see qrCollapse.ts)
   const collapse = show.qr ? null : qrCollapsePlan(fullSpec);
-  const spec: DesignSpec = collapse ? ({ ...fullSpec, elements: collapse.elements } as DesignSpec) : fullSpec;
+  const collapsed: DesignSpec = collapse ? ({ ...fullSpec, elements: collapse.elements } as DesignSpec) : fullSpec;
+  // the event logo / picture turned off: the design's image slots are left out
+  const spec: DesignSpec = show.logo ? collapsed : ({ ...collapsed, elements: collapsed.elements.filter((e) => e.type !== 'image') } as DesignSpec);
   const allTexts = buildSpecTexts({
     title: data.event.title || '',
     description: data.event.description,

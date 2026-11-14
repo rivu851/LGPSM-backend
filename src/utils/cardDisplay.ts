@@ -7,9 +7,11 @@ export interface CardDisplay {
   location: boolean;
   /** print the guest's name (a checkbox of its own; "Additional Information" is for the other details) */
   inviteeName: boolean;
+  /** print the event's logo / picture (the designs' picture frame and logo slot stay empty when off) */
+  logo: boolean;
 }
 
-export const CARD_DISPLAY_DEFAULTS: CardDisplay = { title: true, qr: true, dateTime: true, location: true, inviteeName: true };
+export const CARD_DISPLAY_DEFAULTS: CardDisplay = { title: true, qr: true, dateTime: true, location: true, inviteeName: true, logo: true };
 
 export function cardDisplayOf(raw?: Partial<CardDisplay> | null): CardDisplay {
   const r = raw || {};
@@ -19,6 +21,7 @@ export function cardDisplayOf(raw?: Partial<CardDisplay> | null): CardDisplay {
     dateTime: r.dateTime !== false,
     location: r.location !== false,
     inviteeName: r.inviteeName !== false,
+    logo: r.logo !== false,
   };
 }
 

@@ -5,7 +5,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.templateService = void 0;
 exports.templateVisibleTo = templateVisibleTo;
+exports.announceTemplate = announceTemplate;
 const mongoose_1 = __importDefault(require("mongoose"));
+const alert_service_1 = require("./alert.service");
 const template_repository_1 = require("../repositories/template.repository");
 const Template_1 = require("../models/Template");
 /** Can this viewer see/use this template? Mirrors the list rules in template.repository.ts. */
@@ -18,9 +20,17 @@ function templateVisibleTo(template, viewer) {
         return String(template.ownerId) === viewer.userId || (template.isSystemTemplate && template.isPublished === true);
     return template.isPublished !== false;
 }
+/** A published template everyone can use (an administrator's, not an organizer's private design) is announced to the organizers */
+async function announceTemplate(t) {
+    if (t.isPublished === false)
+        return;
+    await alert_service_1.alertService.notifyAllOrganizers({ type: 'TEMPLATE', title: 'New invitation template', message: `The template "${t.name}" is now available. Choose it when you create an event.`, entityType: 'Template', entityId: t._id });
+}
 exports.templateService = {
     async createTemplate(data) {
-        return await template_repository_1.templateRepository.create(data);
+        const created = await template_repository_1.templateRepository.create(data);
+        await announceTemplate(created);
+        return created;
     },
     async getTemplates(categoryId, viewer, options = {}) {
         const page = Math.max(options.page || 1, 1);
@@ -41,9 +51,13 @@ exports.templateService = {
         return template;
     },
     async updateTemplate(id, updateData) {
+        const before = updateData.isPublished === true ? await Template_1.Template.findById(id).select('isPublished').lean() : null;
         const template = await template_repository_1.templateRepository.update(id, updateData);
         if (!template)
             throw new Error('TEMPLATE_NOT_FOUND');
+        // a template that has just been published (it was a draft) is announced
+        if (before && before.isPublished === false)
+            await announceTemplate(template);
         return template;
     },
     /** An organizer changing their own AI template: only fields they may edit, only on a template they own. */

@@ -8,6 +8,8 @@ export interface INotification extends Document {
   entityType?: string;
   entityId?: mongoose.Types.ObjectId;
   isRead: boolean;
+  /** a rolled-up notification ("N guests checked in") counts what it summarises */
+  count?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -20,7 +22,8 @@ const NotificationSchema: Schema = new Schema(
     message: { type: String, required: true },
     entityType: { type: String },
     entityId: { type: Schema.Types.ObjectId },
-    isRead: { type: Boolean, default: false }
+    isRead: { type: Boolean, default: false },
+    count: { type: Number }
   },
   {
     timestamps: true
@@ -28,6 +31,7 @@ const NotificationSchema: Schema = new Schema(
 );
 
 NotificationSchema.index({ userId: 1, isRead: 1 });
+NotificationSchema.index({ userId: 1, type: 1, entityId: 1, createdAt: -1 });
 NotificationSchema.index({ createdAt: -1 });
 
 export const Notification = mongoose.model<INotification>('Notification', NotificationSchema);

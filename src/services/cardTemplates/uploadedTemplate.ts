@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import sharp from 'sharp';
 import { resolveImageKeyBase64 } from '../../utils/resolveImageBase64';
 import { Template } from '../../models/Template';
+import { announceTemplate } from '../template.service';
 import { Media, MediaPurpose } from '../../models/Media';
 import { mediaIdFromKey } from '../../utils/mediaKey';
 import { CANVAS_PRESETS, CanvasPresetId, DesignSpec, parseDesignSpec } from './designSpec';
@@ -133,7 +134,7 @@ export async function createUploadedTemplate(actor: { userId: string; role?: str
         return buildDynamicUploadedSpec(input.imageKey, media.width, media.height, await isLightAtBottom(input.imageKey, W, H));
       })()
     : buildUploadedSpec(input.imageKey, media.width, media.height);
-  return Template.create({
+  const created = await Template.create({
     name: input.name?.trim() || `Uploaded template ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`,
     ...(input.categoryId ? { categoryId: new mongoose.Types.ObjectId(input.categoryId) } : {}),
     ...(input.subcategoryId ? { subcategoryId: new mongoose.Types.ObjectId(input.subcategoryId) } : {}),
@@ -149,4 +150,7 @@ export async function createUploadedTemplate(actor: { userId: string; role?: str
     isPublished: true,
     isActive: true
   });
+  // an administrator's upload is shared with every organizer: they are told
+  if (dynamic) await announceTemplate(created as any);
+  return created;
 }

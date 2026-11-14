@@ -5,7 +5,7 @@ const zod_1 = require("zod");
 const phone_validator_1 = require("./phone.validator");
 exports.registerSchema = zod_1.z.object({
     fullName: zod_1.z.string().trim().min(2, 'Full name must be at least 2 characters').max(120, 'Full name is too long'),
-    email: zod_1.z.string().email('Invalid email format'),
+    email: zod_1.z.string().trim().toLowerCase().email('Invalid email format'),
     password: zod_1.z.string().min(8, 'Password must be at least 8 characters'),
     phone: phone_validator_1.optionalPhoneSchema,
     role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
@@ -13,6 +13,14 @@ exports.registerSchema = zod_1.z.object({
     organizationName: zod_1.z.string().trim().max(150, 'Organization name is too long').optional(),
     // How the organizer will send invitations (asked at signup); the send screen starts with this choice
     invitationChannel: zod_1.z.enum(['EMAIL', 'WHATSAPP', 'BOTH']).optional(),
+}).superRefine((data, ctx) => {
+    if (data.organizationType === 'ORGANIZATION' && (data.organizationName?.length ?? 0) < 2) {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['organizationName'],
+            message: 'Organization name must be at least 2 characters',
+        });
+    }
 });
 // Mobile number is the primary identifier; email remains a valid alternative.
 // "At least one of the two" is enforced in authService.login(), not here —

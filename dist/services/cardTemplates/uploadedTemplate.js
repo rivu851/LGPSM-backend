@@ -13,6 +13,7 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const sharp_1 = __importDefault(require("sharp"));
 const resolveImageBase64_1 = require("../../utils/resolveImageBase64");
 const Template_1 = require("../../models/Template");
+const template_service_1 = require("../template.service");
 const Media_1 = require("../../models/Media");
 const mediaKey_1 = require("../../utils/mediaKey");
 const designSpec_1 = require("./designSpec");
@@ -147,7 +148,7 @@ async function createUploadedTemplate(actor, input) {
             return buildDynamicUploadedSpec(input.imageKey, media.width, media.height, await isLightAtBottom(input.imageKey, W, H));
         })()
         : buildUploadedSpec(input.imageKey, media.width, media.height);
-    return Template_1.Template.create({
+    const created = await Template_1.Template.create({
         name: input.name?.trim() || `Uploaded template ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`,
         ...(input.categoryId ? { categoryId: new mongoose_1.default.Types.ObjectId(input.categoryId) } : {}),
         ...(input.subcategoryId ? { subcategoryId: new mongoose_1.default.Types.ObjectId(input.subcategoryId) } : {}),
@@ -163,4 +164,8 @@ async function createUploadedTemplate(actor, input) {
         isPublished: true,
         isActive: true
     });
+    // an administrator's upload is shared with every organizer: they are told
+    if (dynamic)
+        await (0, template_service_1.announceTemplate)(created);
+    return created;
 }

@@ -28,6 +28,9 @@ import { buildInvitationEmail, invitationEmailSubject } from './email/invitation
 import { claimInviteeForIssue, releaseInviteeClaim } from '../utils/inviteeClaim';
 import { admissionState, effectiveAdmission } from '../utils/admissionWindow';
 
+// the platform charges in rupees (see constants/currency.ts)
+const PLATFORM_CURRENCY_SYMBOL = '₹';
+
 export function buildFormalInvitationEmailHTML(params: {
   eventTitle: string;
   inviteeName: string;
@@ -500,6 +503,21 @@ export const invitationService = {
       };
       await alertService.notifyUser(event.organizerId, content);
       await alertService.notifyAdmins('invitationSendFailed', content);
+    }
+    // the administrators hear what was sent, for whom, and what it comes to at the event's locked rate
+    const sentCount = results.filter((r: any) => r.status === 'SENT').length;
+    if (sentCount > 0) {
+      const rate = Number((event as any).pricing?.ratePerInvitee);
+      const organizer: any = await User.findById(event.organizerId).select('fullName profile.organizationName').lean();
+      const who = organizer?.profile?.organizationName || organizer?.fullName || 'An organizer';
+      const charge = Number.isFinite(rate) && rate > 0 ? ` At ${PLATFORM_CURRENCY_SYMBOL}${rate} per invitee that is ${PLATFORM_CURRENCY_SYMBOL}${(rate * sentCount).toLocaleString('en-IN')}.` : '';
+      await alertService.notifyAdmins('invitationsSent', {
+        type: 'INVITATION',
+        title: 'Invitations sent',
+        message: `${who} sent ${sentCount} invitation${sentCount === 1 ? '' : 's'} for "${event.title}".${charge}`,
+        entityType: 'Event',
+        entityId: event._id
+      }, { email: false });
     }
     return results;
   },

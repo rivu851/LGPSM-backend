@@ -154,6 +154,16 @@ class EventService {
             entityType: 'Event',
             entityId: created._id
         });
+        // an administrator created it on the organizer's behalf: the organizer is told
+        if (adminActorId && String(adminActorId) !== String(targetOrganizer)) {
+            await alert_service_1.alertService.notifyUser(targetOrganizer, {
+                type: 'EVENT',
+                title: 'An administrator created an event for you',
+                message: `"${created.title}" was created for you by an administrator. Open it to see the details, add invitees and send the invitations.`,
+                entityType: 'Event',
+                entityId: created._id
+            });
+        }
         return created;
     }
     /** The accounts an admin may create an event for: real, active organizers. Checked before anything is created. */
@@ -285,6 +295,16 @@ class EventService {
             }
             throw new Error('UPDATE_FAILED');
         }
+        // an administrator changed the organizer's event: the organizer is told which event
+        if (role === User_1.Role.ADMIN && String(existingEvent.organizerId) !== String(organizerId)) {
+            await alert_service_1.alertService.notifyUser(existingEvent.organizerId, {
+                type: 'EVENT',
+                title: 'An administrator updated your event',
+                message: `"${updatedEvent.title}" was changed by an administrator. Open the event to review the changes.`,
+                entityType: 'Event',
+                entityId: updatedEvent._id
+            });
+        }
         return updatedEvent;
     }
     /**
@@ -355,6 +375,23 @@ class EventService {
                 alreadyCancelled = true;
                 event = now;
             }
+        }
+        // who cancelled is told to the other side: the administrators when an organizer cancels, the organizer when an administrator does
+        if (!alreadyCancelled) {
+            const byAdmin = actor.role === User_1.Role.ADMIN;
+            const content = {
+                type: 'EVENT',
+                title: 'Event cancelled',
+                message: byAdmin
+                    ? `"${event.title}" was cancelled by an administrator${cleanReason ? `: ${cleanReason}` : '.'}`
+                    : `"${event.title}" was cancelled by its organizer${cleanReason ? `: ${cleanReason}` : '.'}`,
+                entityType: 'Event',
+                entityId: event._id
+            };
+            if (byAdmin)
+                await alert_service_1.alertService.notifyUser(event.organizerId, content);
+            else
+                await alert_service_1.alertService.notifyAdmins('eventCancelled', content, { email: false });
         }
         // Stored first, sent afterwards: a provider outage can never undo or block the cancellation
         const queued = await cancellationNotice_service_1.cancellationNoticeService.enqueueForEvent(event);

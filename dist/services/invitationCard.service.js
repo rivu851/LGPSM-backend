@@ -55,7 +55,7 @@ async function buildClassicSVG(data) {
         });
     }
     // 2. Process Logo
-    const logoHref = getLogoBase64();
+    const logoHref = show.logo ? getLogoBase64() : '';
     // 3. Process Event Title
     const fullTitle = show.title ? (data.event.title || '').trim() : '';
     const titleWords = fullTitle.split(' ');
@@ -337,6 +337,7 @@ async function renderFromTemplate(design, data) {
         texts,
         qr,
         hideQr: !show.qr,
+        hideImage: !show.logo,
         photo: eventImage,
         // corporate designs show the host's logo where personal designs show a photo; fall back to the LGPSM logo
         logo: eventImage || dataUrlToBuffer(getLogoBase64()),
@@ -349,7 +350,9 @@ async function renderFromSpec(fullSpec, data) {
     const show = (0, cardDisplay_1.cardDisplayOf)(data.cardDisplay);
     // a hidden QR takes its frame and its "scan" caption with it, and the card closes up where it was (see qrCollapse.ts)
     const collapse = show.qr ? null : (0, qrCollapse_1.qrCollapsePlan)(fullSpec);
-    const spec = collapse ? { ...fullSpec, elements: collapse.elements } : fullSpec;
+    const collapsed = collapse ? { ...fullSpec, elements: collapse.elements } : fullSpec;
+    // the event logo / picture turned off: the design's image slots are left out
+    const spec = show.logo ? collapsed : { ...collapsed, elements: collapsed.elements.filter((e) => e.type !== 'image') };
     const allTexts = (0, content_1.buildSpecTexts)({
         title: data.event.title || '',
         description: data.event.description,

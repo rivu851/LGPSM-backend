@@ -152,6 +152,16 @@ export class EventService {
       entityType: 'Event',
       entityId: created._id
     });
+    // an administrator created it on the organizer's behalf: the organizer is told
+    if (adminActorId && String(adminActorId) !== String(targetOrganizer)) {
+      await alertService.notifyUser(targetOrganizer, {
+        type: 'EVENT',
+        title: 'An administrator created an event for you',
+        message: `"${created.title}" was created for you by an administrator. Open it to see the details, add invitees and send the invitations.`,
+        entityType: 'Event',
+        entityId: created._id
+      });
+    }
     return created;
   }
 
@@ -282,7 +292,17 @@ export class EventService {
       }
       throw new Error('UPDATE_FAILED');
     }
-    
+
+    // an administrator changed the organizer's event: the organizer is told which event
+    if (role === Role.ADMIN && String(existingEvent.organizerId) !== String(organizerId)) {
+      await alertService.notifyUser(existingEvent.organizerId, {
+        type: 'EVENT',
+        title: 'An administrator updated your event',
+        message: `"${updatedEvent.title}" was changed by an administrator. Open the event to review the changes.`,
+        entityType: 'Event',
+        entityId: updatedEvent._id
+      });
+    }
     return updatedEvent;
   }
 
@@ -356,6 +376,22 @@ export class EventService {
         alreadyCancelled = true;
         event = now;
       }
+    }
+
+    // who cancelled is told to the other side: the administrators when an organizer cancels, the organizer when an administrator does
+    if (!alreadyCancelled) {
+      const byAdmin = actor.role === Role.ADMIN;
+      const content = {
+        type: 'EVENT',
+        title: 'Event cancelled',
+        message: byAdmin
+          ? `"${event.title}" was cancelled by an administrator${cleanReason ? `: ${cleanReason}` : '.'}`
+          : `"${event.title}" was cancelled by its organizer${cleanReason ? `: ${cleanReason}` : '.'}`,
+        entityType: 'Event',
+        entityId: event._id
+      };
+      if (byAdmin) await alertService.notifyUser(event.organizerId, content);
+      else await alertService.notifyAdmins('eventCancelled', content, { email: false });
     }
 
     // Stored first, sent afterwards: a provider outage can never undo or block the cancellation

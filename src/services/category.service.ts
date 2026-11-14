@@ -1,6 +1,7 @@
 import { categoryRepository } from '../repositories/category.repository';
 import mongoose from 'mongoose';
 import { Category, ICategory } from '../models/Category';
+import { alertService } from './alert.service';
 import { Template } from '../models/Template';
 
 const escapeRegex = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -117,7 +118,10 @@ export const categoryService = {
       throw { statusCode: 409, message: `A category named "${existing.name}" already exists` };
     }
     try {
-      return await categoryRepository.create({ ...data, name });
+      const created = await categoryRepository.create({ ...data, name });
+      // a category the administrators add is available to every organizer: they are told
+      await alertService.notifyAllOrganizers({ type: 'CATEGORY', title: 'New event category', message: `The category "${name}" is now available when you create an event.`, entityType: 'Category', entityId: (created as any)._id });
+      return created;
     } catch (e: any) {
       // only reachable until scripts/migrate-category-uniqueness.js has replaced the old index
       if (e?.code === 11000) throw { statusCode: 409, message: 'That name is not available. Please use a different one.' };
@@ -136,6 +140,7 @@ export const categoryService = {
     }
     category.subcategories.push({ name, isActive: true } as any);
     await category.save();
+    await alertService.notifyAllOrganizers({ type: 'CATEGORY', title: 'New event subcategory', message: `"${name}" was added under ${category.name}. You can choose it when you create an event.`, entityType: 'Category', entityId: category._id });
     return category;
   },
 
