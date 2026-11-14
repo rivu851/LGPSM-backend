@@ -199,16 +199,17 @@ describe('organizer sign-up on an email another account already uses', () => {
     const s = await login({ email: 'new@x.com', password: STAFF_PW, role: 'SYSTEM_USER' });
     expect(String(s.body.data.user._id)).toBe(staff._id);
   });
-  it('a second sign-up cannot take an email while another sign-up is waiting for its code, and cannot overwrite it', async () => {
+  it('a second sign-up on an address whose first sign-up is still waiting for its code replaces it: whoever holds the mailbox wins, and nobody is told the address is taken', async () => {
     expect((await signup({ fullName: 'First', password: 'FirstPass123!' })).status).toBe(201);
     const firstCode = code();
     const second = await signup({ fullName: 'Second', password: 'SecondPass123!' });
-    expect(second.status).toBe(400);
-    expect(second.body.message).toMatch(/waiting for its verification code/);
-    // the first sign-up (and its password) is untouched, and its own code still works
-    expect((await request(app).post('/api/auth/verify-email').send({ email: 'new@x.com', code: firstCode })).status).toBe(200);
-    expect((await login({ email: 'new@x.com', password: 'FirstPass123!', role: 'ORGANIZER' })).status).toBe(200);
-    expect((await login({ email: 'new@x.com', password: 'SecondPass123!', role: 'ORGANIZER' })).status).toBe(401);
+    expect(second.status).toBe(201);
+    const secondCode = code();
+    // the first sign-up and its code are gone; the second one's code verifies the second one
+    expect((await request(app).post('/api/auth/verify-email').send({ email: 'new@x.com', code: firstCode })).status).toBe(400);
+    expect((await request(app).post('/api/auth/verify-email').send({ email: 'new@x.com', code: secondCode })).status).toBe(200);
+    expect((await login({ email: 'new@x.com', password: 'SecondPass123!', role: 'ORGANIZER' })).status).toBe(200);
+    expect((await login({ email: 'new@x.com', password: 'FirstPass123!', role: 'ORGANIZER' })).status).toBe(401);
     expect(await User.countDocuments({ email: 'new@x.com', role: Role.ORGANIZER })).toBe(1);
   });
   it('a sign-up whose code ran out is cleared away so the real owner of the address can sign up', async () => {

@@ -176,16 +176,16 @@ describe('Registration', () => {
     expect(retryRes.body.data.pendingVerification).toBe(true);
   });
 
-  it('refuses a second organizer on an email an organizer already uses (one organizer per email)', async () => {
+  it('a sign-up still waiting for its code is replaced by a new sign-up on the same email, never reported as "already registered"', async () => {
     const res = await request(app)
       .post('/api/auth/register')
       .send({ fullName: 'New Organizer', email: 'NewOrg@example.com', password: 'password123' });
 
-    expect(res.statusCode).toBe(400);
-    // (here the existing organizer is a sign-up still waiting for its code; for a verified one the message is "an organizer account already uses this email")
-    expect(res.body.message).toMatch(/organizer account already uses this email|waiting for its verification code/);
-    expect(res.body.code).toBe('EMAIL_VERIFICATION_PENDING');
+    expect(res.statusCode).toBe(201);
+    expect(res.body.code).toBeUndefined();
+    // still exactly one organizer on the address: the pending one was replaced
     expect(await User.countDocuments({ email: 'neworg@example.com' })).toBe(1);
+    expect((await User.findOne({ email: 'neworg@example.com' }))!.fullName).toBe('New Organizer');
   });
 
   it('does not allow non-ORGANIZER self-registration', async () => {

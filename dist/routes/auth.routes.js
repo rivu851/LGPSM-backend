@@ -19,6 +19,7 @@ const validate = (schema) => (req, res, next) => {
 router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 router.post('/register', rateLimiter_1.authRateLimiter, validate(auth_validator_1.registerSchema), auth_controller_1.authController.register);
 router.post('/login', rateLimiter_1.loginIpLimiter, rateLimiter_1.loginAccountLimiter, validate(auth_validator_1.loginSchema), auth_controller_1.authController.login);
+router.post('/google', rateLimiter_1.loginIpLimiter, validate(auth_validator_1.googleAuthSchema), auth_controller_1.authController.googleSignIn);
 router.post('/refresh', rateLimiter_1.refreshRateLimiter, validate(auth_validator_1.refreshTokenSchema), auth_controller_1.authController.refresh);
 router.post('/logout', rateLimiter_1.refreshRateLimiter, auth_controller_1.authController.logout);
 router.post('/forgot-password', rateLimiter_1.authRateLimiter, validate(auth_validator_1.forgotPasswordSchema), auth_controller_1.authController.forgotPassword);

@@ -29,6 +29,7 @@ export interface IUser extends Document {
    *   so that existing login/session flows are not affected.
    */
   isEmailVerified: boolean;
+  googleId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -52,6 +53,8 @@ const UserSchema: Schema = new Schema(
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
     isActive: { type: Boolean, default: true },
     isEmailVerified: { type: Boolean, default: true },
+    // the Google account an organizer signed in with (the "sub" of the verified ID token); never used to look people up by email alone
+    googleId: { type: String, index: true, sparse: true },
   },
   {
     timestamps: true,

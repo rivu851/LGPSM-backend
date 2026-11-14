@@ -65,6 +65,8 @@ const UserSchema = new mongoose_1.Schema({
     createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
     isActive: { type: Boolean, default: true },
     isEmailVerified: { type: Boolean, default: true },
+    // the Google account an organizer signed in with (the "sub" of the verified ID token); never used to look people up by email alone
+    googleId: { type: String, index: true, sparse: true },
 }, {
     timestamps: true,
     toJSON: {

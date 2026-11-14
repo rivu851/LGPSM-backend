@@ -12,6 +12,7 @@ import {
 import {
   registerSchema,
   loginSchema,
+  googleAuthSchema,
   refreshTokenSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
@@ -41,6 +42,7 @@ router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); ne
 
 router.post('/register', authRateLimiter, validate(registerSchema), authController.register);
 router.post('/login', loginIpLimiter, loginAccountLimiter, validate(loginSchema), authController.login);
+router.post('/google', loginIpLimiter, validate(googleAuthSchema), authController.googleSignIn);
 router.post('/refresh', refreshRateLimiter, validate(refreshTokenSchema), authController.refresh);
 router.post('/logout', refreshRateLimiter, authController.logout);
 router.post('/forgot-password', authRateLimiter, validate(forgotPasswordSchema), authController.forgotPassword);

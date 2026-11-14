@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyResetOtpSchema = exports.changePendingEmailSchema = exports.resendVerificationSchema = exports.verifyEmailSchema = exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.refreshTokenSchema = exports.loginSchema = exports.registerSchema = void 0;
+exports.googleAuthSchema = exports.verifyResetOtpSchema = exports.changePendingEmailSchema = exports.resendVerificationSchema = exports.verifyEmailSchema = exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.refreshTokenSchema = exports.loginSchema = exports.registerSchema = void 0;
 const zod_1 = require("zod");
 const phone_validator_1 = require("./phone.validator");
 exports.registerSchema = zod_1.z.object({
@@ -68,3 +68,5 @@ exports.verifyResetOtpSchema = zod_1.z.object({
     code: zod_1.z.string().regex(/^\d{4}$/, 'Enter the 4-digit code'),
     role: zod_1.z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });
+// "Sign in with Google": the signed ID token Google gives the browser (organizers only)
+exports.googleAuthSchema = zod_1.z.object({ credential: zod_1.z.string().min(20).max(8192) }).strict();

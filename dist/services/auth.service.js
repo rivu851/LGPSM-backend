@@ -15,6 +15,7 @@ const token_1 = require("../utils/token");
 const email_provider_1 = require("../utils/email.provider");
 const User_1 = require("../models/User");
 const EmailVerification_1 = require("../models/EmailVerification");
+const google_auth_library_1 = require("google-auth-library");
 const PasswordResetOtp_1 = require("../models/PasswordResetOtp");
 const alert_service_1 = require("./alert.service");
 const env_1 = require("../config/env");
@@ -122,15 +123,9 @@ exports.authService = {
                 message: 'An organizer account already uses this email address. Sign in or use a different email.',
             };
         }
+        // A sign-up still waiting for its code is not an account yet: it is replaced by this one (new details, new code), never reported as
+        // "already registered". A conflict with a real organizer account is only ever reported once the code has been entered.
         if (existingOrganizer) {
-            const pendingVerification = await emailVerification_repository_1.emailVerificationRepository.findByEmail(normalisedEmail);
-            if (pendingVerification && pendingVerification.expiresAt > new Date()) {
-                throw {
-                    statusCode: 400,
-                    code: 'EMAIL_VERIFICATION_PENDING',
-                    message: 'An organizer sign-up is already waiting for its verification code. Verify it or request a new code.',
-                };
-            }
             await user_repository_1.userRepository.deleteById(String(existingOrganizer._id));
             await emailVerification_repository_1.emailVerificationRepository.deleteByEmail(normalisedEmail);
         }
@@ -230,8 +225,22 @@ exports.authService = {
                     : 'Invalid verification code. You have used all attempts. Please request a new code.',
             };
         }
+        // The code is right. Only now is a clash with an existing organizer reported (another account may have been verified or added
+        // on this address while the code was pending): the pending sign-up is dropped and the person is told to sign in.
+        const pending = record.userId ? await user_repository_1.userRepository.findById(String(record.userId)) : null;
+        const rival = await user_repository_1.userRepository.findByRoleAndEmail(normalised, User_1.Role.ORGANIZER);
+        if (rival && rival.isEmailVerified !== false && (!pending || String(rival._id) !== String(pending._id))) {
+            if (pending)
+                await user_repository_1.userRepository.deleteById(String(pending._id)).catch(() => { });
+            await emailVerification_repository_1.emailVerificationRepository.deleteByEmail(normalised);
+            throw {
+                statusCode: 409,
+                code: 'ORGANIZER_EMAIL_IN_USE',
+                message: 'An organizer account already uses this email address. Your code was correct, but this sign-up was not created: sign in with that account instead.',
+            };
+        }
         // Correct code — mark email as verified
-        await user_repository_1.userRepository.verifyOrganizerEmail(normalised);
+        await user_repository_1.userRepository.verifyOrganizerEmail(normalised, record.userId);
         // Remove OTP record
         await emailVerification_repository_1.emailVerificationRepository.deleteByEmail(normalised);
         return { verified: true };
@@ -377,6 +386,78 @@ exports.authService = {
         const refreshToken = (0, token_1.generateRefreshToken)(userId, user.role);
         await token_repository_1.tokenRepository.createRefreshToken(userId, refreshToken, refreshExpiry(refreshToken));
         return { user, accessToken, refreshToken };
+    },
+    /**
+     * "Sign in with Google" for organizers (sign-in and sign-up in one). The browser hands over Google's signed ID token; it is verified
+     * here (signature, audience = our client id(s), expiry) and only a Google-verified email address is trusted. An existing organizer
+     * on that address is signed in (and the Google account is linked to it); a new address becomes a new organizer account whose
+     * profile is completed on the dashboard afterwards. Administrators and system users cannot use it.
+     */
+    async googleSignIn(credential) {
+        const clientIds = String(process.env.GOOGLE_CLIENT_ID || '').split(',').map((x) => x.trim()).filter(Boolean);
+        if (clientIds.length === 0) {
+            throw { statusCode: 503, exposeMessage: true, code: 'GOOGLE_NOT_CONFIGURED', message: 'Google sign-in is not set up on this server yet.' };
+        }
+        let payload;
+        try {
+            const ticket = await new google_auth_library_1.OAuth2Client().verifyIdToken({ idToken: credential, audience: clientIds });
+            payload = ticket.getPayload();
+        }
+        catch {
+            throw { statusCode: 401, message: 'Google could not confirm this sign-in. Please try again.' };
+        }
+        if (!payload?.email || !payload.sub)
+            throw { statusCode: 401, message: 'Google did not share an email address for this account.' };
+        if (payload.email_verified !== true)
+            throw { statusCode: 401, message: 'The email address of this Google account is not verified.' };
+        const email = payload.email.trim().toLowerCase();
+        if (await user_repository_1.userRepository.findByRoleAndEmail(email, User_1.Role.ADMIN)) {
+            throw { statusCode: 403, code: 'GOOGLE_ORGANIZERS_ONLY', message: 'Google sign-in is for organizers only. Administrators sign in with their email and password.' };
+        }
+        let user = await user_repository_1.userRepository.findByRoleAndEmail(email, User_1.Role.ORGANIZER);
+        let isNewUser = false;
+        if (user) {
+            if (!user.isActive)
+                throw { statusCode: 403, code: 'ACCOUNT_INACTIVE', message: 'This organizer account has been deactivated. Please contact the administrator.' };
+            if (user.googleId && user.googleId !== payload.sub) {
+                throw { statusCode: 403, message: 'This email address is linked to a different Google account.' };
+            }
+            const patch = {};
+            if (!user.googleId)
+                patch.googleId = payload.sub;
+            // Google has confirmed the address: a sign-up that was still waiting for its code is complete
+            if (user.isEmailVerified === false) {
+                patch.isEmailVerified = true;
+                await emailVerification_repository_1.emailVerificationRepository.deleteByEmail(email);
+            }
+            if (Object.keys(patch).length)
+                user = (await user_repository_1.userRepository.updateById(String(user._id), patch)) || user;
+        }
+        else {
+            isNewUser = true;
+            user = await user_repository_1.userRepository.create({
+                fullName: (payload.name || email.split('@')[0]).trim().slice(0, 120) || email,
+                email,
+                authProvider: User_1.AuthProvider.GOOGLE,
+                googleId: payload.sub,
+                role: User_1.Role.ORGANIZER,
+                isActive: true,
+                isEmailVerified: true,
+                profile: { invitationChannel: 'BOTH' },
+            });
+            await alert_service_1.alertService.notifyAdmins('newOrganizerRegistration', {
+                type: 'SYSTEM',
+                title: 'New organizer signed up with Google',
+                message: `${user.fullName} (${email}) created an organizer account with Google. Their profile is still being completed.`,
+                entityType: 'User',
+                entityId: user._id,
+            });
+        }
+        const userId = String(user._id);
+        const accessToken = (0, token_1.generateAccessToken)(userId, user.role);
+        const refreshToken = (0, token_1.generateRefreshToken)(userId, user.role);
+        await token_repository_1.tokenRepository.createRefreshToken(userId, refreshToken, refreshExpiry(refreshToken));
+        return { user, accessToken, refreshToken, isNewUser };
     },
     async refresh(token) {
         const payload = (0, token_1.verifyRefreshToken)(token);

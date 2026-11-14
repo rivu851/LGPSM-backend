@@ -23,6 +23,16 @@ export const authController = {
     }
   },
 
+  async googleSignIn(req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await authService.googleSignIn(req.body.credential);
+      res.status(200).json({ success: true, data: result });
+    } catch (error: any) {
+      if (error?.statusCode === 401 || error?.statusCode === 403) securityEvent('LOGIN_FAILED', req, { status: error.statusCode, via: 'google' });
+      next(error);
+    }
+  },
+
   async refresh(req: Request, res: Response, next: NextFunction) {
     try {
       const result = await authService.refresh(req.body.refreshToken);

@@ -25,6 +25,17 @@ exports.authController = {
             next(error);
         }
     },
+    async googleSignIn(req, res, next) {
+        try {
+            const result = await auth_service_1.authService.googleSignIn(req.body.credential);
+            res.status(200).json({ success: true, data: result });
+        }
+        catch (error) {
+            if (error?.statusCode === 401 || error?.statusCode === 403)
+                (0, securityLog_1.securityEvent)('LOGIN_FAILED', req, { status: error.statusCode, via: 'google' });
+            next(error);
+        }
+    },
     async refresh(req, res, next) {
         try {
             const result = await auth_service_1.authService.refresh(req.body.refreshToken);

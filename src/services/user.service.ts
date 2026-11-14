@@ -1,4 +1,5 @@
 import { auditLogService } from './auditLog.service';
+import { EmailVerification } from '../models/EmailVerification';
 import mongoose from 'mongoose';
 import { userRepository } from '../repositories/user.repository';
 import { Role, User } from '../models/User';
@@ -214,8 +215,15 @@ export const userService = {
     }
 
     // One organizer account per email. (System users may share an email with an organizer and with each other.)
-    if (data.role === Role.ORGANIZER && (await User.exists({ email: String(data.email).toLowerCase().trim(), role: Role.ORGANIZER }))) {
-      throw { statusCode: 400, message: 'An organizer account already uses this email address.' };
+    if (data.role === Role.ORGANIZER) {
+      const organizerEmail = String(data.email).toLowerCase().trim();
+      const sameEmail: any = await User.findOne({ email: organizerEmail, role: Role.ORGANIZER }).select('isEmailVerified');
+      if (sameEmail && sameEmail.isEmailVerified !== false) throw { statusCode: 400, message: 'An organizer account already uses this email address.' };
+      // a sign-up that is still waiting for its code is not an account: the administrator's account replaces it
+      if (sameEmail) {
+        await User.deleteOne({ _id: sameEmail._id });
+        await EmailVerification.deleteMany({ email: organizerEmail });
+      }
     }
 
     // Reuse a deleted staff account owned by this organizer when possible. Other

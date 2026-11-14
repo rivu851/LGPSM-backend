@@ -39,6 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.userService = void 0;
 exports.staffVisibleToOrganizer = staffVisibleToOrganizer;
 const auditLog_service_1 = require("./auditLog.service");
+const EmailVerification_1 = require("../models/EmailVerification");
 const mongoose_1 = __importDefault(require("mongoose"));
 const user_repository_1 = require("../repositories/user.repository");
 const User_1 = require("../models/User");
@@ -247,8 +248,16 @@ exports.userService = {
             throw { statusCode: 400, message: 'This email address belongs to an administrator account, so it cannot be used for another account.' };
         }
         // One organizer account per email. (System users may share an email with an organizer and with each other.)
-        if (data.role === User_1.Role.ORGANIZER && (await User_1.User.exists({ email: String(data.email).toLowerCase().trim(), role: User_1.Role.ORGANIZER }))) {
-            throw { statusCode: 400, message: 'An organizer account already uses this email address.' };
+        if (data.role === User_1.Role.ORGANIZER) {
+            const organizerEmail = String(data.email).toLowerCase().trim();
+            const sameEmail = await User_1.User.findOne({ email: organizerEmail, role: User_1.Role.ORGANIZER }).select('isEmailVerified');
+            if (sameEmail && sameEmail.isEmailVerified !== false)
+                throw { statusCode: 400, message: 'An organizer account already uses this email address.' };
+            // a sign-up that is still waiting for its code is not an account: the administrator's account replaces it
+            if (sameEmail) {
+                await User_1.User.deleteOne({ _id: sameEmail._id });
+                await EmailVerification_1.EmailVerification.deleteMany({ email: organizerEmail });
+            }
         }
         // Reuse a deleted staff account owned by this organizer when possible. Other
         // accounts may share an email or phone number.

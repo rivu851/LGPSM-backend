@@ -74,3 +74,6 @@ export const verifyResetOtpSchema = z.object({
   code: z.string().regex(/^\d{4}$/, 'Enter the 4-digit code'),
   role: z.enum(['ADMIN', 'ORGANIZER', 'SYSTEM_USER']).optional(),
 });
+
+// "Sign in with Google": the signed ID token Google gives the browser (organizers only)
+export const googleAuthSchema = z.object({ credential: z.string().min(20).max(8192) }).strict();

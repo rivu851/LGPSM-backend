@@ -8,3 +8,4 @@ card-previews/
 
 # Copied from src/assets by the build; the server falls back to src/assets, so this need not be committed
 dist/assets/
+docs/
