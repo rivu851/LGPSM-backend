@@ -42,7 +42,9 @@ function buildSpecFromZones(imageKey: string, width: number | undefined, height:
     const erase = z.erase ?? WORDING.includes(z.role);
     if (erase) elements.push({ type: 'patch', id: `patch${i}`, x: Math.round(z.x), y: Math.round(z.y), w: Math.max(4, Math.round(z.w)), h: Math.max(4, Math.round(z.h)) });
     const perLine = z.h / Math.max(1, z.lines);
-    const size = Math.max(12, Math.round(perLine * 0.74));
+    // the type is sized to the area it replaces, but never larger than reads well for that kind of detail
+    const cap = Math.round(H * (z.role === 'title' ? 0.09 : z.role === 'dateTime' ? 0.034 : 0.03));
+    const size = Math.max(12, Math.min(cap, Math.round(perLine * 0.74)));
     elements.push({
       type: 'text', id: `zone${i}`, role: z.role, x: Math.round(z.x), y: Math.round(z.y), w: Math.max(20, Math.round(z.w)), h: Math.max(10, Math.round(z.h)), align: z.align, valign: 'middle',
       fontFamily: z.fontFamily, fontWeight: z.fontWeight, size, minSize: Math.max(8, Math.round(size * 0.5)), lineHeight: 1.12, letterSpacing: 0, uppercase: false, maxLines: Math.max(1, Math.min(8, z.lines)), color: z.color, opacity: 1
@@ -118,7 +120,7 @@ export async function createUploadedTemplate(actor: { userId: string; role?: str
     kind: 'INVITATION',
     designSpec: spec,
     // lets the Templates screen tell an uploaded design from an AI-made one
-    templateData: { uploaded: true, ...(dynamic ? { dynamicDetails: true, textAreas: detection.detected ? 'AUTO' : 'NONE' } : {}) },
+    templateData: { uploaded: true, layoutVersion: 2, ...(dynamic ? { dynamicDetails: true, textAreas: detection.detected ? 'AUTO' : 'NONE' } : {}) },
     ownerId: new mongoose.Types.ObjectId(actor.userId),
     // an organizer's upload is private to them; an admin's is shared: every organizer can use it (for its category / subcategory)
     isSystemTemplate: dynamic,
@@ -182,7 +184,7 @@ async function saveZones(t: OwnUpload, zones: TextZone[], mode: 'AUTO' | 'MANUAL
   const light = await isLightAtBottom(t.previewImageKey as string, W, H);
   const next = dynamic ? buildDynamicUploadedSpec(t.previewImageKey as string, W, H, light, zones) : buildUploadedSpec(t.previewImageKey as string, W, H, zones, light);
   const firstAreas = dynamic && zones.some((z) => WORDING.includes(z.role)) && (t.templateData?.textAreas ?? 'NONE') === 'NONE';
-  const updated = await Template.findByIdAndUpdate(t._id, { designSpec: next, ...(dynamic ? { 'templateData.textAreas': mode } : {}), ...(firstAreas ? { isPublished: true } : {}) }, { new: true });
+  const updated = await Template.findByIdAndUpdate(t._id, { designSpec: next, 'templateData.layoutVersion': 2, ...(dynamic ? { 'templateData.textAreas': mode } : {}), ...(firstAreas ? { isPublished: true } : {}) }, { new: true });
   return { updated, firstAreas };
 }
 
@@ -220,6 +222,6 @@ export async function rebuildUploadedLayout(templateId: string) {
   const found = await detectInUpload(t.previewImageKey as string, W, H);
   const light = await isLightAtBottom(t.previewImageKey as string, W, H);
   const next = dynamic ? buildDynamicUploadedSpec(t.previewImageKey as string, W, H, light, found.zones) : buildUploadedSpec(t.previewImageKey as string, W, H, found.zones, light);
-  await Template.findByIdAndUpdate(t._id, { designSpec: next, ...(dynamic ? { 'templateData.textAreas': found.detected ? 'AUTO' : 'NONE' } : {}) });
+  await Template.findByIdAndUpdate(t._id, { designSpec: next, 'templateData.layoutVersion': 2, ...(dynamic ? { 'templateData.textAreas': found.detected ? 'AUTO' : 'NONE' } : {}) });
   return { dynamic, detected: found.detected, zones: found.zones.map((z) => z.role), reason: found.reason };
 }

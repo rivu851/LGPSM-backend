@@ -35,9 +35,9 @@ export async function renderTemplatePreview(templateId: string | null, input: Te
   const template = templateId ? await Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec templateData').lean() : null;
   // organizers only see what the template list shows them: published templates and their own, never another organizer's
   if (templateId && (!template || !templateVisibleTo(template as any, { userId, isAdmin }))) throw new Error('TEMPLATE_NOT_FOUND');
-  // An admin's upload saved before the design's own wording was read: it is read now, once, so the event's details replace that wording
+  // An admin's upload saved before the design's own wording was read (or read with an older version of the reading): it is read now, once, so the event's details replace that wording
   // (otherwise the picture's original words would show whatever the event says)
-  if (templateId && (template as any)?.templateData?.uploaded && (template as any).templateData.dynamicDetails && (template as any).templateData.textAreas === undefined) {
+  if (templateId && (template as any)?.templateData?.uploaded && (template as any).templateData.dynamicDetails && ((template as any).templateData.textAreas === undefined || ((template as any).templateData.layoutVersion !== 2 && (template as any).templateData.textAreas !== 'MANUAL'))) {
     try {
       await rebuildUploadedLayout(templateId);
       const fresh = await Template.findById(templateId).select('designSpec templateData').lean();

@@ -29,7 +29,9 @@ describe('finding the wording in an uploaded design', () => {
     expect(r.venue!.map((l) => l.text)).toEqual(['Tollygunge, Kolkata - 700107']);
   });
   it('finds nothing when the picture has no such wording', () => {
-    expect(classifyLines([L('SAVE THE DATE', 271, 853, 809, 901), L('You are invited', 200, 700, 880, 760)], canvas)).toEqual({ title: undefined, dateTime: undefined, venue: undefined });
+    const r = classifyLines([L('SAVE THE DATE', 271, 853, 809, 901), L('You are invited', 200, 700, 880, 760)], canvas);
+    expect([r.title, r.dateTime, r.venue]).toEqual([undefined, undefined, undefined]);
+    expect(r.decorative.length).toBe(2); // left as the designer made them
   });
   it('says "not detected" (and does not throw) when the picture cannot be read', async () => {
     const png = await sharp({ create: { width: 1080, height: 1920, channels: 3, background: '#eeeeee' } }).png().toBuffer();
@@ -47,6 +49,25 @@ describe('finding the wording in an uploaded design', () => {
     expect(both.zones.map((z) => z.role)).toEqual(['title', 'dateTime', 'qr']);
     expect(both.zones.find((z) => z.role === 'qr')!.frame).toBe(false);
     expect(both.zones[0].align).toBe('center');
+  });
+});
+
+describe('script lettering and partial finds', () => {
+  const plain = () => sharp({ create: { width: 1080, height: 1920, channels: 3, background: '#f6c9d8' } }).png().toBuffer();
+  it('a decorative title that is misread is still found by its size and place', async () => {
+    const r = await detectTextZones(await plain(), canvas, async () => [
+      L('SAVE THE DATE', 271, 1000, 809, 1050, 85),
+      L('Moloy 8 Dola', 220, 1090, 860, 1230, 22), // script lettering: read badly, box correct
+      L('Wednesday 28 DEC at 12:30 PM', 150, 1500, 930, 1560, 80),
+      L('Venue - 24, Shanti Pally, Kolkata - 700107', 100, 1620, 980, 1670, 80)
+    ]);
+    expect(r.detected).toBe(true);
+    expect(r.zones.map((z) => z.role)).toEqual(expect.arrayContaining(['title', 'dateTime', 'venue']));
+  });
+  it('all or nothing: when the title is not found, no wording is replaced at all (a half-replaced card is worse than none)', async () => {
+    const r = await detectTextZones(await plain(), canvas, async () => [L('Venue - 24, Shanti Pally, Kolkata - 700107', 100, 1620, 980, 1670, 80)]);
+    expect(r.detected).toBe(false);
+    expect(r.zones.map((z) => z.role)).toEqual(['qr']);
   });
 });
 

@@ -89,3 +89,71 @@ export async function calmSpot(image: Buffer, canvas: { width: number; height: n
   }
   return { x: best.x * WORK, y: best.y * WORK, w: side * WORK, h: side * WORK };
 }
+
+/**
+ * A band of lettering (or a pill / badge holding lettering) in a stretch of the picture, found from the picture itself rather than from reading
+ * the words, so script and decorative lettering that text recognition cannot read is still located. Between `top` and `bottom` (card pixels),
+ * the rows where something stands out from the smooth background around it are grouped; the tallest group is returned.
+ */
+export async function inkBand(image: Buffer, canvas: { width: number; height: number }, top: number, bottom: number): Promise<Box | null> {
+  const y0 = Math.max(0, Math.round(top)), y1 = Math.min(canvas.height, Math.round(bottom));
+  if (y1 - y0 < 0.02 * canvas.height) return null;
+  const k = 2;
+  const w = Math.round(canvas.width / k), h = Math.round((y1 - y0) / k);
+  // (separate steps: sharp applies only the last resize of a chain, and an extract always acts on the picture as it was)
+  const full = await sharp(image).resize(canvas.width, canvas.height, { fit: 'fill' }).png().toBuffer();
+  const strip = await sharp(full).extract({ left: 0, top: y0, width: canvas.width, height: y1 - y0 }).png().toBuffer();
+  const base = sharp(strip).resize(w, h, { fit: 'fill' }).flatten({ background: '#ffffff' }).greyscale();
+  const grey = await base.clone().raw().toBuffer();
+  const smooth = await base.clone().blur(14).raw().toBuffer();
+  const ink = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) ink[i] = Math.abs(grey[i] - smooth[i]) > 26 ? 1 : 0;
+  const left = Math.round(0.06 * w), right = Math.round(0.94 * w);
+  const rowInk = new Float32Array(h);
+  for (let y = 0; y < h; y++) { let c = 0; for (let x = left; x < right; x++) c += ink[y * w + x]; rowInk[y] = c / (right - left); }
+  const bands: Array<[number, number]> = [];
+  let start = -1, gap = 0;
+  for (let y = 0; y < h; y++) {
+    if (rowInk[y] > 0.015) { if (start < 0) start = y; gap = 0; }
+    else if (start >= 0 && ++gap > 6) { bands.push([start, y - gap]); start = -1; gap = 0; }
+  }
+  if (start >= 0) bands.push([start, h - 1]);
+  const real = bands.filter(([a, b]) => (b - a + 1) * k >= 0.018 * canvas.height);
+  if (!real.length) return null;
+  real.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
+  const [a, b] = real[0];
+  let minX = w, maxX = 0;
+  for (let y = a; y <= b; y++) for (let x = left; x < right; x++) if (ink[y * w + x]) { if (x < minX) minX = x; if (x > maxX) maxX = x; }
+  if (maxX <= minX) return null;
+  return { x: minX * k, y: y0 + a * k, w: (maxX - minX + 1) * k, h: (b - a + 1) * k };
+}
+
+/** Is a box filled with lettering (a flat ink colour on a smooth background) rather than artwork such as flowers? */
+export async function looksLikeLettering(image: Buffer, canvas: { width: number; height: number }, box: Box): Promise<boolean> {
+  try {
+    const left = Math.max(0, Math.round(box.x)), top = Math.max(0, Math.round(box.y));
+    const width = Math.max(2, Math.min(canvas.width - left, Math.round(box.w))), height = Math.max(2, Math.min(canvas.height - top, Math.round(box.h)));
+    const full = await sharp(image).resize(canvas.width, canvas.height, { fit: 'fill' }).png().toBuffer();
+    const { data } = await sharp(full).extract({ left, top, width, height }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const n = width * height;
+    const border: number[][] = [];
+    for (let x = 0; x < width; x++) { border.push([data[x * 3], data[x * 3 + 1], data[x * 3 + 2]]); const b = ((height - 1) * width + x) * 3; border.push([data[b], data[b + 1], data[b + 2]]); }
+    const med = [0, 1, 2].map((c) => border.map((v) => v[c]).sort((a, b) => a - b)[Math.floor(border.length / 2)]);
+    const dist = (i: number) => Math.abs(data[i * 3] - med[0]) + Math.abs(data[i * 3 + 1] - med[1]) + Math.abs(data[i * 3 + 2] - med[2]);
+    const far = Array.from({ length: n }, (_, i) => i).sort((a, b) => dist(b) - dist(a)).slice(0, Math.max(1, Math.round(n * 0.03)));
+    const ink = [0, 1, 2].map((c) => far.reduce((t, i) => t + data[i * 3 + c], 0) / far.length);
+    // every pixel of lettering lies on the line from the background colour to the ink colour (the soft edge of a letter is a mix of the two)
+    const d = ink.map((v, c) => v - med[c]);
+    const len2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2] || 1;
+    let onLine = 0;
+    for (let i = 0; i < n; i++) {
+      const v = [data[i * 3] - med[0], data[i * 3 + 1] - med[1], data[i * 3 + 2] - med[2]];
+      const t = Math.min(1, Math.max(0, (v[0] * d[0] + v[1] * d[1] + v[2] * d[2]) / len2));
+      const off = Math.abs(v[0] - t * d[0]) + Math.abs(v[1] - t * d[1]) + Math.abs(v[2] - t * d[2]);
+      if (off < 42) onLine++;
+    }
+    return onLine / n > 0.88;
+  } catch {
+    return false;
+  }
+}

@@ -21,9 +21,9 @@ async function renderTemplatePreview(templateId, input, isAdmin, userId) {
     // organizers only see what the template list shows them: published templates and their own, never another organizer's
     if (templateId && (!template || !(0, template_service_1.templateVisibleTo)(template, { userId, isAdmin })))
         throw new Error('TEMPLATE_NOT_FOUND');
-    // An admin's upload saved before the design's own wording was read: it is read now, once, so the event's details replace that wording
+    // An admin's upload saved before the design's own wording was read (or read with an older version of the reading): it is read now, once, so the event's details replace that wording
     // (otherwise the picture's original words would show whatever the event says)
-    if (templateId && template?.templateData?.uploaded && template.templateData.dynamicDetails && template.templateData.textAreas === undefined) {
+    if (templateId && template?.templateData?.uploaded && template.templateData.dynamicDetails && (template.templateData.textAreas === undefined || (template.templateData.layoutVersion !== 2 && template.templateData.textAreas !== 'MANUAL'))) {
         try {
             await (0, uploadedTemplate_1.rebuildUploadedLayout)(templateId);
             const fresh = await Template_1.Template.findById(templateId).select('designSpec templateData').lean();

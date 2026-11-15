@@ -232,7 +232,8 @@ export async function paintOutAreas(image: Buffer, boxes: Array<{ x: number; y: 
       }
     }
     // a soft join: the refilled box is blurred a little, so no seam or streak shows where it meets the picture
-    const soft = await sharp(out, { raw: { width: x1 - x0, height: y1 - y0, channels: 4 } }).blur(1.2).raw().toBuffer();
+    // (a taller box gets a softer join, so no faint streaks show where the surrounding colours were carried across it)
+    const soft = await sharp(out, { raw: { width: x1 - x0, height: y1 - y0, channels: 4 } }).blur(Math.min(8, Math.max(1.2, (y1 - y0) / 25))).raw().toBuffer();
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
       const o = ((y - y0) * (x1 - x0) + (x - x0)) * 4;
       const t = px(x, y);
