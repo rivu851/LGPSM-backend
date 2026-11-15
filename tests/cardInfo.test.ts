@@ -36,3 +36,17 @@ describe('custom detail title', () => {
     expect(cardGuestLines(null, info)).toEqual({ name: 'Badge', companyName: 'Table' });
   });
 });
+
+describe('a custom title that only renames a standard column', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { cardGuestLines } = require('../src/utils/cardInfo');
+  const guest = { name: 'Asha Rao', email: 'asha@example.com', mobile: '+919876543210', professionalIdentity: '' };
+  it('prints that guest value under the organizer\'s own title (no column of its own)', () => {
+    const info = { primary: 'PROFESSIONAL_IDENTITY', secondary: 'SECONDARY_IDENTITY', identityLabel: 'Ph No', secondaryIdentityLabel: 'Mail ID', showIdentityLabel: true, showSecondaryIdentityLabel: false };
+    expect(cardGuestLines(guest, info, { inviteeName: true })).toEqual({ name: 'Asha Rao', companyName: 'Ph No: +919876543210 · asha@example.com' });
+  });
+  it('a title that is a detail of its own still reads the extra column', () => {
+    const info = { primary: 'PROFESSIONAL_IDENTITY', secondary: null, identityLabel: 'Badge No.', showIdentityLabel: false };
+    expect(cardGuestLines({ ...guest, professionalIdentity: 'B-17' }, info, { inviteeName: true }).companyName).toBe('B-17');
+  });
+});

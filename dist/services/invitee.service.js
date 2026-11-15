@@ -37,6 +37,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.inviteeService = exports.MAX_IMPORT_ROWS = void 0;
+const columnMeaning_1 = require("../utils/columnMeaning");
 const Invitation_1 = require("../models/Invitation");
 const credentialPolicy_1 = require("../utils/credentialPolicy");
 const invitee_repository_1 = require("../repositories/invitee.repository");
@@ -424,7 +425,7 @@ exports.inviteeService = {
         let nameColIdx = -1, emailColIdx = -1, mobileColIdx = -1, companyColIdx = -1, identityColIdx = -1, secondIdentityColIdx = -1;
         const sessionColMap = new Map();
         const firstRowCols = nonBlankRows[0].map((c) => cleanCellValue(c).toLowerCase());
-        const isHeaderPresent = firstRowCols.some((col) => col.includes('name') || col.includes('email') || col.includes('mobile') || col.includes('phone') || col.includes('company'));
+        const isHeaderPresent = firstRowCols.some((col) => col.includes('name') || col.includes('email') || col.includes('mobile') || col.includes('phone') || col.includes('company') || (0, columnMeaning_1.meaningsOf)(col).length > 0);
         if (isHeaderPresent) {
             firstRowCols.forEach((colStr, colIdx) => {
                 if (!colStr)
@@ -435,6 +436,13 @@ exports.inviteeService = {
                     secondIdentityColIdx = colIdx;
                 else if (colStr.includes('identity') || colStr.includes('designation') || (customIdentity && colStr === customIdentity))
                     identityColIdx = colIdx;
+                // a heading is read by what it means: "Ph No", "Telephone" and "Contact no" are the mobile column, "Guest" the name column
+                else if ((0, columnMeaning_1.meaningOf)(colStr) === 'mobile' && mobileColIdx === -1)
+                    mobileColIdx = colIdx;
+                else if ((0, columnMeaning_1.meaningOf)(colStr) === 'email' && emailColIdx === -1)
+                    emailColIdx = colIdx;
+                else if ((0, columnMeaning_1.meaningOf)(colStr) === 'name' && nameColIdx === -1)
+                    nameColIdx = colIdx;
                 else if (colStr.includes('company') || colStr.includes('organization') || colStr.includes('organisation'))
                     companyColIdx = colIdx;
                 else if (colStr.includes('name'))

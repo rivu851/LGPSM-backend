@@ -1,3 +1,4 @@
+import { meaningOf, meaningsOf } from '../utils/columnMeaning';
 import { Invitation, InvitationDeliveryStatus } from '../models/Invitation';
 import { credentialStatus } from '../utils/credentialPolicy';
 import { inviteeRepository } from '../repositories/invitee.repository';
@@ -444,7 +445,7 @@ export const inviteeService = {
     const sessionColMap = new Map<number, string>();
     const firstRowCols = nonBlankRows[0].map((c: any) => cleanCellValue(c).toLowerCase());
     const isHeaderPresent = firstRowCols.some(
-      (col: string) => col.includes('name') || col.includes('email') || col.includes('mobile') || col.includes('phone') || col.includes('company')
+      (col: string) => col.includes('name') || col.includes('email') || col.includes('mobile') || col.includes('phone') || col.includes('company') || meaningsOf(col).length > 0
     );
     if (isHeaderPresent) {
       firstRowCols.forEach((colStr: string, colIdx: number) => {
@@ -453,6 +454,10 @@ export const inviteeService = {
         const customSecond = String((event as any).cardInfo?.secondaryIdentityLabel || '').trim().toLowerCase();
         if (colStr === 'second identity' || (customSecond && colStr === customSecond)) secondIdentityColIdx = colIdx;
         else if (colStr.includes('identity') || colStr.includes('designation') || (customIdentity && colStr === customIdentity)) identityColIdx = colIdx;
+        // a heading is read by what it means: "Ph No", "Telephone" and "Contact no" are the mobile column, "Guest" the name column
+        else if (meaningOf(colStr) === 'mobile' && mobileColIdx === -1) mobileColIdx = colIdx;
+        else if (meaningOf(colStr) === 'email' && emailColIdx === -1) emailColIdx = colIdx;
+        else if (meaningOf(colStr) === 'name' && nameColIdx === -1) nameColIdx = colIdx;
         else if (colStr.includes('company') || colStr.includes('organization') || colStr.includes('organisation')) companyColIdx = colIdx;
         else if (colStr.includes('name')) nameColIdx = colIdx;
         else if (colStr.includes('email') || colStr.includes('mail')) emailColIdx = colIdx;

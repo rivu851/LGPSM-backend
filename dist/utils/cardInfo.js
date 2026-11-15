@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CARD_INFO_FIELDS = void 0;
 exports.cardGuestLines = cardGuestLines;
+const columnMeaning_1 = require("./columnMeaning");
 // "Additional Info" on the invitation card (Figma Event_Add event-5 / Event_Edit event-4: "Customize Information"):
 // the organiser picks which guest detail goes on the card's two guest lines. Every card design already prints a
 // main guest line and a smaller line under it, so the choice is applied by filling those two lines.
@@ -36,7 +37,7 @@ function guestLinesWithNameChoice(guest, cardInfo, showName) {
     for (const field of [cardInfo?.primary, cardInfo?.secondary]) {
         if (!field || field === 'INVITEE_NAME')
             continue; // the name is its own checkbox now, never repeated here
-        const v = guest ? labelled(detailOf(guest, field), field, cardInfo) : sampleOf(field, cardInfo);
+        const v = guest ? labelled(detailOf(guest, field, cardInfo), field, cardInfo) : sampleOf(field, cardInfo);
         if (v)
             values.push(v);
     }
@@ -62,7 +63,22 @@ const sampleOf = (field, cardInfo) => {
         return `${title}: Sample`;
     return title || SAMPLE[field];
 };
-const detailOf = (guest, field) => {
+/** A custom title that only renames a column the Excel already has ("Ph No" for Mobile) prints that guest value, not a column of its own */
+const standardValueFor = (guest, field, cardInfo) => {
+    const title = field === 'PROFESSIONAL_IDENTITY' ? cardInfo?.identityLabel : field === 'SECONDARY_IDENTITY' ? cardInfo?.secondaryIdentityLabel : null;
+    const meaning = (0, columnMeaning_1.meaningOf)(title);
+    if (meaning === 'name')
+        return (guest.name || '').trim();
+    if (meaning === 'email')
+        return (guest.email || '').trim();
+    if (meaning === 'mobile')
+        return (guest.mobile || '').trim();
+    return null;
+};
+const detailOf = (guest, field, cardInfo) => {
+    const standard = standardValueFor(guest, field, cardInfo);
+    if (standard !== null)
+        return standard;
     if (field === 'COMPANY_NAME')
         return (guest.companyName || guest.company || '').trim();
     if (field === 'SECONDARY_IDENTITY')
@@ -83,7 +99,7 @@ function legacyGuestLines(guest, cardInfo) {
             return '';
         if (!guest)
             return sampleOf(field, cardInfo);
-        return labelled(detailOf(guest, field), field, cardInfo);
+        return labelled(detailOf(guest, field, cardInfo), field, cardInfo);
     };
     return { name: value(cardInfo.primary), companyName: value(cardInfo.secondary) };
 }
