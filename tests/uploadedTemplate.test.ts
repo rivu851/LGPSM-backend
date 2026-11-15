@@ -65,29 +65,27 @@ describe('upload your own template', () => {
     expect(await decodeQr(prev.body)).toMatch(/^https?:\/\//);
   });
 
-  it('an admin upload is dynamic: it is a draft until the design\'s wording is found or marked, then it is shared and the event\'s details replace that wording', async () => {
+  it('an admin upload is dynamic and shared at once: organizers can use it, and once its wording is found or marked the event\'s details replace that wording', async () => {
     const key = await upload(admin);
     const res = await make(admin, { name: 'Admin Dynamic', imageKey: key });
     expect(res.status).toBe(201);
     let t: any = await Template.findById(res.body.data._id).lean();
     expect(t.templateData).toMatchObject({ uploaded: true, dynamicDetails: true, textAreas: 'NONE' });
-    // a plain red picture has no wording to find: nothing is drawn over the picture, and organizers are not offered it yet
-    // (the design has no place for the guest's name, so it is not added)
+    // a plain red picture has no wording to find: nothing is drawn over the picture (and the guest's name is not added: no place for it)
     expect(t.designSpec.elements.filter((e: any) => e.type === 'text')).toEqual([]);
-    expect(t.isPublished).toBe(false);
-    expect((await request(app).get('/api/v1/templates').set(auth(a))).body.data.map((x: any) => x.name)).not.toContain('Admin Dynamic');
+    expect(t.isPublished).toBe(true);
+    // shared with every organizer, who can preview it with their own event's details
+    expect((await request(app).get('/api/v1/templates').set(auth(a))).body.data.map((x: any) => x.name)).toContain('Admin Dynamic');
+    expect((await request(app).post(`/api/v1/templates/${res.body.data._id}/preview`).set(auth(a)).send({ title: 'Mine' })).status).toBe(200);
     // admins' own uploads are listed for admins
     expect((await request(app).get('/api/v1/templates').set(auth(admin))).body.data.map((x: any) => x.name)).toContain('Admin Dynamic');
 
-    // marking the title area makes it a published template every organizer can use
+    // marking the title area makes the event's title replace the wording there
     const zone = { role: 'title', x: 100, y: 800, w: 880, h: 160, lines: 1, color: '#ffffff', fontFamily: 'Inter', fontWeight: 700, align: 'center' };
     expect((await request(app).put(`/api/v1/templates/${res.body.data._id}/text-zones`).set(auth(admin)).send({ zones: [zone] })).status).toBe(200);
     t = await Template.findById(res.body.data._id).lean();
-    expect(t.isPublished).toBe(true);
     expect(t.designSpec.elements.filter((e: any) => e.type === 'text').map((e: any) => e.role)).toEqual(['title']);
-    expect((await request(app).get('/api/v1/templates').set(auth(a))).body.data.map((x: any) => x.name)).toContain('Admin Dynamic');
-    expect((await request(app).post(`/api/v1/templates/${res.body.data._id}/preview`).set(auth(a)).send({ title: 'Mine' })).status).toBe(200);
-    // an organizer's upload stays "finished design + QR + name"
+    // an organizer's upload stays "finished design + QR"
     const org: any = await Template.findById((await make(a, { name: 'Org Plain', imageKey: await upload(a) })).body.data._id).lean();
     expect(org.designSpec.elements.some((e: any) => e.role === 'title')).toBe(false);
 

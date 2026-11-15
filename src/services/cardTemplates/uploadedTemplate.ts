@@ -124,11 +124,11 @@ export async function createUploadedTemplate(actor: { userId: string; role?: str
     ownerId: new mongoose.Types.ObjectId(actor.userId),
     // an organizer's upload is private to them; an admin's is shared: every organizer can use it (for its category / subcategory)
     isSystemTemplate: dynamic,
-    // an admin's upload is a draft until its wording has been found or marked: a card with no event details on it is not offered to organizers
-    isPublished: !dynamic || detection.detected,
+    isPublished: true,
     isActive: true
   });
-  if (dynamic && detection.detected) await announceTemplate(created as any);
+  // an administrator's upload is shared with every organizer: they are told
+  if (dynamic) await announceTemplate(created as any);
   return Object.assign(created.toObject(), { detection });
 }
 
@@ -183,9 +183,8 @@ async function saveZones(t: OwnUpload, zones: TextZone[], mode: 'AUTO' | 'MANUAL
   const dynamic = t.templateData?.dynamicDetails === true;
   const light = await isLightAtBottom(t.previewImageKey as string, W, H);
   const next = dynamic ? buildDynamicUploadedSpec(t.previewImageKey as string, W, H, light, zones) : buildUploadedSpec(t.previewImageKey as string, W, H, zones, light);
-  const firstAreas = dynamic && zones.some((z) => WORDING.includes(z.role)) && (t.templateData?.textAreas ?? 'NONE') === 'NONE';
-  const updated = await Template.findByIdAndUpdate(t._id, { designSpec: next, 'templateData.layoutVersion': 2, ...(dynamic ? { 'templateData.textAreas': mode } : {}), ...(firstAreas ? { isPublished: true } : {}) }, { new: true });
-  return { updated, firstAreas };
+  const updated = await Template.findByIdAndUpdate(t._id, { designSpec: next, 'templateData.layoutVersion': 2, ...(dynamic ? { 'templateData.textAreas': mode } : {}) }, { new: true });
+  return { updated };
 }
 
 /** The areas marked by hand replace whatever was found */
@@ -195,8 +194,7 @@ export async function setTextZones(actor: { userId: string }, id: string, zones:
   const inside = zones.map((z) => ({ ...z, x: Math.max(0, Math.min(W - 4, z.x)), y: Math.max(0, Math.min(H - 4, z.y)), w: Math.max(4, Math.min(W - z.x, z.w)), h: Math.max(4, Math.min(H - z.y, z.h)) }))
     // a code is square
     .map((z) => (z.role === 'qr' ? { ...z, w: Math.min(z.w, z.h), h: Math.min(z.w, z.h) } : z));
-  const { updated, firstAreas } = await saveZones(t, inside, inside.some((z) => WORDING.includes(z.role)) ? 'MANUAL' : 'NONE');
-  if (updated && firstAreas) await announceTemplate(updated as any);
+  const { updated } = await saveZones(t, inside, inside.some((z) => WORDING.includes(z.role)) ? 'MANUAL' : 'NONE');
   return updated;
 }
 
@@ -205,8 +203,7 @@ export async function redetectTextZones(actor: { userId: string }, id: string) {
   const t = await ownUpload(actor, id);
   const { width: W, height: H } = t.designSpec.canvas;
   const found = await detectInUpload(t.previewImageKey as string, W, H);
-  const { updated, firstAreas } = await saveZones(t, found.zones, found.detected ? 'AUTO' : 'NONE');
-  if (updated && firstAreas) await announceTemplate(updated as any);
+  const { updated } = await saveZones(t, found.zones, found.detected ? 'AUTO' : 'NONE');
   return { template: updated, detected: found.detected, reason: found.reason };
 }
 
