@@ -18,16 +18,18 @@ export const createTemplateSchema = z.object({
 
 // "Upload your own template": a name, the event type it is for, and the uploaded design (an image this person uploaded)
 const zoneSchema = z.object({
-  role: z.enum(['title', 'dateTime', 'venue']),
+  role: z.enum(['title', 'dateTime', 'venue', 'inviteeName', 'inviteeMeta', 'qr']),
   x: z.number().finite().min(0).max(4000), y: z.number().finite().min(0).max(4000), w: z.number().finite().min(4).max(4000), h: z.number().finite().min(4).max(4000),
   lines: z.number().int().min(1).max(8).default(1),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   fontFamily: z.enum(['Inter', 'Manrope', 'Playfair Display', 'Ancizar Serif', 'Alexandria', 'Alkatra', 'Alex Brush', 'Birthstone']),
   fontWeight: z.union([z.literal(400), z.literal(500), z.literal(600), z.literal(700)]).default(400),
-  align: z.enum(['left', 'center', 'right']).default('center')
+  align: z.enum(['left', 'center', 'right']).default('center'),
+  erase: z.boolean().optional(),
+  frame: z.boolean().optional()
 }).strict();
 /** The areas of an uploaded design whose wording is replaced by the event's details (at most one per kind) */
-export const textZonesSchema = z.object({ zones: z.array(zoneSchema).max(3) }).strict().refine((b) => new Set(b.zones.map((z) => z.role)).size === b.zones.length, 'Each detail can have one area');
+export const textZonesSchema = z.object({ zones: z.array(zoneSchema).max(6) }).strict().refine((b) => new Set(b.zones.map((z) => z.role)).size === b.zones.length, 'Each detail can have one area');
 
 export const uploadTemplateSchema = z.object({
   // optional: an unnamed upload is called "Uploaded template" with the date

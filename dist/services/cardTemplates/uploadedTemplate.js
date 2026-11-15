@@ -34,90 +34,55 @@ function presetFor(width, height) {
     const ratio = width / height;
     return PRESETS.reduce((best, id) => (Math.abs(designSpec_1.CANVAS_PRESETS[id].width / designSpec_1.CANVAS_PRESETS[id].height - ratio) < Math.abs(designSpec_1.CANVAS_PRESETS[best].width / designSpec_1.CANVAS_PRESETS[best].height - ratio) ? id : best), PRESETS[0]);
 }
+const WORDING = ['title', 'dateTime', 'venue'];
 /**
- * Dynamic variant (admin uploads): the picture stays as it is. The wording the designer printed in it (the event name, the date and time,
- * the venue) is found, painted out of the picture from the background around it, and the event's own details are written in the same
- * place, in the same colour, so the card reads as the designer made it. The guest's QR code and name are added on top (the QR code
- * with no white tile behind it). With no wording found (`zones` empty) the card is the picture, the QR code and the name only, until the
- * areas are marked by hand.
+ * The card of an uploaded design, built from where things are in the picture (`zones`):
+ *  - the guest's QR code goes in the design's own QR box (or the quietest spot of the picture);
+ *  - the guest's name and extra details only where the design left a place for them: with no place, they are not added;
+ *  - when `replaceWording` (admin uploads), the event's name, date and time and venue are written over the design's own wording, which is
+ *    painted out of the picture first. The picture is otherwise untouched, and nothing is drawn behind anything.
  */
-function buildDynamicUploadedSpec(imageKey, width, height, lightPicture = false, zones = []) {
+function buildSpecFromZones(imageKey, width, height, zones, replaceWording, lightPicture) {
     const presetId = presetFor(width, height);
     const { width: W, height: H } = designSpec_1.CANVAS_PRESETS[presetId];
-    const m = Math.round(0.05 * W);
-    const qr = Math.round(0.27 * W);
-    const bottom = H - Math.round(0.045 * H) - qr;
-    const tx = m + qr + Math.round(0.04 * W);
-    const tw = W - m - tx;
-    const ink = lightPicture ? { strong: '#111111', soft: '#333333' } : { strong: '#FFFFFF', soft: '#EDEDED' };
-    const guestRows = [['inviteeName', 0.3, 0.048, 700, ink.strong, 1], ['inviteeMeta', 0.16, 0.032, 400, ink.soft, 1]];
-    let y = bottom + Math.round(qr * 0.3);
-    const guestTexts = guestRows.map(([role, frac, size, weight, color, maxLines]) => {
-        const h = Math.round(qr * frac);
-        const el = {
-            type: 'text', role, x: tx, y, w: tw, h, align: 'left', valign: 'middle',
-            fontFamily: 'Inter', fontWeight: weight, size: Math.round(size * W), minSize: Math.round(size * W * 0.55),
-            lineHeight: 1.12, letterSpacing: 0, uppercase: false, maxLines, color, opacity: 1
-        };
-        y += h;
-        return el;
-    });
-    const areas = zones.flatMap((z, i) => {
+    const elements = [];
+    const kept = zones.filter((z) => replaceWording || !WORDING.includes(z.role));
+    kept.forEach((z, i) => {
+        if (z.role === 'qr')
+            return;
+        const erase = z.erase ?? WORDING.includes(z.role);
+        if (erase)
+            elements.push({ type: 'patch', id: `patch${i}`, x: Math.round(z.x), y: Math.round(z.y), w: Math.max(4, Math.round(z.w)), h: Math.max(4, Math.round(z.h)) });
         const perLine = z.h / Math.max(1, z.lines);
         const size = Math.max(12, Math.round(perLine * 0.74));
-        return [
-            { type: 'patch', id: `patch${i}`, x: Math.round(z.x), y: Math.round(z.y), w: Math.max(4, Math.round(z.w)), h: Math.max(4, Math.round(z.h)) },
-            {
-                type: 'text', id: `zone${i}`, role: z.role, x: Math.round(z.x), y: Math.round(z.y), w: Math.max(20, Math.round(z.w)), h: Math.max(10, Math.round(z.h)), align: z.align, valign: 'middle',
-                fontFamily: z.fontFamily, fontWeight: z.fontWeight, size, minSize: Math.max(8, Math.round(size * 0.5)), lineHeight: 1.12, letterSpacing: 0, uppercase: false, maxLines: Math.max(1, Math.min(8, z.lines)), color: z.color, opacity: 1
-            }
-        ];
+        elements.push({
+            type: 'text', id: `zone${i}`, role: z.role, x: Math.round(z.x), y: Math.round(z.y), w: Math.max(20, Math.round(z.w)), h: Math.max(10, Math.round(z.h)), align: z.align, valign: 'middle',
+            fontFamily: z.fontFamily, fontWeight: z.fontWeight, size, minSize: Math.max(8, Math.round(size * 0.5)), lineHeight: 1.12, letterSpacing: 0, uppercase: false, maxLines: Math.max(1, Math.min(8, z.lines)), color: z.color, opacity: 1
+        });
     });
+    const q = zones.find((z) => z.role === 'qr');
+    const side = Math.max(120, Math.min(1600, Math.round(q ? Math.min(q.w, q.h) : 0.27 * W)));
+    const qx = Math.round(q ? q.x : (W - side) / 2), qy = Math.round(q ? q.y : H - Math.round(0.06 * H) - side);
+    const ink = lightPicture ? '#111111' : '#FFFFFF';
+    elements.push({ type: 'qr', purpose: 'INVITATION', id: 'qr', x: qx, y: qy, size: side, padding: q?.frame ? 0.04 : 0.07, radius: q?.frame ? 0 : 22, ...(q?.frame ? { frameColor: '#FFFFFF' } : {}) });
     return (0, designSpec_1.parseDesignSpec)({
         version: 1,
         kind: 'INVITATION',
         canvas: { preset: presetId, width: W, height: H },
         background: '#000000',
         backgroundMedia: imageKey,
-        palette: { background: '#000000', primary: ink.strong, accent: ink.strong, text: ink.strong },
-        elements: [
-            ...areas,
-            { type: 'qr', purpose: 'INVITATION', x: m, y: bottom, size: qr, padding: 0.07, radius: 22 },
-            ...guestTexts
-        ],
-        meta: { generator: 'UPLOAD', ...(zones.length ? { zones: true } : {}) }
+        palette: { background: '#000000', primary: ink, accent: ink, text: ink },
+        elements,
+        meta: { generator: 'UPLOAD', ...(replaceWording && kept.some((z) => WORDING.includes(z.role)) ? { zones: true } : {}) }
     });
 }
-function buildUploadedSpec(imageKey, width, height) {
-    const presetId = presetFor(width, height);
-    const { width: W, height: H } = designSpec_1.CANVAS_PRESETS[presetId];
-    const pad = Math.round(0.035 * W);
-    const qr = Math.round(0.4 * W);
-    const nameH = Math.round(0.07 * W);
-    const metaH = Math.round(0.05 * W);
-    const panelW = Math.round(0.7 * W);
-    const panelH = pad + qr + pad + nameH + metaH + pad;
-    const panelX = Math.round((W - panelW) / 2);
-    const panelY = H - panelH - Math.round(0.05 * H);
-    const text = (role, y, h, size, weight, color) => ({
-        type: 'text', role, x: panelX + pad, y, w: panelW - 2 * pad, h, align: 'center', valign: 'middle',
-        fontFamily: 'Inter', fontWeight: weight, size, minSize: Math.round(size * 0.6), lineHeight: 1.15, letterSpacing: 0, uppercase: false, maxLines: 1, color, opacity: 1
-    });
-    const qrY = panelY + pad;
-    return (0, designSpec_1.parseDesignSpec)({
-        version: 1,
-        kind: 'INVITATION',
-        canvas: { preset: presetId, width: W, height: H },
-        background: '#FFFFFF',
-        backgroundMedia: imageKey,
-        palette: { background: '#FFFFFF', primary: '#111111', accent: '#FF651D', text: '#111111' },
-        elements: [
-            { type: 'qr', purpose: 'INVITATION', x: Math.round((W - qr) / 2), y: qrY, size: qr, padding: 0.06, radius: 0 },
-            text('inviteeName', qrY + qr + pad, nameH, Math.round(0.052 * W), 700, '#111111'),
-            text('inviteeMeta', qrY + qr + pad + nameH, metaH, Math.round(0.036 * W), 400, '#444444')
-        ],
-        meta: { generator: 'UPLOAD' }
-    });
+/** Admin uploads: the picture, its wording replaced by the event's details, the QR code (and the guest's name where there is a place for it) */
+function buildDynamicUploadedSpec(imageKey, width, height, lightPicture = false, zones = []) {
+    return buildSpecFromZones(imageKey, width, height, zones, true, lightPicture);
+}
+/** Organizer uploads: the finished design as it is, with the guest's QR code in the right place on it */
+function buildUploadedSpec(imageKey, width, height, zones = [], lightPicture = false) {
+    return buildSpecFromZones(imageKey, width, height, zones, false, lightPicture);
 }
 /** Is the picture bright where the details go (its bottom third)? Decides between dark and light text. */
 async function isLightAtBottom(imageKey, width, height) {
@@ -155,15 +120,12 @@ async function createUploadedTemplate(actor, input) {
     if (input.categoryId && !(await (0, category_service_1.canUseCategory)(input.categoryId, input.subcategoryId, actor.userId)))
         throw new UploadError(400, 'That category was not found.');
     const dynamic = actor.role === 'ADMIN';
-    let detection = null;
-    const spec = dynamic
-        ? await (async () => {
-            const { width: W, height: H } = designSpec_1.CANVAS_PRESETS[presetFor(media.width, media.height)];
-            const found = await detectInUpload(input.imageKey, W, H);
-            detection = { detected: found.detected, reason: found.reason };
-            return buildDynamicUploadedSpec(input.imageKey, media.width, media.height, await isLightAtBottom(input.imageKey, W, H), found.detected ? found.zones : []);
-        })()
-        : buildUploadedSpec(input.imageKey, media.width, media.height);
+    const { width: W, height: H } = designSpec_1.CANVAS_PRESETS[presetFor(media.width, media.height)];
+    // the layout of the picture is read for everyone: where the QR code goes, and (for admins) where the event's wording is
+    const found = await detectInUpload(input.imageKey, W, H);
+    const light = await isLightAtBottom(input.imageKey, W, H);
+    const spec = dynamic ? buildDynamicUploadedSpec(input.imageKey, media.width, media.height, light, found.zones) : buildUploadedSpec(input.imageKey, media.width, media.height, found.zones, light);
+    const detection = { detected: found.detected, reason: found.reason };
     const created = await Template_1.Template.create({
         name: input.name?.trim() || `Uploaded template ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`,
         ...(input.categoryId ? { categoryId: new mongoose_1.default.Types.ObjectId(input.categoryId) } : {}),
@@ -173,16 +135,15 @@ async function createUploadedTemplate(actor, input) {
         kind: 'INVITATION',
         designSpec: spec,
         // lets the Templates screen tell an uploaded design from an AI-made one
-        templateData: { uploaded: true, ...(dynamic ? { dynamicDetails: true, textAreas: detection?.detected ? 'AUTO' : 'NONE' } : {}) },
+        templateData: { uploaded: true, ...(dynamic ? { dynamicDetails: true, textAreas: detection.detected ? 'AUTO' : 'NONE' } : {}) },
         ownerId: new mongoose_1.default.Types.ObjectId(actor.userId),
         // an organizer's upload is private to them; an admin's is shared: every organizer can use it (for its category / subcategory)
         isSystemTemplate: dynamic,
         // an admin's upload is a draft until its wording has been found or marked: a card with no event details on it is not offered to organizers
-        isPublished: !dynamic || !!detection?.detected,
+        isPublished: !dynamic || detection.detected,
         isActive: true
     });
-    // Shared with every organizer only once the wording has been found (or marked): until then the admin is asked to mark the text areas
-    if (dynamic && detection && detection.detected)
+    if (dynamic && detection.detected)
         await (0, template_service_1.announceTemplate)(created);
     return Object.assign(created.toObject(), { detection });
 }
@@ -205,48 +166,61 @@ async function detectInUpload(imageKey, width, height) {
         return { detected: false, zones: [], reason: 'The picture could not be read.' };
     return (0, textZones_1.detectTextZones)(picture, { width, height });
 }
-async function ownDynamicUpload(actor, id) {
+async function ownUpload(actor, id) {
     if (!mongoose_1.default.isValidObjectId(id))
         throw new UploadError(404, 'Template not found');
-    const t = await Template_1.Template.findOne({ _id: id, ownerId: actor.userId, 'templateData.uploaded': true, 'templateData.dynamicDetails': true });
+    const t = await Template_1.Template.findOne({ _id: id, ownerId: actor.userId, 'templateData.uploaded': true });
     if (!t)
         throw new UploadError(404, 'Template not found');
     return t;
 }
-const zoneElements = (spec) => (spec?.elements || []).filter((e) => e.type === 'text' && /^zone\d+$/.test(e.id || '')).map((e) => ({
-    role: e.role, x: e.x, y: e.y, w: e.w, h: e.h, lines: e.maxLines, color: e.color, fontFamily: e.fontFamily, fontWeight: e.fontWeight, align: e.align
-}));
-/** What the editor needs: the picture, the canvas it is drawn on, and the areas now in use */
+/** The areas now in the design, as the editor shows them (the QR code, the guest's name and details, and an admin upload's wording) */
+const zoneElements = (spec) => {
+    const els = spec?.elements || [];
+    const out = [];
+    for (const e of els) {
+        if (e.type === 'qr')
+            out.push({ role: 'qr', x: e.x, y: e.y, w: e.size, h: e.size, lines: 1, color: '#000000', fontFamily: 'Inter', fontWeight: 400, align: 'center', frame: !!e.frameColor });
+        if (e.type === 'text' && /^zone\d+$/.test(e.id || '')) {
+            const n = String(e.id).slice(4);
+            out.push({ role: e.role, x: e.x, y: e.y, w: e.w, h: e.h, lines: e.maxLines, color: e.color, fontFamily: e.fontFamily, fontWeight: e.fontWeight, align: e.align, erase: els.some((p) => p.type === 'patch' && p.id === `patch${n}`) });
+        }
+    }
+    return out;
+};
+/** What the editor needs: the picture, the canvas it is drawn on, the areas now in use, and which kind of upload it is */
 async function getTextZones(actor, id) {
-    const t = await ownDynamicUpload(actor, id);
-    return { imageKey: t.previewImageKey, canvas: t.designSpec?.canvas, zones: zoneElements(t.designSpec), mode: t.templateData?.textAreas || 'NONE' };
+    const t = await ownUpload(actor, id);
+    return { imageKey: t.previewImageKey, canvas: t.designSpec?.canvas, zones: zoneElements(t.designSpec), mode: t.templateData?.textAreas || 'NONE', dynamic: t.templateData?.dynamicDetails === true };
 }
 async function saveZones(t, zones, mode) {
-    const spec = t.designSpec;
-    const { width: W, height: H } = spec.canvas;
+    const { width: W, height: H } = t.designSpec.canvas;
+    const dynamic = t.templateData?.dynamicDetails === true;
     const light = await isLightAtBottom(t.previewImageKey, W, H);
-    const next = buildDynamicUploadedSpec(t.previewImageKey, W, H, light, zones);
-    const firstAreas = zones.length > 0 && (t.templateData?.textAreas ?? 'NONE') === 'NONE';
-    const updated = await Template_1.Template.findByIdAndUpdate(t._id, { designSpec: next, 'templateData.textAreas': mode, ...(firstAreas ? { isPublished: true } : {}) }, { new: true });
-    return updated;
+    const next = dynamic ? buildDynamicUploadedSpec(t.previewImageKey, W, H, light, zones) : buildUploadedSpec(t.previewImageKey, W, H, zones, light);
+    const firstAreas = dynamic && zones.some((z) => WORDING.includes(z.role)) && (t.templateData?.textAreas ?? 'NONE') === 'NONE';
+    const updated = await Template_1.Template.findByIdAndUpdate(t._id, { designSpec: next, ...(dynamic ? { 'templateData.textAreas': mode } : {}), ...(firstAreas ? { isPublished: true } : {}) }, { new: true });
+    return { updated, firstAreas };
 }
 /** The areas marked by hand replace whatever was found */
 async function setTextZones(actor, id, zones) {
-    const t = await ownDynamicUpload(actor, id);
+    const t = await ownUpload(actor, id);
     const { width: W, height: H } = t.designSpec.canvas;
-    const inside = zones.map((z) => ({ ...z, x: Math.max(0, Math.min(W - 4, z.x)), y: Math.max(0, Math.min(H - 4, z.y)), w: Math.max(4, Math.min(W - z.x, z.w)), h: Math.max(4, Math.min(H - z.y, z.h)) }));
-    const updated = await saveZones(t, inside, inside.length ? 'MANUAL' : 'NONE');
-    if (updated && inside.length && t.templateData?.textAreas === 'NONE')
+    const inside = zones.map((z) => ({ ...z, x: Math.max(0, Math.min(W - 4, z.x)), y: Math.max(0, Math.min(H - 4, z.y)), w: Math.max(4, Math.min(W - z.x, z.w)), h: Math.max(4, Math.min(H - z.y, z.h)) }))
+        // a code is square
+        .map((z) => (z.role === 'qr' ? { ...z, w: Math.min(z.w, z.h), h: Math.min(z.w, z.h) } : z));
+    const { updated, firstAreas } = await saveZones(t, inside, inside.some((z) => WORDING.includes(z.role)) ? 'MANUAL' : 'NONE');
+    if (updated && firstAreas)
         await (0, template_service_1.announceTemplate)(updated);
     return updated;
 }
-/** Looks for the wording again (for example after the picture was replaced) */
+/** Looks at the picture again (for example after it was replaced) */
 async function redetectTextZones(actor, id) {
-    const t = await ownDynamicUpload(actor, id);
+    const t = await ownUpload(actor, id);
     const { width: W, height: H } = t.designSpec.canvas;
     const found = await detectInUpload(t.previewImageKey, W, H);
-    const updated = await saveZones(t, found.detected ? found.zones : [], found.detected ? 'AUTO' : 'NONE');
-    if (updated && found.detected && t.templateData?.textAreas === 'NONE')
+    const { updated, firstAreas } = await saveZones(t, found.zones, found.detected ? 'AUTO' : 'NONE');
+    if (updated && firstAreas)
         await (0, template_service_1.announceTemplate)(updated);
     return { template: updated, detected: found.detected, reason: found.reason };
 }

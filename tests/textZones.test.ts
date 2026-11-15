@@ -43,8 +43,43 @@ describe('finding the wording in an uploaded design', () => {
     expect(only.detected).toBe(false);
     const both = await detectTextZones(png, canvas, async () => [L('Moloy & Dola', 91, 949, 991, 1067), L('Wednesday 28 DEC at 12:30 PM', 107, 1459, 970, 1511)]);
     expect(both.detected).toBe(true);
-    expect(both.zones.map((z) => z.role)).toEqual(['title', 'dateTime']);
+    // the QR code always has a place too (here the quietest spot of the plain picture)
+    expect(both.zones.map((z) => z.role)).toEqual(['title', 'dateTime', 'qr']);
+    expect(both.zones.find((z) => z.role === 'qr')!.frame).toBe(false);
     expect(both.zones[0].align).toBe('center');
+  });
+});
+
+describe('where the QR code goes', () => {
+  it('goes in the design\'s own empty QR box', async () => {
+    // a pink card with a white square QR box (dark border) in the middle and a round white photo frame above it
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><rect width="1080" height="1920" fill="#f6c9d8"/><circle cx="540" cy="520" r="250" fill="#fff"/><rect x="380" y="1000" width="320" height="320" fill="#ffffff" stroke="#5a2030" stroke-width="6"/></svg>';
+    const png = await sharp(Buffer.from(svg)).png().toBuffer();
+    const r = await detectTextZones(png, canvas, async () => [L('Scan the QR code', 400, 1340, 680, 1380)]);
+    const qr = r.zones.find((z) => z.role === 'qr')!;
+    expect(qr.frame).toBe(true);
+    // inside the box (not the round frame above it)
+    expect(qr.x).toBeGreaterThanOrEqual(380); expect(qr.x + qr.w).toBeLessThanOrEqual(700);
+    expect(qr.y).toBeGreaterThanOrEqual(1000); expect(qr.y + qr.h).toBeLessThanOrEqual(1320);
+  });
+  it('with no box, the quietest spot of the picture, away from the wording and not on busy artwork', async () => {
+    // busy flowers across the top half (stripes), plain below
+    const stripes = Array.from({ length: 60 }, (_, i) => `<rect x="${i * 18}" y="0" width="9" height="960" fill="#c0507a"/>`).join('');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><rect width="1080" height="1920" fill="#f6c9d8"/>${stripes}</svg>`;
+    const png = await sharp(Buffer.from(svg)).png().toBuffer();
+    const r = await detectTextZones(png, canvas, async () => [L('Moloy & Dola', 91, 1100, 991, 1200), L('Wednesday 28 DEC', 200, 1260, 880, 1310)]);
+    const qr = r.zones.find((z) => z.role === 'qr')!;
+    expect(qr.frame).toBe(false);
+    expect(qr.y).toBeGreaterThan(960); // not on the stripes
+    const hitsWording = (z: { x: number; y: number; w: number; h: number }) => qr.x < z.x + z.w && qr.x + qr.w > z.x && qr.y < z.y + z.h && qr.y + qr.h > z.y;
+    expect(r.zones.filter((z) => z.role !== 'qr').some(hitsWording)).toBe(false);
+  });
+  it('the guest\'s name and details are added only where the design printed a place for them', async () => {
+    const png = await sharp({ create: { width: 1080, height: 1920, channels: 3, background: '#f6c9d8' } }).png().toBuffer();
+    const none = await detectTextZones(png, canvas, async () => [L('Moloy & Dola', 91, 949, 991, 1067), L('Wednesday 28 DEC', 200, 1459, 880, 1511)]);
+    expect(none.zones.some((z) => z.role === 'inviteeName' || z.role === 'inviteeMeta')).toBe(false);
+    const some = await detectTextZones(png, canvas, async () => [L('Moloy & Dola', 91, 949, 991, 1067), L('Wednesday 28 DEC', 200, 1459, 880, 1511), L('Guest Name', 300, 1700, 780, 1760), L('Company Name', 300, 1780, 780, 1830)]);
+    expect(some.zones.map((z) => z.role)).toEqual(expect.arrayContaining(['inviteeName', 'inviteeMeta']));
   });
 });
 
@@ -82,12 +117,14 @@ describe('an admin upload: the event\'s details replace the wording in place', (
     const id = made.body.data._id;
     // the stand-in picture has no readable wording: nothing is detected, the admin is asked to mark the areas
     const before = await request(app).get(`/api/v1/templates/${id}/text-zones`).set(auth());
-    expect(before.body.data.zones).toEqual([]);
+    expect(before.body.data.zones.map((z: any) => z.role)).toEqual(['qr']); // only the QR code's place
     expect(before.body.data.mode).toBe('NONE');
 
     const put = await request(app).put(`/api/v1/templates/${id}/text-zones`).set(auth()).send({ zones: [{ role: 'title', x: 130, y: 930, w: 820, h: 140, lines: 1, color: '#5a2030', fontFamily: 'Playfair Display', fontWeight: 700, align: 'center' }] });
     expect(put.status).toBe(200);
-    expect((await request(app).get(`/api/v1/templates/${id}/text-zones`).set(auth())).body.data).toMatchObject({ mode: 'MANUAL', zones: [{ role: 'title', align: 'center' }] });
+    const after = (await request(app).get(`/api/v1/templates/${id}/text-zones`).set(auth())).body.data;
+    expect(after.mode).toBe('MANUAL');
+    expect(after.zones.map((z: any) => z.role).sort()).toEqual(['qr', 'title']);
 
     const prev = await request(app).post(`/api/v1/templates/${id}/preview`).set(auth()).send({ title: 'Moloy Dola Wedding', startIso: '2030-11-11T07:30:00Z', endIso: '2030-11-12T07:30:00Z', venue: 'Kolkata' }).buffer(true).parse(buf);
     expect(prev.status).toBe(200);

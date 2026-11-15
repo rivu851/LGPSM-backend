@@ -19,16 +19,18 @@ exports.createTemplateSchema = zod_1.z.object({
 });
 // "Upload your own template": a name, the event type it is for, and the uploaded design (an image this person uploaded)
 const zoneSchema = zod_1.z.object({
-    role: zod_1.z.enum(['title', 'dateTime', 'venue']),
+    role: zod_1.z.enum(['title', 'dateTime', 'venue', 'inviteeName', 'inviteeMeta', 'qr']),
     x: zod_1.z.number().finite().min(0).max(4000), y: zod_1.z.number().finite().min(0).max(4000), w: zod_1.z.number().finite().min(4).max(4000), h: zod_1.z.number().finite().min(4).max(4000),
     lines: zod_1.z.number().int().min(1).max(8).default(1),
     color: zod_1.z.string().regex(/^#[0-9a-fA-F]{6}$/),
     fontFamily: zod_1.z.enum(['Inter', 'Manrope', 'Playfair Display', 'Ancizar Serif', 'Alexandria', 'Alkatra', 'Alex Brush', 'Birthstone']),
     fontWeight: zod_1.z.union([zod_1.z.literal(400), zod_1.z.literal(500), zod_1.z.literal(600), zod_1.z.literal(700)]).default(400),
-    align: zod_1.z.enum(['left', 'center', 'right']).default('center')
+    align: zod_1.z.enum(['left', 'center', 'right']).default('center'),
+    erase: zod_1.z.boolean().optional(),
+    frame: zod_1.z.boolean().optional()
 }).strict();
 /** The areas of an uploaded design whose wording is replaced by the event's details (at most one per kind) */
-exports.textZonesSchema = zod_1.z.object({ zones: zod_1.z.array(zoneSchema).max(3) }).strict().refine((b) => new Set(b.zones.map((z) => z.role)).size === b.zones.length, 'Each detail can have one area');
+exports.textZonesSchema = zod_1.z.object({ zones: zod_1.z.array(zoneSchema).max(6) }).strict().refine((b) => new Set(b.zones.map((z) => z.role)).size === b.zones.length, 'Each detail can have one area');
 exports.uploadTemplateSchema = zod_1.z.object({
     // optional: an unnamed upload is called "Uploaded template" with the date
     name: zod_1.z.string().trim().min(2).max(100).optional().or(zod_1.z.literal('')),

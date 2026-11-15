@@ -337,7 +337,8 @@ async function withoutUploadPanel(spec: DesignSpec, image: Buffer | null, s: num
   // (A design whose wording is replaced in place keeps its text elements: they sit on areas painted out of the picture.)
   const isOverlay = (e: DesignSpec['elements'][number]) => e.type === 'rect' || e.type === 'ellipse' || (!spec.meta.zones && e.type === 'text' && e.role !== 'inviteeName' && e.role !== 'inviteeMeta');
   const elements = await Promise.all(spec.elements.filter((e) => !isOverlay(e)).map(async (e) => {
-    if (e.type !== 'text' || (e.role !== 'inviteeName' && e.role !== 'inviteeMeta') || !image) return e;
+    // (a guest area found or marked in the design keeps its own colour)
+    if (e.type !== 'text' || (e.role !== 'inviteeName' && e.role !== 'inviteeMeta') || !image || /^zone\d+$/.test(e.id || '')) return e;
     try {
       const meta = await sharp(image).metadata();
       const w = meta.width || 0, h = meta.height || 0;
@@ -438,7 +439,8 @@ export async function renderDesignSpec(input: SpecRenderInput): Promise<SpecRend
           break;
         }
         flush();
-        const onPicture = spec.meta.generator === 'UPLOAD' && !!cleanedImage;
+        // in the design's own QR box the code sits on a white tile like the box; anywhere else it is printed straight on the picture
+        const onPicture = spec.meta.generator === 'UPLOAD' && !!cleanedImage && !el.frameColor;
         layers.push({
           input: onPicture ? await qrOnPicture(input.qr, el.size, await isLightBehind(cleanedImage, { x: el.x, y: el.y, w: el.size, h: el.size }, s), s) : await qrLayer(input.qr, el.size, el.padding, el.radius, el.frameColor || '#FFFFFF', s),
           left: Math.round(el.x * s),

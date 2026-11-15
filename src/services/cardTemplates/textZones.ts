@@ -2,6 +2,7 @@ import os from 'os';
 import path from 'path';
 import sharp from 'sharp';
 import { SPEC_FONTS } from './designSpec';
+import { calmSpot, findQrFrame, Box } from './layoutAnalysis';
 
 /**
  * Finding the wording inside an organizer's uploaded design, so the event's own details can replace it in the same place, with the picture
@@ -9,7 +10,7 @@ import { SPEC_FONTS } from './designSpec';
  * (wording such as "Save the date" stays as the designer made it). When the title and one more detail cannot be found with confidence,
  * `detected` is false and the person marks the areas by hand instead.
  */
-export type ZoneRole = 'title' | 'dateTime' | 'venue';
+export type ZoneRole = 'title' | 'dateTime' | 'venue' | 'inviteeName' | 'inviteeMeta' | 'qr';
 export interface TextZone {
   role: ZoneRole;
   x: number; y: number; w: number; h: number;
@@ -19,6 +20,10 @@ export interface TextZone {
   fontFamily: (typeof SPEC_FONTS)[number];
   fontWeight: 400 | 500 | 600 | 700;
   align: 'left' | 'center' | 'right';
+  /** paint the old wording out of the picture first (default: yes for the event's wording, no for an empty area the person marked) */
+  erase?: boolean;
+  /** qr only: true when the code sits in the design's own empty QR box (drawn on a white tile like the box); false when it is placed on a calm spot of the picture */
+  frame?: boolean;
 }
 export interface RecognisedLine { text: string; confidence: number; x0: number; y0: number; x1: number; y1: number }
 export interface DetectedZones { detected: boolean; zones: TextZone[]; reason?: string }
@@ -29,6 +34,9 @@ const CLOCK = /\b\d{1,2}\s*[:.]\s*\d{2}\b|\b\d{1,2}\s*(am|pm)\b|\b(am|pm)\b/i;
 const YEARISH = /\b(19|20)\d{2}\b/;
 const VENUE = /\b\d{6}\b|\b(road|rd|street|st|lane|ln|avenue|ave|near|opp|opposite|hall|club|palace|garden|gardens|park|resort|hotel|tower|floor|plaza|auditorium|banquet|lawn|farm|city|kolkata|delhi|mumbai|chennai|bangalore|bengaluru|hyderabad|pune|india|nagar|colony|sector)\b/i;
 // wording the designer printed that stays as it is
+// placeholders a designer may have left for the guest's own details
+const NAME_PLACEHOLDER = /^(guest|invitee|attendee|visitor|your|dear)?\s*name\b|\b(guest|invitee|attendee)\s+name\b/i;
+const META_PLACEHOLDER = /^(company( name)?|designation|organi[sz]ation|additional info(rmation)?)$/i;
 const DECORATIVE = /\b(save the date|invitation|invites|invite|you are|you're|welcome|join us|request the|cordially|together with|scan|qr|rsvp|r\.s\.v\.p|and|presents|celebrat|honou?r|pleasure|blessing|with love)\b/i;
 
 const letters = (t: string) => (t.match(/[a-z]/gi) || []).length;
@@ -36,11 +44,14 @@ const isDateLike = (t: string) => (MONTH.test(t) || WEEKDAY.test(t) || CLOCK.tes
 const isVenueLike = (t: string) => VENUE.test(t) || (/,/.test(t) && /\d/.test(t) && !isDateLike(t));
 
 /** Sorts recognised lines into zones. Pure, so it can be tested without an image. */
-export function classifyLines(lines: RecognisedLine[], canvas: { width: number; height: number }): { title?: RecognisedLine[]; dateTime?: RecognisedLine[]; venue?: RecognisedLine[] } {
+export function classifyLines(lines: RecognisedLine[], canvas: { width: number; height: number }): { title?: RecognisedLine[]; dateTime?: RecognisedLine[]; venue?: RecognisedLine[]; inviteeName?: RecognisedLine[]; inviteeMeta?: RecognisedLine[]; scan?: RecognisedLine } {
   const good = lines.filter((l) => l.confidence >= 45 && letters(l.text) + (l.text.match(/\d/g) || []).length >= 3 && l.x1 > l.x0 && l.y1 > l.y0);
   const height = (l: RecognisedLine) => l.y1 - l.y0;
-  const dateLines = good.filter((l) => isDateLike(l.text));
-  const venueLines = good.filter((l) => !dateLines.includes(l) && isVenueLike(l.text));
+  const nameLine = good.find((l) => NAME_PLACEHOLDER.test(l.text.trim()) && letters(l.text) <= 20);
+  const metaLine = good.find((l) => META_PLACEHOLDER.test(l.text.trim()));
+  const scan = good.find((l) => /\b(scan|qr)\b/i.test(l.text));
+  const dateLines = good.filter((l) => isDateLike(l.text) && l !== nameLine);
+  const venueLines = good.filter((l) => !dateLines.includes(l) && l !== nameLine && isVenueLike(l.text));
   // lines of one block sit close together and are centred or aligned alike
   const block = (seed: RecognisedLine[]): RecognisedLine[] => {
     if (!seed.length) return [];
@@ -52,9 +63,9 @@ export function classifyLines(lines: RecognisedLine[], canvas: { width: number; 
     }
     return out;
   };
-  const rest = good.filter((l) => !dateLines.includes(l) && !venueLines.includes(l) && !DECORATIVE.test(l.text) && letters(l.text) >= 3);
+  const rest = good.filter((l) => !dateLines.includes(l) && !venueLines.includes(l) && l !== nameLine && l !== metaLine && !DECORATIVE.test(l.text) && letters(l.text) >= 3);
   const titleLine = [...rest].sort((a, b) => height(b) - height(a))[0];
-  return { title: titleLine ? [titleLine] : undefined, dateTime: block(dateLines).length ? block(dateLines) : undefined, venue: block(venueLines).length ? block(venueLines) : undefined };
+  return { title: titleLine ? [titleLine] : undefined, dateTime: block(dateLines).length ? block(dateLines) : undefined, venue: block(venueLines).length ? block(venueLines) : undefined, inviteeName: nameLine ? [nameLine] : undefined, inviteeMeta: metaLine ? [metaLine] : undefined, scan };
 }
 
 /** The colour of the wording in a box: the pixels that differ most from the picture around it */
@@ -95,8 +106,18 @@ export async function zonesFromLines(image: Buffer, lines: RecognisedLine[], can
   await add('title', found.title, 'Playfair Display', 700);
   await add('dateTime', found.dateTime, 'Inter', 600);
   await add('venue', found.venue, 'Inter', 500);
+  // the guest's own details go only where the design left a place for them (a printed "Guest Name" placeholder): never on top of the artwork
+  await add('inviteeName', found.inviteeName, 'Inter', 700);
+  await add('inviteeMeta', found.inviteeMeta, 'Inter', 400);
+  // the QR code: in the design's own empty QR box when it has one, otherwise on the quietest spot of the picture
+  const qrSize = Math.round(0.27 * canvas.width);
+  const hint: Box | undefined = found.scan ? { x: found.scan.x0, y: found.scan.y0, w: found.scan.x1 - found.scan.x0, h: found.scan.y1 - found.scan.y0 } : undefined;
+  const frame = await findQrFrame(image, canvas, hint);
+  const wording = zones.map((z) => ({ x: z.x, y: z.y, w: z.w, h: z.h }));
+  const spot = frame ?? (await calmSpot(image, canvas, qrSize, wording));
+  zones.push({ role: 'qr', x: spot.x, y: spot.y, w: spot.w, h: spot.h, lines: 1, color: '#000000', fontFamily: 'Inter', fontWeight: 400, align: 'center', frame: !!frame });
   const hasTitle = zones.some((z) => z.role === 'title');
-  const hasMore = zones.some((z) => z.role !== 'title');
+  const hasMore = zones.some((z) => z.role === 'dateTime' || z.role === 'venue');
   return { detected: hasTitle && hasMore, zones, reason: !hasTitle ? 'The event name could not be found in the picture.' : !hasMore ? 'Neither the date nor the venue could be found in the picture.' : undefined };
 }
 
@@ -125,6 +146,13 @@ export async function detectTextZones(image: Buffer, canvas: { width: number; he
     const lines = await Promise.race([recognise(image), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs))]);
     return await zonesFromLines(image, lines, canvas);
   } catch (err) {
-    return { detected: false, zones: [], reason: `The picture could not be read automatically (${(err as Error).message}).` };
+    // the wording could not be read, but the QR code still goes where the design has room for it
+    let qr: TextZone[] = [];
+    try {
+      const frame = await findQrFrame(image, canvas);
+      const spot = frame ?? (await calmSpot(image, canvas, Math.round(0.27 * canvas.width)));
+      qr = [{ role: 'qr', x: spot.x, y: spot.y, w: spot.w, h: spot.h, lines: 1, color: '#000000', fontFamily: 'Inter', fontWeight: 400, align: 'center', frame: !!frame }];
+    } catch { /* the default place is used */ }
+    return { detected: false, zones: qr, reason: `The picture could not be read automatically (${(err as Error).message}).` };
   }
 }

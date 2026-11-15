@@ -10,12 +10,16 @@ exports.detectTextZones = detectTextZones;
 const os_1 = __importDefault(require("os"));
 const path_1 = __importDefault(require("path"));
 const sharp_1 = __importDefault(require("sharp"));
+const layoutAnalysis_1 = require("./layoutAnalysis");
 const MONTH = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b/i;
 const WEEKDAY = /\b(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)[a-z]*\b/i;
 const CLOCK = /\b\d{1,2}\s*[:.]\s*\d{2}\b|\b\d{1,2}\s*(am|pm)\b|\b(am|pm)\b/i;
 const YEARISH = /\b(19|20)\d{2}\b/;
 const VENUE = /\b\d{6}\b|\b(road|rd|street|st|lane|ln|avenue|ave|near|opp|opposite|hall|club|palace|garden|gardens|park|resort|hotel|tower|floor|plaza|auditorium|banquet|lawn|farm|city|kolkata|delhi|mumbai|chennai|bangalore|bengaluru|hyderabad|pune|india|nagar|colony|sector)\b/i;
 // wording the designer printed that stays as it is
+// placeholders a designer may have left for the guest's own details
+const NAME_PLACEHOLDER = /^(guest|invitee|attendee|visitor|your|dear)?\s*name\b|\b(guest|invitee|attendee)\s+name\b/i;
+const META_PLACEHOLDER = /^(company( name)?|designation|organi[sz]ation|additional info(rmation)?)$/i;
 const DECORATIVE = /\b(save the date|invitation|invites|invite|you are|you're|welcome|join us|request the|cordially|together with|scan|qr|rsvp|r\.s\.v\.p|and|presents|celebrat|honou?r|pleasure|blessing|with love)\b/i;
 const letters = (t) => (t.match(/[a-z]/gi) || []).length;
 const isDateLike = (t) => (MONTH.test(t) || WEEKDAY.test(t) || CLOCK.test(t) || (YEARISH.test(t) && /\d/.test(t))) && !VENUE.test(t);
@@ -24,8 +28,11 @@ const isVenueLike = (t) => VENUE.test(t) || (/,/.test(t) && /\d/.test(t) && !isD
 function classifyLines(lines, canvas) {
     const good = lines.filter((l) => l.confidence >= 45 && letters(l.text) + (l.text.match(/\d/g) || []).length >= 3 && l.x1 > l.x0 && l.y1 > l.y0);
     const height = (l) => l.y1 - l.y0;
-    const dateLines = good.filter((l) => isDateLike(l.text));
-    const venueLines = good.filter((l) => !dateLines.includes(l) && isVenueLike(l.text));
+    const nameLine = good.find((l) => NAME_PLACEHOLDER.test(l.text.trim()) && letters(l.text) <= 20);
+    const metaLine = good.find((l) => META_PLACEHOLDER.test(l.text.trim()));
+    const scan = good.find((l) => /\b(scan|qr)\b/i.test(l.text));
+    const dateLines = good.filter((l) => isDateLike(l.text) && l !== nameLine);
+    const venueLines = good.filter((l) => !dateLines.includes(l) && l !== nameLine && isVenueLike(l.text));
     // lines of one block sit close together and are centred or aligned alike
     const block = (seed) => {
         if (!seed.length)
@@ -39,9 +46,9 @@ function classifyLines(lines, canvas) {
         }
         return out;
     };
-    const rest = good.filter((l) => !dateLines.includes(l) && !venueLines.includes(l) && !DECORATIVE.test(l.text) && letters(l.text) >= 3);
+    const rest = good.filter((l) => !dateLines.includes(l) && !venueLines.includes(l) && l !== nameLine && l !== metaLine && !DECORATIVE.test(l.text) && letters(l.text) >= 3);
     const titleLine = [...rest].sort((a, b) => height(b) - height(a))[0];
-    return { title: titleLine ? [titleLine] : undefined, dateTime: block(dateLines).length ? block(dateLines) : undefined, venue: block(venueLines).length ? block(venueLines) : undefined };
+    return { title: titleLine ? [titleLine] : undefined, dateTime: block(dateLines).length ? block(dateLines) : undefined, venue: block(venueLines).length ? block(venueLines) : undefined, inviteeName: nameLine ? [nameLine] : undefined, inviteeMeta: metaLine ? [metaLine] : undefined, scan };
 }
 /** The colour of the wording in a box: the pixels that differ most from the picture around it */
 async function inkOf(image, box) {
@@ -85,8 +92,18 @@ async function zonesFromLines(image, lines, canvas) {
     await add('title', found.title, 'Playfair Display', 700);
     await add('dateTime', found.dateTime, 'Inter', 600);
     await add('venue', found.venue, 'Inter', 500);
+    // the guest's own details go only where the design left a place for them (a printed "Guest Name" placeholder): never on top of the artwork
+    await add('inviteeName', found.inviteeName, 'Inter', 700);
+    await add('inviteeMeta', found.inviteeMeta, 'Inter', 400);
+    // the QR code: in the design's own empty QR box when it has one, otherwise on the quietest spot of the picture
+    const qrSize = Math.round(0.27 * canvas.width);
+    const hint = found.scan ? { x: found.scan.x0, y: found.scan.y0, w: found.scan.x1 - found.scan.x0, h: found.scan.y1 - found.scan.y0 } : undefined;
+    const frame = await (0, layoutAnalysis_1.findQrFrame)(image, canvas, hint);
+    const wording = zones.map((z) => ({ x: z.x, y: z.y, w: z.w, h: z.h }));
+    const spot = frame ?? (await (0, layoutAnalysis_1.calmSpot)(image, canvas, qrSize, wording));
+    zones.push({ role: 'qr', x: spot.x, y: spot.y, w: spot.w, h: spot.h, lines: 1, color: '#000000', fontFamily: 'Inter', fontWeight: 400, align: 'center', frame: !!frame });
     const hasTitle = zones.some((z) => z.role === 'title');
-    const hasMore = zones.some((z) => z.role !== 'title');
+    const hasMore = zones.some((z) => z.role === 'dateTime' || z.role === 'venue');
     return { detected: hasTitle && hasMore, zones, reason: !hasTitle ? 'The event name could not be found in the picture.' : !hasMore ? 'Neither the date nor the venue could be found in the picture.' : undefined };
 }
 /** Text recognition with tesseract.js (English). The language file is fetched once and kept in the temp folder. */
@@ -116,6 +133,14 @@ async function detectTextZones(image, canvas, recognise = exports.recogniseWithT
         return await zonesFromLines(image, lines, canvas);
     }
     catch (err) {
-        return { detected: false, zones: [], reason: `The picture could not be read automatically (${err.message}).` };
+        // the wording could not be read, but the QR code still goes where the design has room for it
+        let qr = [];
+        try {
+            const frame = await (0, layoutAnalysis_1.findQrFrame)(image, canvas);
+            const spot = frame ?? (await (0, layoutAnalysis_1.calmSpot)(image, canvas, Math.round(0.27 * canvas.width)));
+            qr = [{ role: 'qr', x: spot.x, y: spot.y, w: spot.w, h: spot.h, lines: 1, color: '#000000', fontFamily: 'Inter', fontWeight: 400, align: 'center', frame: !!frame }];
+        }
+        catch { /* the default place is used */ }
+        return { detected: false, zones: qr, reason: `The picture could not be read automatically (${err.message}).` };
     }
 }

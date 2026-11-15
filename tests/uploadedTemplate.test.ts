@@ -72,7 +72,8 @@ describe('upload your own template', () => {
     let t: any = await Template.findById(res.body.data._id).lean();
     expect(t.templateData).toMatchObject({ uploaded: true, dynamicDetails: true, textAreas: 'NONE' });
     // a plain red picture has no wording to find: nothing is drawn over the picture, and organizers are not offered it yet
-    expect(t.designSpec.elements.filter((e: any) => e.type === 'text').map((e: any) => e.role)).toEqual(['inviteeName', 'inviteeMeta']);
+    // (the design has no place for the guest's name, so it is not added)
+    expect(t.designSpec.elements.filter((e: any) => e.type === 'text')).toEqual([]);
     expect(t.isPublished).toBe(false);
     expect((await request(app).get('/api/v1/templates').set(auth(a))).body.data.map((x: any) => x.name)).not.toContain('Admin Dynamic');
     // admins' own uploads are listed for admins
@@ -83,7 +84,7 @@ describe('upload your own template', () => {
     expect((await request(app).put(`/api/v1/templates/${res.body.data._id}/text-zones`).set(auth(admin)).send({ zones: [zone] })).status).toBe(200);
     t = await Template.findById(res.body.data._id).lean();
     expect(t.isPublished).toBe(true);
-    expect(t.designSpec.elements.filter((e: any) => e.type === 'text').map((e: any) => e.role)).toEqual(expect.arrayContaining(['title', 'inviteeName', 'inviteeMeta']));
+    expect(t.designSpec.elements.filter((e: any) => e.type === 'text').map((e: any) => e.role)).toEqual(['title']);
     expect((await request(app).get('/api/v1/templates').set(auth(a))).body.data.map((x: any) => x.name)).toContain('Admin Dynamic');
     expect((await request(app).post(`/api/v1/templates/${res.body.data._id}/preview`).set(auth(a)).send({ title: 'Mine' })).status).toBe(200);
     // an organizer's upload stays "finished design + QR + name"
