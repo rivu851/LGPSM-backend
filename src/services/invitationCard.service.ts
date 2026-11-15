@@ -438,6 +438,11 @@ async function renderFromSpec(fullSpec: DesignSpec, data: InvitationCardData, bo
     organizerName: data.event.organizerName,
     invitee: data.invitee
   });
+  // A preview with nothing entered yet shows where each detail will go (the design's own wording is painted out, so it is never left reading as someone else's event)
+  if (data.isPreview && spec.meta?.zones) {
+    if (show.dateTime && !allTexts.dateTime && spec.elements.some((e) => e.type === 'text' && e.role === 'dateTime')) allTexts.dateTime = 'Date and time';
+    if (show.location && !allTexts.venue && spec.elements.some((e) => e.type === 'text' && e.role === 'venue')) allTexts.venue = 'Event venue';
+  }
   const texts = withoutHidden(allTexts, show);
   let qr = show.qr ? dataUrlToBuffer(data.qrDataUrl) : undefined;
   if (show.qr && !qr && data.invitationUrl) qr = await QRCode.toBuffer(data.invitationUrl, { errorCorrectionLevel: 'H', margin: 4, width: 480 });

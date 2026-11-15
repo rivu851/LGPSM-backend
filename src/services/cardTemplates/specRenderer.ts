@@ -2,6 +2,7 @@ import sharp from 'sharp';
 import { resolveImageKeyBase64 } from '../../utils/resolveImageBase64';
 import { DesignSpec, SpecElement, SpecTextElement, STATIC_LABELS, TextRole } from './designSpec';
 import { ensureCardFonts, fontStack, measureText } from './fonts';
+import { calmSpot, findQrFrame } from './layoutAnalysis';
 
 // Draws a DesignSpec (see designSpec.ts) with the event's real content, using the same engine and bundled fonts as
 // the Figma-based cards: sharp composites images and one SVG of shapes and text per run of vector elements. Only
@@ -335,7 +336,11 @@ async function withoutUploadPanel(spec: DesignSpec, image: Buffer | null, s: num
   // Nothing is drawn over the organizer's picture except what is personal to each guest (the QR code and the name): the white panel older uploads
   // were saved with, any shade or gradient, and the event's own details typed over the picture are all left out.
   // (A design whose wording is replaced in place keeps its text elements: they sit on areas painted out of the picture.)
-  const isOverlay = (e: DesignSpec['elements'][number]) => e.type === 'rect' || e.type === 'ellipse' || (!spec.meta.zones && e.type === 'text' && e.role !== 'inviteeName' && e.role !== 'inviteeMeta');
+  // An upload saved before the layout was read (its code and name sit at a fixed spot at the bottom) is laid out now: the code goes in the
+  // design's own QR box or the quietest spot, and the guest's name and details are left out, because nothing marks a place for them.
+  const legacy = spec.elements.some((e) => e.type === 'qr' && e.id !== 'qr');
+  const isZone = (e: DesignSpec['elements'][number]) => /^zone\d+$/.test((e as { id?: string }).id || '');
+  const isOverlay = (e: DesignSpec['elements'][number]) => e.type === 'rect' || e.type === 'ellipse' || (e.type === 'text' && legacy && !isZone(e)) || (!spec.meta.zones && e.type === 'text' && e.role !== 'inviteeName' && e.role !== 'inviteeMeta');
   const elements = await Promise.all(spec.elements.filter((e) => !isOverlay(e)).map(async (e) => {
     // (a guest area found or marked in the design keeps its own colour)
     if (e.type !== 'text' || (e.role !== 'inviteeName' && e.role !== 'inviteeMeta') || !image || /^zone\d+$/.test(e.id || '')) return e;
@@ -359,7 +364,15 @@ async function withoutUploadPanel(spec: DesignSpec, image: Buffer | null, s: num
   const lowest = elements.reduce((m, e) => Math.max(m, bottomOf(e)), 0);
   const shift = bottomInset > 0 && lowest > free - 8 ? lowest - (free - 8) : 0;
   const moved = shift > 0 ? elements.map((e) => ('y' in e ? ({ ...e, y: Math.max(0, e.y - shift) } as typeof e) : e)) : elements;
-  return { ...spec, elements: moved };
+  if (!legacy || !image) return { ...spec, elements: moved };
+  const q = moved.find((e) => e.type === 'qr');
+  if (!q || q.type !== 'qr') return { ...spec, elements: moved };
+  const canvas = { width: spec.canvas.width, height: spec.canvas.height };
+  const frame = await findQrFrame(image, canvas);
+  const spot = frame ?? (await calmSpot(image, canvas, Math.round(0.27 * canvas.width), moved.filter((e) => e.type === 'text').map((e) => ({ x: (e as { x: number }).x, y: (e as { y: number }).y, w: (e as { w: number }).w, h: (e as { h: number }).h }))));
+  const side = Math.max(120, Math.round(Math.min(spot.w, spot.h)));
+  const placed = { ...q, id: 'qr', x: Math.round(spot.x), y: Math.round(spot.y), size: side, padding: frame ? 0.04 : 0.07, radius: frame ? 0 : 22, ...(frame ? { frameColor: '#FFFFFF' } : { frameColor: undefined }) };
+  return { ...spec, elements: moved.map((e) => (e === q ? (placed as typeof q) : e)) };
 }
 
 export async function renderDesignSpec(input: SpecRenderInput): Promise<SpecRenderResult> {

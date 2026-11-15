@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.renderTemplatePreview = renderTemplatePreview;
+const uploadedTemplate_1 = require("./uploadedTemplate");
 const Template_1 = require("../../models/Template");
 const qr_util_1 = require("../../utils/qr.util");
 const qrPayload_1 = require("../../utils/qrPayload");
@@ -16,10 +17,25 @@ const template_service_1 = require("../template.service");
  */
 async function renderTemplatePreview(templateId, input, isAdmin, userId) {
     // With no template chosen the card still gets the design that suits the event type, exactly as it will when sent
-    const template = templateId ? await Template_1.Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec').lean() : null;
+    const template = templateId ? await Template_1.Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec templateData').lean() : null;
     // organizers only see what the template list shows them: published templates and their own, never another organizer's
     if (templateId && (!template || !(0, template_service_1.templateVisibleTo)(template, { userId, isAdmin })))
         throw new Error('TEMPLATE_NOT_FOUND');
+    // An admin's upload saved before the design's own wording was read: it is read now, once, so the event's details replace that wording
+    // (otherwise the picture's original words would show whatever the event says)
+    if (templateId && template?.templateData?.uploaded && template.templateData.dynamicDetails && template.templateData.textAreas === undefined) {
+        try {
+            await (0, uploadedTemplate_1.rebuildUploadedLayout)(templateId);
+            const fresh = await Template_1.Template.findById(templateId).select('designSpec templateData').lean();
+            if (fresh) {
+                template.designSpec = fresh.designSpec;
+                template.templateData = fresh.templateData;
+            }
+        }
+        catch (err) {
+            console.error('Uploaded design layout could not be read:', err.message);
+        }
+    }
     // a custom design is drawn from its stored specification
     const spec = template?.cardDesign === 'CUSTOM' ? (0, designSpec_1.safeParseDesignSpec)(template.designSpec) : null;
     if (template?.cardDesign === 'CUSTOM' && !spec?.ok)

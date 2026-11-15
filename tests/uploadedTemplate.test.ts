@@ -101,6 +101,34 @@ describe('upload your own template', () => {
     expect(await decodeQr(full.body)).toMatch(/^https?:\/\//);
   });
 
+  it('an upload saved before the layout was read is laid out when drawn: the code goes in the design\'s own box and the name is left off', async () => {
+    // the design has a white QR box in the middle; the old saved layout put the code and the name at the bottom-left
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><rect width="1080" height="1920" fill="#f6c9d8"/><rect x="390" y="1000" width="300" height="300" fill="#ffffff" stroke="#5a2030" stroke-width="6"/></svg>';
+    const data = await sharp(Buffer.from(svg)).png().toBuffer();
+    const m = await Media.create({ ownerId: a._id, purpose: MediaPurpose.TEMPLATE, contentType: 'image/png', size: data.length, width: 1080, height: 1920, data });
+    const t = await Template.create({
+      name: 'Old upload', cardDesign: 'CUSTOM', kind: 'INVITATION', previewImageKey: `media:${m._id}`, ownerId: a._id, isSystemTemplate: false, isPublished: true, isActive: true, templateData: { uploaded: true },
+      designSpec: {
+        version: 1, kind: 'INVITATION', canvas: { preset: 'INVITATION_PORTRAIT', width: 1080, height: 1920 }, background: '#000000', backgroundMedia: `media:${m._id}`,
+        palette: { background: '#000000', primary: '#111111', accent: '#FF651D', text: '#111111' },
+        elements: [
+          { type: 'rect', x: 100, y: 1400, w: 880, h: 400, radius: 30, fill: '#FFFFFF', opacity: 0.94, strokeWidth: 0 },
+          { type: 'qr', purpose: 'INVITATION', x: 60, y: 1500, size: 291, padding: 0.07, radius: 22 },
+          { type: 'text', role: 'inviteeName', x: 400, y: 1500, w: 600, h: 80, align: 'left', valign: 'middle', fontFamily: 'Inter', fontWeight: 700, size: 52, lineHeight: 1.12, letterSpacing: 0, uppercase: false, maxLines: 1, color: '#111111', opacity: 1 }
+        ],
+        meta: { generator: 'UPLOAD' }
+      }
+    });
+    const prev = await request(app).post(`/api/v1/templates/${t._id}/preview`).set(auth(a)).send({ title: 'Anything', cardInfo: { primary: 'INVITEE_NAME', secondary: null } }).buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
+    expect(prev.status).toBe(200);
+    // nothing drawn at the old bottom-left spot: it is the plain picture
+    const old = await sharp(prev.body).extract({ left: 60, top: 1500, width: 291, height: 291 }).removeAlpha().raw().toBuffer();
+    expect(old.every((v, i) => (i % 3 === 0 ? v === 0xf6 : i % 3 === 1 ? v === 0xc9 : v === 0xd8))).toBe(true);
+    // the code is inside the design's box, and scans
+    const box = await sharp(prev.body).extract({ left: 400, top: 1010, width: 280, height: 280 }).png().toBuffer();
+    expect(await decodeQr(box)).toMatch(/^https?:\/\//);
+  });
+
   it('needs no name and no category: an unnamed upload gets a dated name and suits every event type', async () => {
     const res = await make(a, { imageKey: await upload(a) });
     expect(res.status).toBe(201);

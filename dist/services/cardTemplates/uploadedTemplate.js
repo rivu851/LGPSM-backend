@@ -11,6 +11,7 @@ exports.createUploadedTemplate = createUploadedTemplate;
 exports.getTextZones = getTextZones;
 exports.setTextZones = setTextZones;
 exports.redetectTextZones = redetectTextZones;
+exports.rebuildUploadedLayout = rebuildUploadedLayout;
 const category_service_1 = require("../category.service");
 const mongoose_1 = __importDefault(require("mongoose"));
 const sharp_1 = __importDefault(require("sharp"));
@@ -223,4 +224,20 @@ async function redetectTextZones(actor, id) {
     if (updated && firstAreas)
         await (0, template_service_1.announceTemplate)(updated);
     return { template: updated, detected: found.detected, reason: found.reason };
+}
+/**
+ * Lays an existing uploaded design out again with the current rules (used by scripts/migrate-uploaded-layout.js): the picture is read, the QR
+ * code gets its place, and for an admin upload the wording is found. Whether the template is published is left as it is.
+ */
+async function rebuildUploadedLayout(templateId) {
+    const t = (await Template_1.Template.findOne({ _id: templateId, 'templateData.uploaded': true }));
+    if (!t || !t.designSpec?.canvas)
+        throw new UploadError(404, 'Template not found');
+    const { width: W, height: H } = t.designSpec.canvas;
+    const dynamic = t.templateData?.dynamicDetails === true;
+    const found = await detectInUpload(t.previewImageKey, W, H);
+    const light = await isLightAtBottom(t.previewImageKey, W, H);
+    const next = dynamic ? buildDynamicUploadedSpec(t.previewImageKey, W, H, light, found.zones) : buildUploadedSpec(t.previewImageKey, W, H, found.zones, light);
+    await Template_1.Template.findByIdAndUpdate(t._id, { designSpec: next, ...(dynamic ? { 'templateData.textAreas': found.detected ? 'AUTO' : 'NONE' } : {}) });
+    return { dynamic, detected: found.detected, zones: found.zones.map((z) => z.role), reason: found.reason };
 }

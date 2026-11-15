@@ -139,6 +139,31 @@ describe('an admin upload: the event\'s details replace the wording in place', (
     expect((await sharp(prev.body).metadata()).height).toBe(1920);
   });
 
+  it('with nothing entered yet the preview still shows where each detail goes, and an old admin upload is read once when first previewed', async () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><rect width="1080" height="1920" fill="#f6c9d8"/></svg>';
+    const data = await sharp(Buffer.from(svg)).png().toBuffer();
+    const m = await Media.create({ ownerId: admin._id, purpose: MediaPurpose.TEMPLATE, contentType: 'image/png', size: data.length, width: 1080, height: 1920, data });
+    // an admin upload saved before the wording was read: no text areas recorded, an old fixed layout
+    const t = await Template.create({
+      name: 'Old admin upload', cardDesign: 'CUSTOM', kind: 'INVITATION', previewImageKey: `media:${m._id}`, ownerId: admin._id, isSystemTemplate: true, isPublished: true, isActive: true, templateData: { uploaded: true, dynamicDetails: true },
+      designSpec: { version: 1, kind: 'INVITATION', canvas: { preset: 'INVITATION_PORTRAIT', width: 1080, height: 1920 }, background: '#000000', backgroundMedia: `media:${m._id}`, palette: { background: '#000000', primary: '#111111', accent: '#FF651D', text: '#111111' }, elements: [{ type: 'qr', purpose: 'INVITATION', x: 60, y: 1500, size: 291, padding: 0.07, radius: 22 }], meta: { generator: 'UPLOAD' } }
+    });
+    const first = await request(app).post(`/api/v1/templates/${t._id}/preview`).set(auth()).send({ title: '' }).buffer(true).parse(buf);
+    expect(first.status).toBe(200);
+    const read: any = await Template.findById(t._id).lean();
+    expect(read.templateData.textAreas).toBe('NONE'); // read now (nothing to find in a plain picture)
+    expect(read.designSpec.elements.find((e: any) => e.type === 'qr').id).toBe('qr');
+
+    // with areas set and no event details entered, the preview fills them with what will go there
+    await request(app).put(`/api/v1/templates/${t._id}/text-zones`).set(auth()).send({ zones: [{ role: 'title', x: 100, y: 800, w: 880, h: 140, lines: 1, color: '#5a2030', fontFamily: 'Inter', fontWeight: 700, align: 'center' }, { role: 'dateTime', x: 100, y: 1000, w: 880, h: 90, lines: 1, color: '#5a2030', fontFamily: 'Inter', fontWeight: 600, align: 'center' }, { role: 'venue', x: 100, y: 1120, w: 880, h: 90, lines: 1, color: '#5a2030', fontFamily: 'Inter', fontWeight: 500, align: 'center' }] });
+    const prev = await request(app).post(`/api/v1/templates/${t._id}/preview`).set(auth()).send({}).buffer(true).parse(buf);
+    expect(prev.status).toBe(200);
+    for (const [name, top] of [['title', 800], ['dateTime', 1000], ['venue', 1120]] as const) {
+      const area = await sharp(prev.body).extract({ left: 100, top, width: 880, height: 80 }).removeAlpha().raw().toBuffer();
+      expect(area.some((v, i) => i % 3 === 0 && v < 200)).toBe(true); // something is written there: ${name}
+    }
+  });
+
   it('only the owner can read or change the areas', async () => {
     const other = await User.create({ fullName: 'B', email: 'b@x.com', role: Role.ADMIN, isActive: true });
     const data = await sharp({ create: { width: 1080, height: 1920, channels: 3, background: '#ffffff' } }).png().toBuffer();
