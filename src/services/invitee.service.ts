@@ -1,3 +1,4 @@
+import { inviteesAllowedFilter } from '../utils/sessionAccess';
 import { meaningOf, meaningsOf } from '../utils/columnMeaning';
 import { Invitation, InvitationDeliveryStatus } from '../models/Invitation';
 import { credentialStatus } from '../utils/credentialPolicy';
@@ -125,6 +126,13 @@ export const inviteeService = {
           { sessionAccess: { $elemMatch: { sessionId: options.sessionAccessId, allowed: true } } },
         ],
       });
+    }
+
+    // Check-in scoped to one session (the door scanner): only the guests who can attend that session are in the list and its totals. A guest who is
+    // not invited to it can never be checked in there, so they must not be counted as "pending" for it.
+    if (options.sessionId && mongoose.Types.ObjectId.isValid(options.sessionId)) {
+      const scoped = await Session.findOne({ _id: options.sessionId, eventId });
+      if (scoped) andConditions.push(inviteesAllowedFilter(scoped as any));
     }
 
     if (options.invitation === 'SENT' || options.invitation === 'NOT_SENT') {

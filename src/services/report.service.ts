@@ -1,3 +1,4 @@
+import { activeAssignmentsOf } from './systemUserAssignment.service';
 import { PLATFORM_CURRENCY } from '../constants/currency';
 import { inviteesAllowedFilter } from '../utils/sessionAccess';
 import { startOfTodayInAppZone } from '../utils/invitationContent';
@@ -108,7 +109,7 @@ export const reportService = {
     const uniqueAttendees = attendeeIds.length;
 
     // System users assigned to this event
-    const assignments = await SystemUserAssignment.find({ eventId: eventObjId }, 'sessionIds').lean();
+    const assignments = await activeAssignmentsOf(eventObjId, 'userId sessionIds');
     const totalSystemUsers = assignments.length;
 
     // Sessions breakdown

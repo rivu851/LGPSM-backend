@@ -423,8 +423,17 @@ async function renderFromTemplate(design: TemplateDesign, data: InvitationCardDa
 async function renderFromSpec(fullSpec: DesignSpec, data: InvitationCardData, bottomInset = 0): Promise<Buffer> {
   const show = cardDisplayOf(data.cardDisplay);
   // a hidden QR takes its frame and its "scan" caption with it, and the card closes up where it was (see qrCollapse.ts)
-  const collapse = show.qr ? null : qrCollapsePlan(fullSpec);
-  const collapsed: DesignSpec = collapse ? ({ ...fullSpec, elements: collapse.elements } as DesignSpec) : fullSpec;
+  // An uploaded design's own empty QR box goes with the code: with the QR switched off the box (and its border) is painted out of the picture
+  let source: DesignSpec = fullSpec;
+  if (!show.qr && fullSpec.meta?.generator === 'UPLOAD') {
+    const box = fullSpec.elements.find((e) => e.type === 'qr' && !!e.frameColor);
+    if (box && box.type === 'qr') {
+      const m = Math.round(box.size * 0.14); // past the box's own border (it sits just outside the code area)
+      source = { ...fullSpec, elements: [{ type: 'patch', id: 'noqr', x: Math.max(0, box.x - m), y: Math.max(0, box.y - m), w: box.size + 2 * m, h: box.size + 2 * m }, ...fullSpec.elements.filter((e) => e.type !== 'qr')] } as DesignSpec;
+    }
+  }
+  const collapse = show.qr ? null : qrCollapsePlan(source);
+  const collapsed: DesignSpec = collapse ? ({ ...source, elements: collapse.elements } as DesignSpec) : source;
   // the event logo / picture turned off: the design's image slots are left out
   const spec: DesignSpec = show.logo ? collapsed : ({ ...collapsed, elements: collapsed.elements.filter((e) => e.type !== 'image') } as DesignSpec);
   const allTexts = buildSpecTexts({

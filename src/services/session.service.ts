@@ -181,6 +181,14 @@ export const sessionService = {
       await Session.updateMany({ _id: { $in: dependents.map((d) => d._id) } }, { inviteeSource: InviteeSource.NEW_LIST, sourceSessionId: null });
     }
     await Invitee.updateMany({ eventId: session.eventId }, { $pull: { sessionAccess: { sessionId: session._id } } });
+    // Staff assigned to this session: it is taken off their assignment. An empty list would mean "every session", so someone who was only on
+    // this session is taken off the event instead of silently being given all the others.
+    const staff = await SystemUserAssignment.find({ eventId: session.eventId, sessionIds: session._id });
+    for (const a of staff) {
+      const rest = a.sessionIds.filter((id) => String(id) !== String(session._id));
+      if (rest.length === 0) await SystemUserAssignment.deleteOne({ _id: a._id });
+      else await SystemUserAssignment.updateOne({ _id: a._id }, { $set: { sessionIds: rest } });
+    }
     
     // We do a hard delete or safe non-destructive approach. The prompt says: "If a deletion policy is not defined, use a safe non-destructive approach and document the required decision."
     // However, if we don't have an `isActive` flag on the Session, we might just hard delete it, or we should add an isActive flag.

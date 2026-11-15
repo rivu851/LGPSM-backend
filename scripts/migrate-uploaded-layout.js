@@ -21,7 +21,7 @@ const mongoose = require('mongoose');
     if (!apply) { console.log(`- ${t.name} [${String(t._id)}] ${kind}, published: ${t.isPublished !== false}`); continue; }
     try {
       const r = await rebuildUploadedLayout(String(t._id));
-      console.log(`- ${t.name}: done. areas: ${r.zones.join(', ') || 'none'}${r.dynamic && !r.detected ? ' (the wording was not found: set its areas on the web)' : ''}`);
+      console.log(`- ${t.name}: done. areas: ${r.zones.join(', ') || 'none'}${r.shared ? ' · now shared with every organizer' : ''}${r.dynamic && !r.detected ? ' (the wording was not found: set its areas on the web)' : ''}`);
     } catch (e) {
       console.log(`- ${t.name}: skipped (${e.message})`);
     }

@@ -1,3 +1,4 @@
+import { activeAssignmentsOf } from './systemUserAssignment.service';
 import { canUseCategory } from './category.service';
 import { eventRepository, EventFilter, Pagination } from '../repositories/event.repository';
 import { IEvent, Event, EventStatus } from '../models/Event';
@@ -201,7 +202,7 @@ export class EventService {
     const [sessions, invitees, assignments] = await Promise.all([
       Session.countDocuments({ eventId }),
       Invitee.countDocuments({ eventId }),
-      SystemUserAssignment.countDocuments({ eventId }),
+      activeAssignmentsOf(eventId).then((rows) => rows.length),
     ]);
     return { sessions, invitees, assignments };
   }

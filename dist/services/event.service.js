@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.eventService = exports.EventService = void 0;
 exports.normalizeLocation = normalizeLocation;
+const systemUserAssignment_service_1 = require("./systemUserAssignment.service");
 const category_service_1 = require("./category.service");
 const event_repository_1 = require("../repositories/event.repository");
 const Event_1 = require("../models/Event");
@@ -202,7 +203,7 @@ class EventService {
         const [sessions, invitees, assignments] = await Promise.all([
             Session_1.Session.countDocuments({ eventId }),
             Invitee_1.Invitee.countDocuments({ eventId }),
-            SystemUserAssignment_1.SystemUserAssignment.countDocuments({ eventId }),
+            (0, systemUserAssignment_service_1.activeAssignmentsOf)(eventId).then((rows) => rows.length),
         ]);
         return { sessions, invitees, assignments };
     }

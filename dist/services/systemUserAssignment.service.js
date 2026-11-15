@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.systemUserAssignmentService = void 0;
+exports.activeAssignmentsOf = activeAssignmentsOf;
 const systemUserAssignment_repository_1 = require("../repositories/systemUserAssignment.repository");
 const SystemUserAssignment_1 = require("../models/SystemUserAssignment");
 const Event_1 = require("../models/Event");
@@ -14,6 +15,15 @@ const eventAccess_1 = require("../utils/eventAccess");
 const event_repository_1 = require("../repositories/event.repository");
 const mongoose_1 = __importDefault(require("mongoose"));
 const eventLifecycle_1 = require("../utils/eventLifecycle");
+const alert_service_1 = require("./alert.service");
+/** The assignments of an event whose person is still active: a deactivated or deleted staff account is not "assigned" any more in any count */
+async function activeAssignmentsOf(eventId, select = 'userId sessionIds') {
+    const rows = await SystemUserAssignment_1.SystemUserAssignment.find({ eventId }, select).lean();
+    if (rows.length === 0)
+        return rows;
+    const active = new Set((await User_1.User.find({ _id: { $in: rows.map((r) => r.userId) }, isActive: { $ne: false } }).select('_id').lean()).map((u) => String(u._id)));
+    return rows.filter((r) => active.has(String(r.userId)));
+}
 // Populate only selects a handful of Event fields (title/status/format/location/
 // schedule/organizerId) — invitationsSent is computed on the fly, same as the
 // events-list endpoint, so the mobile "Number of invites" figure isn't stuck
@@ -45,6 +55,11 @@ exports.systemUserAssignmentService = {
         (0, eventLifecycle_1.assertEventOpenForChanges)(event);
         const targetUser = await User_1.User.findById(data.userId);
         if (!targetUser || !targetUser.isActive) {
+            throw new Error('INVALID_USER');
+        }
+        // Only a system user, the event's own organizer, or the person making the assignment (an organizer or administrator working the event
+        // themselves) can be assigned: never some other organizer or administrator
+        if (targetUser.role !== User_1.Role.SYSTEM_USER && String(targetUser._id) !== String(event.organizerId) && String(targetUser._id) !== organizerId) {
             throw new Error('INVALID_USER');
         }
         // Organizers can assign themselves or staff visible to their organization.
@@ -79,7 +94,9 @@ exports.systemUserAssignmentService = {
             sessionIds: uniqueSessionIds.map(id => new mongoose_1.default.Types.ObjectId(id)),
             assignedBy: new mongoose_1.default.Types.ObjectId(organizerId)
         };
-        return await systemUserAssignment_repository_1.systemUserAssignmentRepository.create(assignmentData);
+        const created = await systemUserAssignment_repository_1.systemUserAssignmentRepository.create(assignmentData);
+        await this.tellStaff(event, data.userId, uniqueSessionIds, 'ASSIGNED');
+        return created;
     },
     async getAssignmentsByEvent(eventId, organizerId) {
         const event = await findAccessibleEvent(eventId, organizerId);
@@ -158,6 +175,7 @@ exports.systemUserAssignmentService = {
         if (!updated) {
             throw new Error('UPDATE_FAILED');
         }
+        await this.tellStaff(event, String(assignment.userId), uniqueSessionIds, 'CHANGED');
         return updated;
     },
     async deleteAssignment(assignmentId, organizerId) {
@@ -174,6 +192,33 @@ exports.systemUserAssignmentService = {
         if (!deleted) {
             throw new Error('DELETE_FAILED');
         }
+        await this.tellStaff(event, String(assignment.userId), [], 'REMOVED');
         return deleted;
+    },
+    /** The staff member is told in the app when they are put on an event, when their sessions change, or when they are taken off it */
+    async tellStaff(event, userId, sessionIds, what) {
+        // a notice never fails the assignment it is about
+        try {
+            // (an organizer working their own event does not need telling about their own action)
+            const target = await User_1.User.findById(userId);
+            if (!target || target.role !== User_1.Role.SYSTEM_USER)
+                return;
+            let where = 'all its sessions';
+            if (sessionIds.length > 0) {
+                const names = (await Session_1.Session.find({ _id: { $in: sessionIds } })).map((s) => s.name);
+                where = names.length ? names.join(', ') : `${sessionIds.length} session${sessionIds.length === 1 ? '' : 's'}`;
+            }
+            const title = event.title || 'an event';
+            const copy = {
+                ASSIGNED: { title: 'You were assigned to an event', message: `You are now assigned to "${title}" (${where}).` },
+                CHANGED: { title: 'Your assignment changed', message: `Your assignment on "${title}" now covers ${where}.` },
+                REMOVED: { title: 'You were removed from an event', message: `You are no longer assigned to "${title}".` }
+            }[what];
+            // (not awaited: the assignment does not wait for the notice to be stored)
+            void alert_service_1.alertService.notifyUser(userId, { type: `STAFF_${what}`, entityType: 'Event', entityId: event._id, ...copy }).catch(() => undefined);
+        }
+        catch (err) {
+            console.error('Staff notice failed:', err.message);
+        }
     }
 };

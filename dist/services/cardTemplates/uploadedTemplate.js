@@ -12,6 +12,8 @@ exports.getTextZones = getTextZones;
 exports.setTextZones = setTextZones;
 exports.redetectTextZones = redetectTextZones;
 exports.rebuildUploadedLayout = rebuildUploadedLayout;
+exports.withCurrentLayout = withCurrentLayout;
+const User_1 = require("../../models/User");
 const category_service_1 = require("../category.service");
 const mongoose_1 = __importDefault(require("mongoose"));
 const sharp_1 = __importDefault(require("sharp"));
@@ -235,6 +237,31 @@ async function rebuildUploadedLayout(templateId) {
     const found = await detectInUpload(t.previewImageKey, W, H);
     const light = await isLightAtBottom(t.previewImageKey, W, H);
     const next = dynamic ? buildDynamicUploadedSpec(t.previewImageKey, W, H, light, found.zones) : buildUploadedSpec(t.previewImageKey, W, H, found.zones, light);
-    await Template_1.Template.findByIdAndUpdate(t._id, { designSpec: next, 'templateData.layoutVersion': 2, ...(dynamic ? { 'templateData.textAreas': found.detected ? 'AUTO' : 'NONE' } : {}) });
-    return { dynamic, detected: found.detected, zones: found.zones.map((z) => z.role), reason: found.reason };
+    // An upload by an administrator is shared with every organizer (a few older ones were saved as private): repaired here, so it can be chosen and used
+    const owner = t.ownerId ? await User_1.User.findById(t.ownerId).select('role').lean() : null;
+    const shareIt = owner?.role === 'ADMIN' && t.isSystemTemplate !== true;
+    await Template_1.Template.findByIdAndUpdate(t._id, { designSpec: next, 'templateData.layoutVersion': 2, ...(dynamic ? { 'templateData.textAreas': found.detected ? 'AUTO' : 'NONE' } : {}), ...(shareIt ? { isSystemTemplate: true } : {}) });
+    return { dynamic, detected: found.detected, zones: found.zones.map((z) => z.role), reason: found.reason, shared: shareIt };
+}
+/**
+ * An admin's upload saved before the design's own wording was read (or read with an older version of the reading) is read now, once, so the
+ * event's details replace that wording. Called wherever a card is drawn from a template (previews and real sends). Returns the template
+ * with its current layout; never throws (a design that cannot be read is drawn as it is).
+ */
+async function withCurrentLayout(template) {
+    const d = template?.templateData;
+    if (!template || !d?.uploaded || !d.dynamicDetails || d.textAreas === 'MANUAL')
+        return template;
+    if (d.textAreas !== undefined && d.layoutVersion === 2)
+        return template;
+    try {
+        await rebuildUploadedLayout(String(template._id));
+        const fresh = await Template_1.Template.findById(template._id).select('designSpec templateData isSystemTemplate').lean();
+        if (fresh)
+            return { ...template, designSpec: fresh.designSpec, templateData: fresh.templateData, isSystemTemplate: fresh.isSystemTemplate };
+    }
+    catch (err) {
+        console.error('Uploaded design layout could not be read:', err.message);
+    }
+    return template;
 }

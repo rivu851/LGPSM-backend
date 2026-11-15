@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.reportService = void 0;
+const systemUserAssignment_service_1 = require("./systemUserAssignment.service");
 const currency_1 = require("../constants/currency");
 const sessionAccess_1 = require("../utils/sessionAccess");
 const invitationContent_1 = require("../utils/invitationContent");
@@ -14,7 +15,6 @@ const Event_1 = require("../models/Event");
 const Invitee_1 = require("../models/Invitee");
 const CheckIn_1 = require("../models/CheckIn");
 const Session_1 = require("../models/Session");
-const SystemUserAssignment_1 = require("../models/SystemUserAssignment");
 exports.reportService = {
     async getDashboardStats(user) {
         const isOrganizer = user.role !== 'ADMIN';
@@ -95,7 +95,7 @@ exports.reportService = {
         const attendeeIds = await CheckIn_1.CheckIn.distinct('inviteeId', { eventId: eventObjId });
         const uniqueAttendees = attendeeIds.length;
         // System users assigned to this event
-        const assignments = await SystemUserAssignment_1.SystemUserAssignment.find({ eventId: eventObjId }, 'sessionIds').lean();
+        const assignments = await (0, systemUserAssignment_service_1.activeAssignmentsOf)(eventObjId, 'userId sessionIds');
         const totalSystemUsers = assignments.length;
         // Sessions breakdown
         const sessions = await Session_1.Session.find({ eventId: eventObjId }).sort({ 'schedule.start': 1 });

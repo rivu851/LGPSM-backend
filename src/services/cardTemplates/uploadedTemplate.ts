@@ -1,3 +1,4 @@
+import { User } from '../../models/User';
 import { canUseCategory } from '../category.service';
 import mongoose from 'mongoose';
 import sharp from 'sharp';
@@ -219,6 +220,28 @@ export async function rebuildUploadedLayout(templateId: string) {
   const found = await detectInUpload(t.previewImageKey as string, W, H);
   const light = await isLightAtBottom(t.previewImageKey as string, W, H);
   const next = dynamic ? buildDynamicUploadedSpec(t.previewImageKey as string, W, H, light, found.zones) : buildUploadedSpec(t.previewImageKey as string, W, H, found.zones, light);
-  await Template.findByIdAndUpdate(t._id, { designSpec: next, 'templateData.layoutVersion': 2, ...(dynamic ? { 'templateData.textAreas': found.detected ? 'AUTO' : 'NONE' } : {}) });
-  return { dynamic, detected: found.detected, zones: found.zones.map((z) => z.role), reason: found.reason };
+  // An upload by an administrator is shared with every organizer (a few older ones were saved as private): repaired here, so it can be chosen and used
+  const owner = (t as any).ownerId ? await User.findById((t as any).ownerId).select('role').lean() : null;
+  const shareIt = owner?.role === 'ADMIN' && (t as any).isSystemTemplate !== true;
+  await Template.findByIdAndUpdate(t._id, { designSpec: next, 'templateData.layoutVersion': 2, ...(dynamic ? { 'templateData.textAreas': found.detected ? 'AUTO' : 'NONE' } : {}), ...(shareIt ? { isSystemTemplate: true } : {}) });
+  return { dynamic, detected: found.detected, zones: found.zones.map((z) => z.role), reason: found.reason, shared: shareIt };
+}
+
+/**
+ * An admin's upload saved before the design's own wording was read (or read with an older version of the reading) is read now, once, so the
+ * event's details replace that wording. Called wherever a card is drawn from a template (previews and real sends). Returns the template
+ * with its current layout; never throws (a design that cannot be read is drawn as it is).
+ */
+export async function withCurrentLayout<T extends { _id?: unknown; designSpec?: unknown; templateData?: any }>(template: T | null): Promise<T | null> {
+  const d = template?.templateData;
+  if (!template || !d?.uploaded || !d.dynamicDetails || d.textAreas === 'MANUAL') return template;
+  if (d.textAreas !== undefined && d.layoutVersion === 2) return template;
+  try {
+    await rebuildUploadedLayout(String(template._id));
+    const fresh = await Template.findById(template._id as never).select('designSpec templateData isSystemTemplate').lean();
+    if (fresh) return { ...template, designSpec: fresh.designSpec, templateData: fresh.templateData, isSystemTemplate: fresh.isSystemTemplate };
+  } catch (err) {
+    console.error('Uploaded design layout could not be read:', (err as Error).message);
+  }
+  return template;
 }

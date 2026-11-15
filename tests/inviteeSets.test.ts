@@ -10,6 +10,7 @@ import { Invitation, DeliveryChannel, InvitationDeliveryStatus } from '../src/mo
 import { CheckIn } from '../src/models/CheckIn';
 import { CredentialEvent } from '../src/models/CredentialEvent';
 import { InviteeSet } from '../src/models/InviteeSet';
+import { Session } from '../src/models/Session';
 import { generateAccessToken } from '../src/utils/token';
 
 let mongo: MongoMemoryServer;
@@ -36,7 +37,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { await mongoose.disconnect(); await mongo.stop(); });
 beforeEach(async () => {
-  await Promise.all([Invitee, Event, InviteeSet, Invitation, CheckIn, CredentialEvent].map((m: any) => m.deleteMany({})));
+  await Promise.all([Invitee, Event, InviteeSet, Invitation, CheckIn, CredentialEvent, Session].map((m: any) => m.deleteMany({})));
   const start = new Date(Date.now() + 864e5);
   event = await Event.create({ organizerId: org._id, title: 'Sets', description: 'd', categoryId: new mongoose.Types.ObjectId(), format: 'PHYSICAL', schedule: { start, end: new Date(+start + 8 * 36e5) } });
 });
@@ -295,5 +296,41 @@ describe('archived guests: historical integrity and no accidental reactivation',
     expect(text).not.toMatch(/Idle Ida/);
     expect(await Invitation.countDocuments({ inviteeId: sam!._id })).toBe(1);
     expect(await CheckIn.countDocuments({ inviteeId: sam!._id })).toBe(1);
+  });
+});
+
+
+describe('a session that uses the guests of other sessions has its own dataset entry', () => {
+  it('lists Lunch and Dinner (uploads) and "Activity & Fun" (the same four guests), and previews its guests', async () => {
+    const t = (h: number) => new Date(Date.now() + 864e5 + h * 36e5);
+    const lunch = await Session.create({ eventId: event._id, name: 'Lunch', schedule: { start: t(1), end: t(3) } });
+    const dinner = await Session.create({ eventId: event._id, name: 'Dinner', schedule: { start: t(5), end: t(7) } });
+    const fun = await Session.create({ eventId: event._id, name: 'Activity & Fun', schedule: { start: t(3), end: t(5) } });
+    const setLunch = await InviteeSet.create({ eventId: event._id, name: 'Lunch', sessionId: lunch._id, mode: 'APPEND', createdBy: org._id, importedCount: 2 });
+    const setDinner = await InviteeSet.create({ eventId: event._id, name: 'Dinner', sessionId: dinner._id, mode: 'APPEND', createdBy: org._id, importedCount: 2 });
+    const access = (own: any) => [{ sessionId: own._id, allowed: true }, { sessionId: fun._id, allowed: true }];
+    await Invitee.create([
+      { eventId: event._id, name: 'Amit', email: 'amit@x.com', inviteeSetId: setDinner._id, sessionAccess: access(dinner) },
+      { eventId: event._id, name: 'Chanchal', email: 'chanchal@x.com', inviteeSetId: setDinner._id, sessionAccess: access(dinner) },
+      { eventId: event._id, name: 'Moloy', email: 'moloy@x.com', inviteeSetId: setLunch._id, sessionAccess: access(lunch) },
+      { eventId: event._id, name: 'Sayan', email: 'sayan@x.com', inviteeSetId: setLunch._id, sessionAccess: access(lunch) },
+    ]);
+    const res = await request(app).get(`/api/v1/events/${event._id}/invitees/sets`).set(bearer(tok));
+    expect(res.status).toBe(200);
+    expect(res.body.data.sets.map((x: any) => [x.name, x.total])).toEqual([['Lunch', 2], ['Dinner', 2]]);
+    expect(res.body.data.sessionLists.map((x: any) => [x.name, x.total, x.source])).toEqual([['Activity & Fun', 4, 'SESSION']]);
+    // its guests can be previewed, whichever upload each came from
+    const view = await request(app).get(`/api/v1/events/${event._id}/invitees/sets/${res.body.data.sessionLists[0].id}/members`).set(bearer(tok));
+    expect(view.status).toBe(200);
+    expect(view.body.data.total).toBe(4);
+    expect(view.body.data.members.map((m: any) => m.name).sort()).toEqual(['Amit', 'Chanchal', 'Moloy', 'Sayan']);
+  });
+  it('an event with a single list for all sessions shows no extra entries', async () => {
+    const t = (h: number) => new Date(Date.now() + 864e5 + h * 36e5);
+    await Session.create([{ eventId: event._id, name: 'A', schedule: { start: t(1), end: t(2) } }, { eventId: event._id, name: 'B', schedule: { start: t(3), end: t(4) } }]);
+    const one = await InviteeSet.create({ eventId: event._id, name: 'Everyone', mode: 'APPEND', createdBy: org._id, importedCount: 1 });
+    await Invitee.create({ eventId: event._id, name: 'Solo', email: 'solo@x.com', inviteeSetId: one._id });
+    const res = await request(app).get(`/api/v1/events/${event._id}/invitees/sets`).set(bearer(tok));
+    expect(res.body.data.sessionLists).toEqual([]);
   });
 });

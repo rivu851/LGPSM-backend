@@ -37,6 +37,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.inviteeService = exports.MAX_IMPORT_ROWS = void 0;
+const sessionAccess_1 = require("../utils/sessionAccess");
 const columnMeaning_1 = require("../utils/columnMeaning");
 const Invitation_1 = require("../models/Invitation");
 const credentialPolicy_1 = require("../utils/credentialPolicy");
@@ -143,6 +144,13 @@ exports.inviteeService = {
                     { sessionAccess: { $elemMatch: { sessionId: options.sessionAccessId, allowed: true } } },
                 ],
             });
+        }
+        // Check-in scoped to one session (the door scanner): only the guests who can attend that session are in the list and its totals. A guest who is
+        // not invited to it can never be checked in there, so they must not be counted as "pending" for it.
+        if (options.sessionId && mongoose_1.default.Types.ObjectId.isValid(options.sessionId)) {
+            const scoped = await Session_1.Session.findOne({ _id: options.sessionId, eventId });
+            if (scoped)
+                andConditions.push((0, sessionAccess_1.inviteesAllowedFilter)(scoped));
         }
         if (options.invitation === 'SENT' || options.invitation === 'NOT_SENT') {
             // dispatch records, not "exists in the database": a guest counts as invited only if an invitation was actually delivered

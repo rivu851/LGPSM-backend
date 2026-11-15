@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.cardHostName = cardHostName;
 exports.loadCardContext = loadCardContext;
+const uploadedTemplate_1 = require("./uploadedTemplate");
 const Template_1 = require("../../models/Template");
 const Category_1 = require("../../models/Category");
 const User_1 = require("../../models/User");
@@ -16,10 +17,12 @@ function cardHostName(organizer) {
     return organizer?.profile?.organizationName?.trim() || undefined;
 }
 async function loadCardContext(event) {
-    const [template, category] = await Promise.all([
-        event.templateId ? Template_1.Template.findById(event.templateId).select('cardDesign designSpec ownerId isSystemTemplate isPublished isActive').lean() : null,
+    const [rawTemplate, category] = await Promise.all([
+        event.templateId ? Template_1.Template.findById(event.templateId).select('cardDesign designSpec ownerId isSystemTemplate isPublished isActive templateData').lean() : null,
         event.categoryId ? Category_1.Category.findById(event.categoryId).select('name subcategories').lean() : null
     ]);
+    // (an old admin upload has its wording read once, so real sends and the event's card preview replace it just like the form's preview)
+    const template = await (0, uploadedTemplate_1.withCurrentLayout)(rawTemplate);
     const subcategory = category?.subcategories?.find((s) => String(s._id) === String(event.subcategoryId));
     const categoryName = category?.name;
     const subcategoryName = subcategory?.name;

@@ -1,3 +1,4 @@
+import { withCurrentLayout } from './uploadedTemplate';
 import { Template } from '../../models/Template';
 import { Category } from '../../models/Category';
 import { User } from '../../models/User';
@@ -31,10 +32,12 @@ export function cardHostName(organizer: { profile?: { organizationName?: string 
 }
 
 export async function loadCardContext(event: EventLike): Promise<CardContext> {
-  const [template, category] = await Promise.all([
-    event.templateId ? Template.findById(event.templateId as never).select('cardDesign designSpec ownerId isSystemTemplate isPublished isActive').lean() : null,
+  const [rawTemplate, category] = await Promise.all([
+    event.templateId ? Template.findById(event.templateId as never).select('cardDesign designSpec ownerId isSystemTemplate isPublished isActive templateData').lean() : null,
     event.categoryId ? Category.findById(event.categoryId as never).select('name subcategories').lean() : null
   ]);
+  // (an old admin upload has its wording read once, so real sends and the event's card preview replace it just like the form's preview)
+  const template = await withCurrentLayout(rawTemplate as any) as typeof rawTemplate;
   const subcategory = category?.subcategories?.find((s) => String(s._id) === String(event.subcategoryId));
   const categoryName = category?.name;
   const subcategoryName = subcategory?.name;

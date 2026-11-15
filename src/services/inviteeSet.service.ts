@@ -1,3 +1,5 @@
+import { Session } from '../models/Session';
+import { inviteesAllowedFilter } from '../utils/sessionAccess';
 import mongoose from 'mongoose';
 import { Invitee, IInvitee, InvitationStatus, RsvpStatus } from '../models/Invitee';
 import { InviteeSet } from '../models/InviteeSet';
@@ -180,7 +182,31 @@ export const inviteeSetService = {
       out.unshift(shape(LEGACY_SET, { name: 'Earlier invitees', source: 'MANUAL', mode: 'APPEND', sessionId: null, createdAt: legacyAddedAt, uploadedBy: null, importedCount: null }));
     }
     const archivedCount = [...asideBySet.values()].reduce((a, b) => a + b, 0);
-    return { sets: out, archivedCount, hasSent: out.some((s) => s.locked) };
+
+    // A session whose guests come from other sessions' lists (it has no upload of its own) is shown as a list too, so every session has its
+    // dataset: "Activity & Fun" holding the guests of Lunch and Dinner. Only when the event keeps a list per session.
+    const sessionLists: any[] = [];
+    if ((sets as any[]).some((x) => x.sessionId)) {
+      const sessions = await Session.find({ eventId: eid }).sort({ 'schedule.start': 1 });
+      const own = new Set((sets as any[]).filter((x) => x.sessionId).map((x) => String(x.sessionId)));
+      for (const sess of sessions) {
+        if (own.has(String(sess._id))) continue;
+        const ids = await Invitee.find({ eventId: eid, ...inviteesAllowedFilter(sess as any) }).select('_id').lean();
+        if (ids.length === 0) continue;
+        const r = { total: 0, sent: 0, notSent: 0, failed: 0, unknown: 0, rsvp: 0, checkedIn: 0 };
+        for (const { _id } of ids) {
+          const a = activity.get(String(_id));
+          if (!a) continue;
+          r.total++;
+          const state = deliveryStateOf(a);
+          if (state === 'SENT') r.sent++; else if (state === 'UNKNOWN') r.unknown++; else if (state === 'FAILED') r.failed++; else r.notSent++;
+          if (a.rsvp) r.rsvp++;
+          if (a.checkedIn) r.checkedIn++;
+        }
+        sessionLists.push({ id: `session:${sess._id}`, name: sess.name, source: 'SESSION', mode: 'APPEND', sessionId: String(sess._id), createdAt: null, uploadedBy: null, importedCount: null, ...r, unsent: r.notSent, setAside: 0, locked: false, lockReasons: null, replaceableGuests: 0, firstSentAt: null, lastSentAt: null });
+      }
+    }
+    return { sets: out, sessionLists, archivedCount, hasSent: out.some((s) => s.locked) };
   },
 
   /**
@@ -211,10 +237,17 @@ export const inviteeSetService = {
   /** The guests currently in one list, with each guest's delivery state. No tokens, no credentials. */
   async members(actor: Actor, eventId: string, setId: string, page = 1, limit = 50, q = '') {
     await manageableEvent(actor, eventId);
-    if (setId !== LEGACY_SET && setId !== ALL_SETS && !mongoose.Types.ObjectId.isValid(setId)) throw fail(400, 'Invalid list id');
+    const sessionView = setId.startsWith('session:') ? setId.slice(8) : null;
+    if (!sessionView && setId !== LEGACY_SET && setId !== ALL_SETS && !mongoose.Types.ObjectId.isValid(setId)) throw fail(400, 'Invalid list id');
+    if (sessionView && !mongoose.Types.ObjectId.isValid(sessionView)) throw fail(400, 'Invalid list id');
     const eid = new mongoose.Types.ObjectId(eventId);
     const filter: any = { eventId: eid };
-    if (setId !== ALL_SETS) filter.inviteeSetId = setId === LEGACY_SET ? null : new mongoose.Types.ObjectId(setId);
+    if (sessionView) {
+      // a session's guests (whichever uploaded list each came from)
+      const sess = await Session.findOne({ _id: sessionView, eventId: eid });
+      if (!sess) throw fail(404, 'List not found');
+      Object.assign(filter, inviteesAllowedFilter(sess as any));
+    } else if (setId !== ALL_SETS) filter.inviteeSetId = setId === LEGACY_SET ? null : new mongoose.Types.ObjectId(setId);
     const term = q.trim().slice(0, 100);
     if (term) {
       const rx = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');

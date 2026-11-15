@@ -17,25 +17,12 @@ const template_service_1 = require("../template.service");
  */
 async function renderTemplatePreview(templateId, input, isAdmin, userId) {
     // With no template chosen the card still gets the design that suits the event type, exactly as it will when sent
-    const template = templateId ? await Template_1.Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec templateData').lean() : null;
+    const rawTemplate = templateId ? await Template_1.Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec templateData').lean() : null;
     // organizers only see what the template list shows them: published templates and their own, never another organizer's
-    if (templateId && (!template || !(0, template_service_1.templateVisibleTo)(template, { userId, isAdmin })))
+    if (templateId && (!rawTemplate || !(0, template_service_1.templateVisibleTo)(rawTemplate, { userId, isAdmin })))
         throw new Error('TEMPLATE_NOT_FOUND');
-    // An admin's upload saved before the design's own wording was read (or read with an older version of the reading): it is read now, once, so the event's details replace that wording
-    // (otherwise the picture's original words would show whatever the event says)
-    if (templateId && template?.templateData?.uploaded && template.templateData.dynamicDetails && (template.templateData.textAreas === undefined || (template.templateData.layoutVersion !== 2 && template.templateData.textAreas !== 'MANUAL'))) {
-        try {
-            await (0, uploadedTemplate_1.rebuildUploadedLayout)(templateId);
-            const fresh = await Template_1.Template.findById(templateId).select('designSpec templateData').lean();
-            if (fresh) {
-                template.designSpec = fresh.designSpec;
-                template.templateData = fresh.templateData;
-            }
-        }
-        catch (err) {
-            console.error('Uploaded design layout could not be read:', err.message);
-        }
-    }
+    // (an admin's upload saved before the design's own wording was read has it read now, once)
+    const template = await (0, uploadedTemplate_1.withCurrentLayout)(rawTemplate);
     // a custom design is drawn from its stored specification
     const spec = template?.cardDesign === 'CUSTOM' ? (0, designSpec_1.safeParseDesignSpec)(template.designSpec) : null;
     if (template?.cardDesign === 'CUSTOM' && !spec?.ok)
