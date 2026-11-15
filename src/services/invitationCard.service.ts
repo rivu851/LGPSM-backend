@@ -6,8 +6,8 @@ import { assetPath } from '../utils/assetPath';
 import { renderTemplateCard, isTemplateDesign, TemplateDesign } from './cardTemplates/renderer';
 import { buildTemplateTexts, photoInitials, buildSpecTexts } from './cardTemplates/content';
 import type { DesignSpec } from './cardTemplates/designSpec';
-import { renderDesignSpec } from './cardTemplates/specRenderer';
-import { appendInfoFooter, insertGuestBand, FOOTER_STYLES, FooterStyle } from './cardTemplates/infoFooter';
+import { renderDesignSpec, outputSize } from './cardTemplates/specRenderer';
+import { appendInfoFooter, footerHeightFor, insertGuestBand, FOOTER_STYLES, FooterStyle } from './cardTemplates/infoFooter';
 import { CardDisplay, cardDisplayOf, withoutHidden } from '../utils/cardDisplay';
 import { qrCollapsePlan } from './cardTemplates/qrCollapse';
 import { coverageOfDesign, coverageOfSpec, Coverage, detailRows } from './cardTemplates/coverage';
@@ -348,12 +348,12 @@ async function buildClassicSVG(data: InvitationCardData): Promise<string> {
  * The details block under the artwork. Whatever the template's artwork already prints (its coverage) is left alone; everything
  * else the event has to say (dates, times, place, guest lines) is composed here, and the contact line always closes the card.
  */
-function withInfoFooter(png: Buffer, data: InvitationCardData, covered: Coverage, style: FooterStyle): Promise<Buffer> {
+function footerPlan(data: InvitationCardData, covered: Coverage) {
   // every kind of row this design can carry, found with a full set of sample details (whatever the event actually includes)
   const reserve = detailRows({ title: 'x', startIso: '2030-01-01T10:00:00.000Z', endIso: '2030-01-02T12:00:00.000Z', venue: 'x', locationSub: 'x', isVirtual: false, contactNumber: '9876543210', guestName: 'x', guestMeta: 'x' }, covered).map((r) => r.kind);
   const show = cardDisplayOf(data.cardDisplay);
   const hidden = new Set([...(show.title ? [] : ['title']), ...(show.dateTime ? [] : ['when']), ...(show.location ? [] : ['where'])]);
-  return appendInfoFooter(png, detailRows({
+  const rows = detailRows({
     title: data.event.title,
     startIso: data.event.startIso,
     endIso: data.event.endIso,
@@ -363,7 +363,18 @@ function withInfoFooter(png: Buffer, data: InvitationCardData, covered: Coverage
     contactNumber: data.event.contactNumber,
     guestName: data.invitee.name,
     guestMeta: data.invitee.companyName
-  }, covered).filter((row) => !hidden.has(row.kind)), style, reserve);
+  }, covered).filter((row) => !hidden.has(row.kind));
+  return { rows, reserve };
+}
+
+/**
+ * The details block under the artwork. Whatever the template's artwork already prints (its coverage) is left alone; everything
+ * else the event has to say (dates, times, place, guest lines) is composed here, and the contact line always closes the card.
+ * `overlay` (an uploaded design): the block is printed over the picture's bottom with nothing behind it, instead of being added below.
+ */
+function withInfoFooter(png: Buffer, data: InvitationCardData, covered: Coverage, style: FooterStyle, overlay = false): Promise<Buffer> {
+  const { rows, reserve } = footerPlan(data, covered);
+  return appendInfoFooter(png, rows, style, reserve, overlay);
 }
 
 const dataUrlToBuffer = (dataUrl?: string): Buffer | undefined => {
@@ -409,7 +420,7 @@ async function renderFromTemplate(design: TemplateDesign, data: InvitationCardDa
 }
 
 // A custom (AI-generated) design: the stored layout with this event's details and this guest's own QR code
-async function renderFromSpec(fullSpec: DesignSpec, data: InvitationCardData): Promise<Buffer> {
+async function renderFromSpec(fullSpec: DesignSpec, data: InvitationCardData, bottomInset = 0): Promise<Buffer> {
   const show = cardDisplayOf(data.cardDisplay);
   // a hidden QR takes its frame and its "scan" caption with it, and the card closes up where it was (see qrCollapse.ts)
   const collapse = show.qr ? null : qrCollapsePlan(fullSpec);
@@ -437,7 +448,8 @@ async function renderFromSpec(fullSpec: DesignSpec, data: InvitationCardData): P
     qr,
     photo: eventImage,
     logo: eventImage || dataUrlToBuffer(getLogoBase64()),
-    showPlaceholders: data.isPreview === true
+    showPlaceholders: data.isPreview === true,
+    bottomInset
   });
   return result.png;
 }
@@ -450,9 +462,12 @@ export const invitationCardService = {
 
   async generateInvitationCardPNG(data: InvitationCardData): Promise<Buffer> {
     if (data.designSpec) {
-      const png = await renderFromSpec(data.designSpec, data);
       const spec = data.designSpec;
-      return withInfoFooter(png, data, coverageOfSpec(spec), { ink: spec.palette.text, accent: spec.palette.primary });
+      const covered = coverageOfSpec(spec);
+      // an uploaded design is the card as it is: no details block is added under it or printed over it, and nothing is drawn behind the
+      // guest's QR code and name
+      if (spec.meta?.generator === 'UPLOAD') return renderFromSpec(spec, data);
+      return withInfoFooter(await renderFromSpec(spec, data), data, covered, { ink: spec.palette.text, accent: spec.palette.primary });
     }
     if (isTemplateDesign(data.cardDesign)) {
       let png = await renderFromTemplate(data.cardDesign, data);

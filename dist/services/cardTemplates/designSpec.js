@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.designSpecSchema = exports.elementSchema = exports.qrElementSchema = exports.imageElementSchema = exports.textElementSchema = exports.lineElementSchema = exports.ellipseElementSchema = exports.rectElementSchema = exports.TEXT_ROLES = exports.STATIC_LABEL_IDS = exports.STATIC_LABELS = exports.SPEC_FONTS = exports.MAX_ELEMENTS = exports.MAX_CANVAS = exports.MIN_CANVAS = exports.CANVAS_PRESET_IDS = exports.CANVAS_PRESETS = exports.SPEC_VERSION = void 0;
+exports.designSpecSchema = exports.elementSchema = exports.patchElementSchema = exports.qrElementSchema = exports.imageElementSchema = exports.textElementSchema = exports.lineElementSchema = exports.ellipseElementSchema = exports.rectElementSchema = exports.TEXT_ROLES = exports.STATIC_LABEL_IDS = exports.STATIC_LABELS = exports.SPEC_FONTS = exports.MAX_ELEMENTS = exports.MAX_CANVAS = exports.MIN_CANVAS = exports.CANVAS_PRESET_IDS = exports.CANVAS_PRESETS = exports.SPEC_VERSION = void 0;
 exports.parseDesignSpec = parseDesignSpec;
 exports.safeParseDesignSpec = safeParseDesignSpec;
 exports.normalizeDesignSpec = normalizeDesignSpec;
@@ -132,7 +132,12 @@ exports.qrElementSchema = zod_1.z
     frameColor: hex.optional()
 })
     .strict();
-exports.elementSchema = zod_1.z.discriminatedUnion('type', [exports.rectElementSchema, exports.ellipseElementSchema, exports.lineElementSchema, exports.textElementSchema, exports.imageElementSchema, exports.qrElementSchema]);
+/**
+ * Uploaded designs only: a place in the organizer's picture whose old wording is painted out from the background around it, so the event's
+ * own text (a `text` element on the same spot) can be written there. Nothing else of the picture changes.
+ */
+exports.patchElementSchema = zod_1.z.object({ ...base, type: zod_1.z.literal('patch'), x: coord, y: coord, w: px(4, exports.MAX_CANVAS), h: px(4, exports.MAX_CANVAS) }).strict();
+exports.elementSchema = zod_1.z.discriminatedUnion('type', [exports.rectElementSchema, exports.patchElementSchema, exports.ellipseElementSchema, exports.lineElementSchema, exports.textElementSchema, exports.imageElementSchema, exports.qrElementSchema]);
 exports.designSpecSchema = zod_1.z
     .object({
     version: zod_1.z.literal(exports.SPEC_VERSION),
@@ -151,7 +156,7 @@ exports.designSpecSchema = zod_1.z
     palette: zod_1.z.object({ background: hex, primary: hex, accent: hex, text: hex }).strict(),
     elements: zod_1.z.array(exports.elementSchema).min(1).max(exports.MAX_ELEMENTS),
     /** Where the design came from; informational only, never used for rendering */
-    meta: zod_1.z.object({ generator: zod_1.z.enum(['STITCH', 'MANUAL', 'UPLOAD']).default('MANUAL'), archetype: zod_1.z.string().max(40).optional(), styleNotes: zod_1.z.array(zod_1.z.string().max(80)).max(8).optional() }).strict().default({ generator: 'MANUAL' })
+    meta: zod_1.z.object({ generator: zod_1.z.enum(['STITCH', 'MANUAL', 'UPLOAD']).default('MANUAL'), /** an uploaded design whose own wording is replaced by the event's details (text elements sit on patched areas) */ zones: zod_1.z.boolean().optional(), archetype: zod_1.z.string().max(40).optional(), styleNotes: zod_1.z.array(zod_1.z.string().max(80)).max(8).optional() }).strict().default({ generator: 'MANUAL' })
 })
     .strict()
     .superRefine((spec, ctx) => {

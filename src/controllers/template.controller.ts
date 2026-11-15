@@ -1,5 +1,5 @@
 import { canUseCategory } from '../services/category.service';
-import { createUploadedTemplate, UploadError } from '../services/cardTemplates/uploadedTemplate';
+import { createUploadedTemplate, getTextZones, redetectTextZones, setTextZones, UploadError } from '../services/cardTemplates/uploadedTemplate';
 import { Request, Response } from 'express';
 import { templateService } from '../services/template.service';
 import { installDefaultTemplates, planDefaultTemplates } from '../services/cardTemplates/defaultTemplates';
@@ -29,6 +29,36 @@ export const templateController = {
       if (error instanceof UploadError) return res.status(error.status).json({ success: false, message: error.message });
       console.error('Request failed:', error?.message);
       return res.status(500).json({ error: 'Internal Server Error', message: 'The template could not be saved. Please try again.' });
+    }
+  },
+
+  // The text areas of an uploaded design (title, date and time, venue): read, replaced by hand, or looked for again
+  async getTextZones(req: Request, res: Response) {
+    try {
+      return res.status(200).json({ success: true, data: await getTextZones({ userId: (req as any).user.userId }, String(req.params.id)) });
+    } catch (error: any) {
+      if (error instanceof UploadError) return res.status(error.status).json({ success: false, message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
+    }
+  },
+  async putTextZones(req: Request, res: Response) {
+    try {
+      const template = await setTextZones({ userId: (req as any).user.userId }, String(req.params.id), req.body.zones);
+      return res.status(200).json({ success: true, data: template });
+    } catch (error: any) {
+      if (error instanceof UploadError) return res.status(error.status).json({ success: false, message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'The text areas could not be saved. Please try again.' });
+    }
+  },
+  async detectTextZones(req: Request, res: Response) {
+    try {
+      return res.status(200).json({ success: true, data: await redetectTextZones({ userId: (req as any).user.userId }, String(req.params.id)) });
+    } catch (error: any) {
+      if (error instanceof UploadError) return res.status(error.status).json({ success: false, message: error.message });
+      console.error('Request failed:', error?.message);
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
     }
   },
 

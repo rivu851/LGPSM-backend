@@ -28,6 +28,8 @@ export interface SpecRenderInput {
   scale?: number;
   /** Previews only: empty image frames show their placeholder colour */
   showPlaceholders?: boolean;
+  /** Uploaded designs only: output pixels at the bottom the card keeps free for the details block printed over the picture */
+  bottomInset?: number;
 }
 
 export interface SpecRenderResult {
@@ -188,6 +190,88 @@ async function qrLayer(qr: Buffer, size: number, padding: number, radius: number
   return sharp(frame).composite([{ input: code, left: pad, top: pad }]).png().toBuffer();
 }
 
+/**
+ * Paints the old wording out of the organizer's picture. Each box is refilled from what surrounds it: every column is blended between the
+ * rows just above and just below the box, every row between the columns just left and right, and the two are averaged, so flat colours and
+ * soft gradients simply continue. The picture is untouched everywhere else.
+ */
+export async function paintOutAreas(image: Buffer, boxes: Array<{ x: number; y: number; w: number; h: number }>): Promise<Buffer> {
+  if (boxes.length === 0) return image;
+  const { data, info } = await sharp(image).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const W = info.width, H = info.height;
+  const px = (x: number, y: number) => (Math.min(H - 1, Math.max(0, y)) * W + Math.min(W - 1, Math.max(0, x))) * 4;
+  const edge = 3; // rows / columns averaged on each side
+  for (const b of boxes) {
+    const x0 = Math.max(0, Math.floor(b.x)), y0 = Math.max(0, Math.floor(b.y));
+    const x1 = Math.min(W, Math.ceil(b.x + b.w)), y1 = Math.min(H, Math.ceil(b.y + b.h));
+    if (x1 - x0 < 1 || y1 - y0 < 1) continue;
+    const avg = (cells: number[][]) => [0, 1, 2].map((c) => cells.reduce((t, p) => t + data[px(p[0], p[1]) + c], 0) / cells.length);
+    const top: number[][] = [], bottom: number[][] = [];
+    for (let x = x0; x < x1; x++) {
+      top[x] = avg(Array.from({ length: edge }, (_, i) => [x, y0 - 1 - i]));
+      bottom[x] = avg(Array.from({ length: edge }, (_, i) => [x, y1 + i]));
+    }
+    const left: number[][] = [], right: number[][] = [];
+    for (let y = y0; y < y1; y++) {
+      left[y] = avg(Array.from({ length: edge }, (_, i) => [x0 - 1 - i, y]));
+      right[y] = avg(Array.from({ length: edge }, (_, i) => [x1 + i, y]));
+    }
+    const out = Buffer.alloc((x1 - x0) * (y1 - y0) * 4);
+    for (let y = y0; y < y1; y++) {
+      const ty = (y - y0 + 0.5) / (y1 - y0);
+      for (let x = x0; x < x1; x++) {
+        const tx = (x - x0 + 0.5) / (x1 - x0);
+        const o = ((y - y0) * (x1 - x0) + (x - x0)) * 4;
+        for (let c = 0; c < 3; c++) {
+          const vertical = top[x][c] * (1 - ty) + bottom[x][c] * ty;
+          const horizontal = left[y][c] * (1 - tx) + right[y][c] * tx;
+          out[o + c] = Math.round((vertical + horizontal) / 2);
+        }
+        out[o + 3] = 255;
+      }
+    }
+    // a soft join: the refilled box is blurred a little, so no seam or streak shows where it meets the picture
+    const soft = await sharp(out, { raw: { width: x1 - x0, height: y1 - y0, channels: 4 } }).blur(1.2).raw().toBuffer();
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      const o = ((y - y0) * (x1 - x0) + (x - x0)) * 4;
+      const t = px(x, y);
+      data[t] = soft[o]; data[t + 1] = soft[o + 1]; data[t + 2] = soft[o + 2]; data[t + 3] = 255;
+    }
+  }
+  return sharp(data, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer();
+}
+
+/** Is the picture bright where this box sits? (decides dark or light ink for what is printed there) */
+async function isLightBehind(image: Buffer | null, box: { x: number; y: number; w: number; h: number }, s: number): Promise<boolean> {
+  if (!image) return true;
+  try {
+    const meta = await sharp(image).metadata();
+    const w = meta.width || 0, h = meta.height || 0;
+    const left = Math.max(0, Math.min(w - 1, Math.round(box.x * s)));
+    const top = Math.max(0, Math.min(h - 1, Math.round(box.y * s)));
+    const st = await sharp(image).extract({ left, top, width: Math.max(1, Math.min(w - left, Math.round(box.w * s))), height: Math.max(1, Math.min(h - top, Math.round(box.h * s))) }).flatten({ background: '#FFFFFF' }).stats();
+    const [r, g, b] = st.channels;
+    return 0.2126 * r.mean + 0.7152 * g.mean + 0.0722 * b.mean > 150;
+  } catch {
+    return true;
+  }
+}
+
+/** The guest's QR code printed straight onto the picture: no white tile, only the code's own squares, dark on a light picture and white on a dark one. */
+async function qrOnPicture(qr: Buffer, size: number, light: boolean, s: number): Promise<Buffer> {
+  const px = Math.max(1, Math.round(size * s));
+  let source = qr;
+  try { source = await sharp(qr).trim({ threshold: 10 }).png().toBuffer(); } catch { source = qr; }
+  const { data, info } = await sharp(source).resize(px, px, { fit: 'fill', kernel: 'nearest' }).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const ink = light ? 0 : 255;
+  const out = Buffer.alloc(info.width * info.height * 4);
+  for (let i = 0; i < info.width * info.height; i++) {
+    out[i * 4] = ink; out[i * 4 + 1] = ink; out[i * 4 + 2] = ink;
+    out[i * 4 + 3] = 255 - data[i]; // the code's dark squares are opaque, its light squares and margin are see-through
+  }
+  return sharp(out, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+}
+
 /** Text for a text element: a fixed phrase for labels, otherwise the event's value for its role. */
 function textFor(el: SpecTextElement, texts: SpecTexts): string {
   if (el.role === 'label') return el.label ? STATIC_LABELS[el.label] : '';
@@ -227,11 +311,65 @@ export function outputSize(spec: DesignSpec, scale = 1): { width: number; height
   return { width: Math.round(spec.canvas.width * s), height: Math.round(spec.canvas.height * s), scale: s };
 }
 
+/** The organizer's own picture, cropped to the card, or null when the spec has none or it cannot be read */
+async function loadBackgroundImage(spec: DesignSpec, width: number, height: number, warnings: string[]): Promise<Buffer | null> {
+  if (!spec.backgroundMedia) return null;
+  const data = await resolveImageKeyBase64(spec.backgroundMedia);
+  const comma = data.indexOf(',');
+  if (comma <= 0) { warnings.push('The uploaded design could not be loaded'); return null; }
+  try {
+    return await sharp(Buffer.from(data.slice(comma + 1), 'base64'), { failOn: 'none', limitInputPixels: 40_000_000 }).rotate().resize(width, height, { fit: 'cover', position: 'centre' }).png().toBuffer();
+  } catch {
+    warnings.push('The uploaded design could not be read');
+    return null;
+  }
+}
+
+/**
+ * An uploaded design is the card as it is: the guest's QR code and name go straight onto the picture. There is no white panel behind
+ * them (older uploads were saved with one: it is left out here), and the name takes dark or light type depending on how bright the picture
+ * is where it sits. The QR keeps its thin white border: a code needs the quiet margin to scan.
+ */
+async function withoutUploadPanel(spec: DesignSpec, image: Buffer | null, s: number, bottomInset = 0): Promise<DesignSpec> {
+  if (spec.meta.generator !== 'UPLOAD') return spec;
+  // Nothing is drawn over the organizer's picture except what is personal to each guest (the QR code and the name): the white panel older uploads
+  // were saved with, any shade or gradient, and the event's own details typed over the picture are all left out.
+  // (A design whose wording is replaced in place keeps its text elements: they sit on areas painted out of the picture.)
+  const isOverlay = (e: DesignSpec['elements'][number]) => e.type === 'rect' || e.type === 'ellipse' || (!spec.meta.zones && e.type === 'text' && e.role !== 'inviteeName' && e.role !== 'inviteeMeta');
+  const elements = await Promise.all(spec.elements.filter((e) => !isOverlay(e)).map(async (e) => {
+    if (e.type !== 'text' || (e.role !== 'inviteeName' && e.role !== 'inviteeMeta') || !image) return e;
+    try {
+      const meta = await sharp(image).metadata();
+      const w = meta.width || 0, h = meta.height || 0;
+      const box = { left: Math.max(0, Math.min(w - 1, Math.round(e.x * s))), top: Math.max(0, Math.min(h - 1, Math.round(e.y * s))), width: 0, height: 0 };
+      box.width = Math.max(1, Math.min(w - box.left, Math.round(e.w * s)));
+      box.height = Math.max(1, Math.min(h - box.top, Math.round(e.h * s)));
+      const st = await sharp(image).extract(box).stats();
+      const [r, g, b] = st.channels;
+      const light = 0.2126 * r.mean + 0.7152 * g.mean + 0.0722 * b.mean > 150;
+      return { ...e, color: e.role === 'inviteeName' ? (light ? '#111111' : '#FFFFFF') : (light ? '#333333' : '#EDEDED') };
+    } catch {
+      return e;
+    }
+  }));
+  // leave room at the bottom for the details block that is printed over the picture: the guest's QR code and name move up to clear it
+  const bottomOf = (e: DesignSpec['elements'][number]) => (e.type === 'qr' ? e.y + e.size : 'y' in e && 'h' in e ? e.y + e.h : 0);
+  const free = spec.canvas.height - bottomInset / s;
+  const lowest = elements.reduce((m, e) => Math.max(m, bottomOf(e)), 0);
+  const shift = bottomInset > 0 && lowest > free - 8 ? lowest - (free - 8) : 0;
+  const moved = shift > 0 ? elements.map((e) => ('y' in e ? ({ ...e, y: Math.max(0, e.y - shift) } as typeof e) : e)) : elements;
+  return { ...spec, elements: moved };
+}
+
 export async function renderDesignSpec(input: SpecRenderInput): Promise<SpecRenderResult> {
-  const { spec } = input;
   await ensureCardFonts();
-  const { width, height, scale: s } = outputSize(spec, input.scale);
+  const { width, height, scale: s } = outputSize(input.spec, input.scale);
   const warnings: string[] = [];
+  const backgroundImage = await loadBackgroundImage(input.spec, width, height, warnings);
+  // the old wording of an uploaded design is painted out of the picture before anything is drawn on it
+  const patches = input.spec.elements.filter((e) => e.type === 'patch').map((e) => ({ x: (e as { x: number }).x * s, y: (e as { y: number }).y * s, w: (e as { w: number }).w * s, h: (e as { h: number }).h * s }));
+  const cleanedImage = backgroundImage && patches.length ? await paintOutAreas(backgroundImage, patches) : backgroundImage;
+  const spec = await withoutUploadPanel(input.spec, cleanedImage, s, input.bottomInset ?? 0);
 
   const layers: Array<{ input: Buffer; left: number; top: number }> = [];
   let chunk = new SvgChunk(s);
@@ -300,7 +438,12 @@ export async function renderDesignSpec(input: SpecRenderInput): Promise<SpecRend
           break;
         }
         flush();
-        layers.push({ input: await qrLayer(input.qr, el.size, el.padding, el.radius, el.frameColor || '#FFFFFF', s), left: Math.round(el.x * s), top: Math.round(el.y * s) });
+        const onPicture = spec.meta.generator === 'UPLOAD' && !!cleanedImage;
+        layers.push({
+          input: onPicture ? await qrOnPicture(input.qr, el.size, await isLightBehind(cleanedImage, { x: el.x, y: el.y, w: el.size, h: el.size }, s), s) : await qrLayer(input.qr, el.size, el.padding, el.radius, el.frameColor || '#FFFFFF', s),
+          left: Math.round(el.x * s),
+          top: Math.round(el.y * s)
+        });
         break;
       }
     }
@@ -311,18 +454,7 @@ export async function renderDesignSpec(input: SpecRenderInput): Promise<SpecRend
   const fill = bg.fill(spec.background, { x: 0, y: 0, w: spec.canvas.width, h: spec.canvas.height });
   bg.add(`<rect width="${width}" height="${height}" ${fill}/>`);
   // an uploaded design goes straight over the plain background, under everything else
-  if (spec.backgroundMedia) {
-    const data = await resolveImageKeyBase64(spec.backgroundMedia);
-    const comma = data.indexOf(',');
-    if (comma > 0) {
-      try {
-        const image = await sharp(Buffer.from(data.slice(comma + 1), 'base64'), { failOn: 'none', limitInputPixels: 40_000_000 }).rotate().resize(width, height, { fit: 'cover', position: 'centre' }).png().toBuffer();
-        layers.unshift({ input: image, left: 0, top: 0 });
-      } catch {
-        warnings.push('The uploaded design could not be read');
-      }
-    } else warnings.push('The uploaded design could not be loaded');
-  }
+  if (cleanedImage) layers.unshift({ input: cleanedImage, left: 0, top: 0 });
   const png = await sharp(bg.toSvg(width, height)).composite(layers).png({ compressionLevel: PNG_LEVEL }).toBuffer();
   return { png, width, height, warnings };
 }

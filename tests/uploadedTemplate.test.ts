@@ -65,19 +65,27 @@ describe('upload your own template', () => {
     expect(await decodeQr(prev.body)).toMatch(/^https?:\/\//);
   });
 
-  it('an admin upload is dynamic: event title, date, venue and guest name are drawn from the event, and follow the display flags', async () => {
+  it('an admin upload is dynamic: it is a draft until the design\'s wording is found or marked, then it is shared and the event\'s details replace that wording', async () => {
     const key = await upload(admin);
     const res = await make(admin, { name: 'Admin Dynamic', imageKey: key });
     expect(res.status).toBe(201);
-    // shared with every organizer, who can preview it with their own event's details
-    expect((await request(app).get('/api/v1/templates').set(auth(a))).body.data.map((x: any) => x.name)).toContain('Admin Dynamic');
-    expect((await request(app).post(`/api/v1/templates/${res.body.data._id}/preview`).set(auth(a)).send({ title: 'Mine' })).status).toBe(200);
+    let t: any = await Template.findById(res.body.data._id).lean();
+    expect(t.templateData).toMatchObject({ uploaded: true, dynamicDetails: true, textAreas: 'NONE' });
+    // a plain red picture has no wording to find: nothing is drawn over the picture, and organizers are not offered it yet
+    expect(t.designSpec.elements.filter((e: any) => e.type === 'text').map((e: any) => e.role)).toEqual(['inviteeName', 'inviteeMeta']);
+    expect(t.isPublished).toBe(false);
+    expect((await request(app).get('/api/v1/templates').set(auth(a))).body.data.map((x: any) => x.name)).not.toContain('Admin Dynamic');
     // admins' own uploads are listed for admins
     expect((await request(app).get('/api/v1/templates').set(auth(admin))).body.data.map((x: any) => x.name)).toContain('Admin Dynamic');
-    const t: any = await Template.findById(res.body.data._id).lean();
-    expect(t.templateData).toMatchObject({ uploaded: true, dynamicDetails: true });
-    const roles = t.designSpec.elements.filter((e: any) => e.type === 'text').map((e: any) => e.role);
-    expect(roles).toEqual(expect.arrayContaining(['title', 'dateTime', 'venue', 'inviteeName', 'inviteeMeta']));
+
+    // marking the title area makes it a published template every organizer can use
+    const zone = { role: 'title', x: 100, y: 800, w: 880, h: 160, lines: 1, color: '#ffffff', fontFamily: 'Inter', fontWeight: 700, align: 'center' };
+    expect((await request(app).put(`/api/v1/templates/${res.body.data._id}/text-zones`).set(auth(admin)).send({ zones: [zone] })).status).toBe(200);
+    t = await Template.findById(res.body.data._id).lean();
+    expect(t.isPublished).toBe(true);
+    expect(t.designSpec.elements.filter((e: any) => e.type === 'text').map((e: any) => e.role)).toEqual(expect.arrayContaining(['title', 'inviteeName', 'inviteeMeta']));
+    expect((await request(app).get('/api/v1/templates').set(auth(a))).body.data.map((x: any) => x.name)).toContain('Admin Dynamic');
+    expect((await request(app).post(`/api/v1/templates/${res.body.data._id}/preview`).set(auth(a)).send({ title: 'Mine' })).status).toBe(200);
     // an organizer's upload stays "finished design + QR + name"
     const org: any = await Template.findById((await make(a, { name: 'Org Plain', imageKey: await upload(a) })).body.data._id).lean();
     expect(org.designSpec.elements.some((e: any) => e.role === 'title')).toBe(false);
@@ -85,7 +93,7 @@ describe('upload your own template', () => {
     const body = { title: 'Dynamic Gala Night', startIso: '2027-03-05T12:30:00.000Z', venue: 'Grand Hall' };
     const render = (extra: object) => request(app).post(`/api/v1/templates/${res.body.data._id}/preview`).set(auth(admin)).send({ ...body, ...extra }).buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
     const full = await render({});
-    const hidden = await render({ cardDisplay: { title: false, dateTime: false, location: false } });
+    const hidden = await render({ cardDisplay: { title: false } });
     expect(full.status).toBe(200);
     expect(hidden.status).toBe(200);
     expect(Buffer.compare(full.body, hidden.body)).not.toBe(0);

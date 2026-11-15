@@ -93,19 +93,15 @@ interface Placed { kind: FooterRow['kind']; lines: string[]; size: number; basel
  * (whatever is included, hidden or not yet typed), so the card keeps the same size and the artwork never changes scale when a
  * detail is switched on or off. Without it the extension is only as tall as what is printed.
  */
-export async function appendInfoFooter(png: Buffer, allRows: FooterRow[], style: FooterStyle, reserve: FooterRow['kind'][] = []): Promise<Buffer> {
+/** The lines of the details block laid out for a card this wide: where each baseline sits and how tall the block is */
+async function layoutFooter(width: number, allRows: FooterRow[], reserve: FooterRow['kind'][]): Promise<{ rows: FooterRow[]; placed: Placed[]; footerHeight: number } | null> {
   const rows = allRows.map((r) => ({ ...r, text: clean(r.text) })).filter((r) => r.text);
-  if (!rows.length && !reserve.length) return png;
-
+  if (!rows.length && !reserve.length) return null;
   await ensureCardFonts();
-  const info = await sharp(png).metadata();
-  const width = info.width || 0;
-  const height = info.height || 0;
-  if (!width || !height) return png;
   const k = width / REF_WIDTH;
   const maxWidth = (REF_WIDTH - 2 * SIDE) * k;
 
-  // 1. lay the lines out (colour does not matter yet)
+  // lay the lines out (colour does not matter yet)
   const placed: Placed[] = [];
   let y = 18 * k; // padding above the first line
   for (const row of rows) {
@@ -133,6 +129,46 @@ export async function appendInfoFooter(png: Buffer, allRows: FooterRow[], style:
       ry += st.size * k + (st.lines - 1) * st.size * k * 1.25 + st.gap * k;
     }
     footerHeight = Math.max(footerHeight, Math.ceil(ry + 22 * k));
+  }
+  return { rows, placed, footerHeight };
+}
+
+/** How tall the details block is for a card this wide (the same for every guest of an event), so a design can leave room for it */
+export async function footerHeightFor(width: number, allRows: FooterRow[], reserve: FooterRow['kind'][] = []): Promise<number> {
+  return (await layoutFooter(width, allRows, reserve))?.footerHeight ?? 0;
+}
+
+export async function appendInfoFooter(png: Buffer, allRows: FooterRow[], style: FooterStyle, reserve: FooterRow['kind'][] = [], overlay = false): Promise<Buffer> {
+  const info = await sharp(png).metadata();
+  const width = info.width || 0;
+  const height = info.height || 0;
+  if (!width || !height) return png;
+  const laid = await layoutFooter(width, allRows, reserve);
+  if (!laid) return png;
+  const { placed, footerHeight } = laid;
+
+  // An uploaded design is the card as it is: the details are printed straight onto its picture (no band is added, nothing is
+  // drawn behind them), in dark or light type depending on how bright the picture is where they sit.
+  if (overlay) {
+    const top = Math.max(0, height - footerHeight);
+    const stats = await sharp(png).extract({ left: 0, top, width, height: Math.min(footerHeight, height) }).flatten({ background: '#FFFFFF' }).stats();
+    const [r, g, b] = stats.channels;
+    const darkPicture = luminance(hexOf(r.mean, g.mean, b.mean)) < 0.3;
+    const ink = darkPicture ? { ink: '#FFFFFF', accent: '#FFE2C2', muted: '#F2F2F2' } : { ink: '#111111', accent: style.accent, muted: '#222222' };
+    const fam = escapeXml(fontStack(FAMILY));
+    const parts: string[] = [];
+    for (const p of placed) {
+      const st = ROW_STYLE[p.kind];
+      if (p.kind === 'contact') {
+        const full = `${LABEL}${p.raw}`;
+        const content = p.lines[0] === full ? `${escapeXml(LABEL)}<tspan font-weight="700" fill="${ink.ink}">${escapeXml(p.raw)}</tspan>` : escapeXml(p.lines[0]);
+        parts.push(`<text x="${width / 2}" y="${p.baseline[0]}" text-anchor="middle" font-family="${fam}" font-weight="${st.weight}" font-size="${p.size}" fill="${ink.muted}">${content}</text>`);
+        continue;
+      }
+      p.lines.forEach((line, i) => parts.push(`<text x="${width / 2}" y="${p.baseline[i]}" text-anchor="middle" font-family="${fam}" font-weight="${st.weight}" font-size="${p.size}" fill="${ink[st.tone]}">${escapeXml(line)}</text>`));
+    }
+    const layer = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${footerHeight}" viewBox="0 0 ${width} ${footerHeight}">${parts.join('')}</svg>`);
+    return sharp(png).composite([{ input: layer, top, left: 0 }]).png({ compressionLevel: 6 }).toBuffer();
   }
 
   // 2. The extension carries the artwork on: the card's own bottom edge is stretched down and softened, so its colour or

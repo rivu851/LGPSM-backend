@@ -33,6 +33,41 @@ exports.templateController = {
             return res.status(500).json({ error: 'Internal Server Error', message: 'The template could not be saved. Please try again.' });
         }
     },
+    // The text areas of an uploaded design (title, date and time, venue): read, replaced by hand, or looked for again
+    async getTextZones(req, res) {
+        try {
+            return res.status(200).json({ success: true, data: await (0, uploadedTemplate_1.getTextZones)({ userId: req.user.userId }, String(req.params.id)) });
+        }
+        catch (error) {
+            if (error instanceof uploadedTemplate_1.UploadError)
+                return res.status(error.status).json({ success: false, message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
+        }
+    },
+    async putTextZones(req, res) {
+        try {
+            const template = await (0, uploadedTemplate_1.setTextZones)({ userId: req.user.userId }, String(req.params.id), req.body.zones);
+            return res.status(200).json({ success: true, data: template });
+        }
+        catch (error) {
+            if (error instanceof uploadedTemplate_1.UploadError)
+                return res.status(error.status).json({ success: false, message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'The text areas could not be saved. Please try again.' });
+        }
+    },
+    async detectTextZones(req, res) {
+        try {
+            return res.status(200).json({ success: true, data: await (0, uploadedTemplate_1.redetectTextZones)({ userId: req.user.userId }, String(req.params.id)) });
+        }
+        catch (error) {
+            if (error instanceof uploadedTemplate_1.UploadError)
+                return res.status(error.status).json({ success: false, message: error.message });
+            console.error('Request failed:', error?.message);
+            return res.status(500).json({ error: 'Internal Server Error', message: 'Something went wrong. Please try again.' });
+        }
+    },
     async getTemplates(req, res) {
         try {
             const categoryId = req.query.categoryId;

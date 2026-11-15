@@ -290,12 +290,12 @@ async function buildClassicSVG(data) {
  * The details block under the artwork. Whatever the template's artwork already prints (its coverage) is left alone; everything
  * else the event has to say (dates, times, place, guest lines) is composed here, and the contact line always closes the card.
  */
-function withInfoFooter(png, data, covered, style) {
+function footerPlan(data, covered) {
     // every kind of row this design can carry, found with a full set of sample details (whatever the event actually includes)
     const reserve = (0, coverage_1.detailRows)({ title: 'x', startIso: '2030-01-01T10:00:00.000Z', endIso: '2030-01-02T12:00:00.000Z', venue: 'x', locationSub: 'x', isVirtual: false, contactNumber: '9876543210', guestName: 'x', guestMeta: 'x' }, covered).map((r) => r.kind);
     const show = (0, cardDisplay_1.cardDisplayOf)(data.cardDisplay);
     const hidden = new Set([...(show.title ? [] : ['title']), ...(show.dateTime ? [] : ['when']), ...(show.location ? [] : ['where'])]);
-    return (0, infoFooter_1.appendInfoFooter)(png, (0, coverage_1.detailRows)({
+    const rows = (0, coverage_1.detailRows)({
         title: data.event.title,
         startIso: data.event.startIso,
         endIso: data.event.endIso,
@@ -305,7 +305,17 @@ function withInfoFooter(png, data, covered, style) {
         contactNumber: data.event.contactNumber,
         guestName: data.invitee.name,
         guestMeta: data.invitee.companyName
-    }, covered).filter((row) => !hidden.has(row.kind)), style, reserve);
+    }, covered).filter((row) => !hidden.has(row.kind));
+    return { rows, reserve };
+}
+/**
+ * The details block under the artwork. Whatever the template's artwork already prints (its coverage) is left alone; everything
+ * else the event has to say (dates, times, place, guest lines) is composed here, and the contact line always closes the card.
+ * `overlay` (an uploaded design): the block is printed over the picture's bottom with nothing behind it, instead of being added below.
+ */
+function withInfoFooter(png, data, covered, style, overlay = false) {
+    const { rows, reserve } = footerPlan(data, covered);
+    return (0, infoFooter_1.appendInfoFooter)(png, rows, style, reserve, overlay);
 }
 const dataUrlToBuffer = (dataUrl) => {
     const match = dataUrl ? /^data:[^;]+;base64,(.+)$/.exec(dataUrl) : null;
@@ -346,7 +356,7 @@ async function renderFromTemplate(design, data) {
     });
 }
 // A custom (AI-generated) design: the stored layout with this event's details and this guest's own QR code
-async function renderFromSpec(fullSpec, data) {
+async function renderFromSpec(fullSpec, data, bottomInset = 0) {
     const show = (0, cardDisplay_1.cardDisplayOf)(data.cardDisplay);
     // a hidden QR takes its frame and its "scan" caption with it, and the card closes up where it was (see qrCollapse.ts)
     const collapse = show.qr ? null : (0, qrCollapse_1.qrCollapsePlan)(fullSpec);
@@ -375,7 +385,8 @@ async function renderFromSpec(fullSpec, data) {
         qr,
         photo: eventImage,
         logo: eventImage || dataUrlToBuffer(getLogoBase64()),
-        showPlaceholders: data.isPreview === true
+        showPlaceholders: data.isPreview === true,
+        bottomInset
     });
     return result.png;
 }
@@ -386,9 +397,13 @@ exports.invitationCardService = {
     },
     async generateInvitationCardPNG(data) {
         if (data.designSpec) {
-            const png = await renderFromSpec(data.designSpec, data);
             const spec = data.designSpec;
-            return withInfoFooter(png, data, (0, coverage_1.coverageOfSpec)(spec), { ink: spec.palette.text, accent: spec.palette.primary });
+            const covered = (0, coverage_1.coverageOfSpec)(spec);
+            // an uploaded design is the card as it is: no details block is added under it or printed over it, and nothing is drawn behind the
+            // guest's QR code and name
+            if (spec.meta?.generator === 'UPLOAD')
+                return renderFromSpec(spec, data);
+            return withInfoFooter(await renderFromSpec(spec, data), data, covered, { ink: spec.palette.text, accent: spec.palette.primary });
         }
         if ((0, renderer_1.isTemplateDesign)(data.cardDesign)) {
             let png = await renderFromTemplate(data.cardDesign, data);

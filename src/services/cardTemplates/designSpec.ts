@@ -138,7 +138,13 @@ export const qrElementSchema = z
   })
   .strict();
 
-export const elementSchema = z.discriminatedUnion('type', [rectElementSchema, ellipseElementSchema, lineElementSchema, textElementSchema, imageElementSchema, qrElementSchema]);
+/**
+ * Uploaded designs only: a place in the organizer's picture whose old wording is painted out from the background around it, so the event's
+ * own text (a `text` element on the same spot) can be written there. Nothing else of the picture changes.
+ */
+export const patchElementSchema = z.object({ ...base, type: z.literal('patch'), x: coord, y: coord, w: px(4, MAX_CANVAS), h: px(4, MAX_CANVAS) }).strict();
+
+export const elementSchema = z.discriminatedUnion('type', [rectElementSchema, patchElementSchema, ellipseElementSchema, lineElementSchema, textElementSchema, imageElementSchema, qrElementSchema]);
 export type SpecElement = z.infer<typeof elementSchema>;
 export type SpecTextElement = z.infer<typeof textElementSchema>;
 
@@ -160,7 +166,7 @@ export const designSpecSchema = z
     palette: z.object({ background: hex, primary: hex, accent: hex, text: hex }).strict(),
     elements: z.array(elementSchema).min(1).max(MAX_ELEMENTS),
     /** Where the design came from; informational only, never used for rendering */
-    meta: z.object({ generator: z.enum(['STITCH', 'MANUAL', 'UPLOAD']).default('MANUAL'), archetype: z.string().max(40).optional(), styleNotes: z.array(z.string().max(80)).max(8).optional() }).strict().default({ generator: 'MANUAL' })
+    meta: z.object({ generator: z.enum(['STITCH', 'MANUAL', 'UPLOAD']).default('MANUAL'), /** an uploaded design whose own wording is replaced by the event's details (text elements sit on patched areas) */ zones: z.boolean().optional(), archetype: z.string().max(40).optional(), styleNotes: z.array(z.string().max(80)).max(8).optional() }).strict().default({ generator: 'MANUAL' })
   })
   .strict()
   .superRefine((spec, ctx) => {
