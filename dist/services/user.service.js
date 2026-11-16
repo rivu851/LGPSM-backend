@@ -268,11 +268,8 @@ exports.userService = {
                 throw { statusCode: 400, message: 'This person is already one of your system users.' };
             const inactiveStaff = mine.find((u) => u.isActive === false);
             if (inactiveStaff) {
-                // Bringing a deactivated account back is an administrator's decision. An organizer adding the same person again would do exactly
-                // that (by reusing the old account, or by making a new one to get round the deactivation), so it is refused.
-                if (actor.role !== User_1.Role.ADMIN) {
-                    throw { statusCode: 403, code: 'STAFF_DEACTIVATED_ADMIN_ONLY', message: 'This person was deactivated earlier. Only an administrator can bring them back; please ask one to reactivate them.' };
-                }
+                // A person the organizer removed earlier can be added again: the removed account comes back (with the new details), so an organizer
+                // can add, assign and remove the same person as often as needed.
                 const back = await reactivateStaff(inactiveStaff, data, ownerId);
                 await auditStateChange(actor, inactiveStaff, true, 'RE_ADD');
                 return back;

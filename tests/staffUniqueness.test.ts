@@ -66,15 +66,10 @@ describe('one listing of a person per organizer, even under simultaneous request
     expect(first.status).toBe(201);
     expect((await request.delete(`/api/users/${first.body.data._id}`).set(bearer(orgA))).status).toBe(200);
     expect(await count('again@x.test', orgA)).toBe(0);
-    // the organizer may not bring the person back, by re-adding them or otherwise
+    // the organizer may add the same person again: the removed account is reused (add, assign and remove can be repeated)
     const again = await request.post('/api/users').set(bearer(orgA)).send(staffBody('again@x.test', 70));
-    expect(again.status).toBe(403);
-    expect(again.body.code).toBe('STAFF_DEACTIVATED_ADMIN_ONLY');
-    expect(await count('again@x.test', orgA)).toBe(0);
-    // an administrator can: the removed account is reused
-    const back = await request.post('/api/users').set(bearer(admin)).send(staffBody('again@x.test', 70, { organizerId: String(orgA._id) }));
-    expect(back.status).toBe(201);
-    expect(String(back.body.data._id)).toBe(first.body.data._id);
+    expect(again.status).toBe(201);
+    expect(String(again.body.data._id)).toBe(first.body.data._id);
     expect(await count('again@x.test', orgA)).toBe(1);
   });
 

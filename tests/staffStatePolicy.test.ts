@@ -55,12 +55,12 @@ describe('staff on/off policy, on every route that can change it', () => {
     expect((await User.findById(s._id))!.fullName).toBe(s.fullName);
     expect(await entries(s)).toHaveLength(0);
   });
-  it('an organizer cannot reactivate by adding the person again (a new account would get round the deactivation just the same)', async () => {
+  it('an organizer can add a removed person again: the same account comes back', async () => {
     const s = await mkStaff(orgA, false);
     const res = await request.post('/api/users').set(bearer(orgA)).send({ fullName: 'Re Added', email: s.email, role: 'SYSTEM_USER', password: 'ReAdded12345!', phone: '919400009999' });
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('STAFF_DEACTIVATED_ADMIN_ONLY');
-    expect(await state(s)).toBe(false);
+    expect(res.status).toBe(201);
+    expect(String(res.body.data._id)).toBe(String(s._id));
+    expect(await state(s)).toBe(true);
     expect(await User.countDocuments({ email: s.email })).toBe(1);
   });
   it('an organizer cannot reach another organizer\'s staff in either direction', async () => {
