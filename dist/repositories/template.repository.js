@@ -7,10 +7,14 @@ exports.templateRepository = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const Template_1 = require("../models/Template");
 const User_1 = require("../models/User");
+const masterCard_1 = require("../constants/masterCard");
 // A template only needs its category's name. The subcategory list is left out: it can hold other organizers' private subcategories.
 const CATEGORY_FIELDS = 'name description isActive';
 function listQuery(categoryId, viewer, options, adminIds) {
     const query = { isActive: true };
+    // while the master card is the only design, it is the only template listed
+    if ((0, masterCard_1.masterCardOnly)())
+        query.cardDesign = 'MASTER';
     if (categoryId)
         query.categoryId = categoryId;
     if (options.kind)

@@ -8,6 +8,7 @@ const Category_1 = require("../../models/Category");
 const User_1 = require("../../models/User");
 const designs_1 = require("./designs");
 const designSpec_1 = require("./designSpec");
+const masterCard_1 = require("../../constants/masterCard");
 /**
  * Everything about an event's *type* that card rendering needs, looked up once per send rather than per guest:
  * the category and subcategory names, and the design (the chosen template's, else the one that suits the type).
@@ -31,8 +32,10 @@ async function loadCardContext(event) {
     // unreadable one) falls back to the design that suits the event type, so a card is always produced.
     let designSpec;
     let templateDesign = template?.cardDesign;
-    if (template?.cardDesign === 'CUSTOM') {
-        const usable = template.isActive !== false &&
+    // (while the master card is the only design, no custom or uploaded design is drawn: every event's card is the master card)
+    if (template?.cardDesign === 'CUSTOM' && !(0, masterCard_1.masterCardOnly)()) {
+        // (a "retired" template is no longer offered in the template list, but the events that already use it keep their card)
+        const usable = (template.isActive !== false || template.templateData?.retired === true) &&
             (!template.ownerId || (template.isSystemTemplate && template.isPublished !== false) || String(template.ownerId) === String(event.organizerId));
         const parsed = usable ? (0, designSpec_1.safeParseDesignSpec)(template.designSpec) : null;
         if (parsed?.ok && parsed.spec.kind === 'INVITATION')

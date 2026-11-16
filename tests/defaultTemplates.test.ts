@@ -31,71 +31,50 @@ beforeEach(async () => {
   await Promise.all([Category.deleteMany({}), Template.deleteMany({}), Media.deleteMany({})]);
 });
 
-describe('installing the designers\' default templates', () => {
-  it('plans every template and category on an empty database, without writing anything', async () => {
+describe('installing the default templates (the master card is the only one for now)', () => {
+  it('offers only the master card, tied to no event type', () => {
+    expect(DEFAULT_TEMPLATES.map((t) => [t.name, t.cardDesign, t.category])).toEqual([['Master Card', 'MASTER', undefined]]);
+  });
+
+  it('plans the master card on an empty database, without writing anything', async () => {
     const plan = await planDefaultTemplates();
-    expect(plan.templatesToCreate.map((t) => t.name).sort()).toEqual(DEFAULT_TEMPLATES.map((t) => t.name).sort());
-    expect(plan.categoriesToCreate.sort()).toEqual(['Corporate', 'General', 'Personal', 'Technology']);
+    expect(plan.templatesToCreate.map((t) => t.name)).toEqual(['Master Card']);
+    expect(plan.categoriesToCreate).toEqual([]);
     expect(await Template.countDocuments()).toBe(0);
     expect(await Category.countDocuments()).toBe(0);
   });
 
-  it('works on a database like the live one and leaves what exists exactly as it was', async () => {
+  it('leaves what exists exactly as it was and creates no category', async () => {
     const personal = await Category.create({ name: 'Personal', isActive: true, subcategories: [{ name: 'Birthday' }] });
-    await Category.create({ name: 'Technology', isActive: true });
-    await Category.create({ name: 'General', isActive: true });
-    const birthdayId = (personal as any).subcategories[0]._id;
-    const existing = await Template.create({ name: 'Bday Template 1', categoryId: personal._id, subcategoryId: birthdayId });
+    const existing = await Template.create({ name: 'Bday Template 1', categoryId: personal._id });
     const before = await Template.findById(existing._id).lean();
-
-    const plan = await planDefaultTemplates();
-    expect(plan.categoriesToCreate).toEqual(['Corporate']);
-    expect(plan.subcategoriesToCreate).toEqual(expect.arrayContaining([{ category: 'Personal', subcategory: 'Wedding' }, { category: 'Personal', subcategory: 'Rice Ceremony' }]));
-
     const result = await installDefaultTemplates(String(admin._id));
-    expect(result.created.sort()).toEqual(DEFAULT_TEMPLATES.map((t) => t.name).sort());
-
-    expect(await Template.findById(existing._id).lean()).toEqual(before); // untouched
-    const after = await Category.findById(personal._id);
-    expect(after!.subcategories.map((s) => s.name).sort()).toEqual(['Birthday', 'Rice Ceremony', 'Wedding']);
-    expect(String(after!.subcategories.find((s) => s.name === 'Birthday')!._id)).toBe(String(birthdayId)); // same id: events keep pointing at it
-    expect(await Category.countDocuments({ name: /^personal$/i })).toBe(1); // no duplicate category
+    expect(result.created).toEqual(['Master Card']);
+    expect(await Template.findById(existing._id).lean()).toEqual(before);
+    expect(await Category.countDocuments()).toBe(1);
   });
 
-  it('creates published templates mapped to the right event type, each with a preview image', async () => {
+  it('creates a published master card for every event type, with a preview image', async () => {
     await installDefaultTemplates(String(admin._id));
     const templates = await Template.find({}).lean();
-    expect(templates).toHaveLength(DEFAULT_TEMPLATES.length);
-    const birthday = templates.find((t) => t.name === 'Birthday Party')!;
-    expect(birthday).toMatchObject({ cardDesign: 'BIRTHDAY', isPublished: true, isActive: true, isSystemTemplate: true });
-    const personal = await Category.findOne({ name: 'Personal' });
-    expect(String(birthday.categoryId)).toBe(String(personal!._id));
-    expect(String(birthday.subcategoryId)).toBe(String(personal!.subcategories.find((s) => s.name === 'Birthday')!._id));
-
-    for (const t of templates) {
-      expect(t.previewImageKey).toMatch(/^media:[0-9a-f]{24}$/);
-      const media = await Media.findById(t.previewImageKey!.slice(6)).select('+data');
-      expect(media!.contentType).toBe('image/jpeg');
-      const meta = await sharp(media!.data).metadata();
-      expect(meta.format).toBe('jpeg');
-      expect(meta.width).toBeGreaterThan(300);
-    }
+    expect(templates).toHaveLength(1);
+    expect(templates[0]).toMatchObject({ name: 'Master Card', cardDesign: 'MASTER', isPublished: true, isActive: true, isSystemTemplate: true });
+    expect(templates[0].categoryId).toBeUndefined();
+    expect(templates[0].previewImageKey).toMatch(/^media:[0-9a-f]{24}$/);
+    const media = await Media.findById(templates[0].previewImageKey!.slice(6)).select('+data');
+    expect(media!.contentType).toBe('image/jpeg');
+    const meta = await sharp(media!.data).metadata();
+    expect(meta.format).toBe('jpeg');
+    expect(meta.width).toBeGreaterThan(300);
   });
 
   it('is safe to run again: nothing is created twice', async () => {
     await installDefaultTemplates(String(admin._id));
     const second = await installDefaultTemplates(String(admin._id));
     expect(second.created).toEqual([]);
-    expect(await Template.countDocuments()).toBe(DEFAULT_TEMPLATES.length);
-    expect(await Media.countDocuments()).toBe(DEFAULT_TEMPLATES.filter((d, i, a) => a.findIndex((x) => x.key === d.key) === i).length);
+    expect(await Template.countDocuments()).toBe(1);
+    expect(await Media.countDocuments()).toBe(1);
     expect((await planDefaultTemplates()).templatesToCreate).toEqual([]);
-  });
-
-  it('matches category names ignoring case and does not create a second one', async () => {
-    await Category.create({ name: 'personal', isActive: true, subcategories: [{ name: 'BIRTHDAY' }] });
-    await installDefaultTemplates(String(admin._id));
-    expect(await Category.countDocuments({ name: /^personal$/i })).toBe(1);
-    expect((await Category.findOne({ name: /^personal$/i }))!.subcategories.filter((s) => /^birthday$/i.test(s.name))).toHaveLength(1);
   });
 });
 
@@ -119,12 +98,12 @@ describe('default templates API', () => {
 
     const list = await request(app).get('/api/v1/templates').set('Authorization', bearer(organizer));
     expect(list.status).toBe(200);
-    expect(list.body.data.map((t: any) => t.name)).toEqual(expect.arrayContaining(['Birthday Party', 'Rice Ceremony', 'Wedding Reception', 'Corporate Awards']));
+    expect(list.body.data.map((t: any) => t.name)).toEqual(['Master Card']);
   });
 
   it('serves each preview image to anyone who can see the template', async () => {
     await installDefaultTemplates(String(admin._id));
-    const t = await Template.findOne({ name: 'Rice Ceremony' }).lean();
+    const t = await Template.findOne({ name: 'Master Card' }).lean();
     const res = await request(app).get(`/api/v1/media/${t!.previewImageKey!.slice(6)}`);
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('image/jpeg');

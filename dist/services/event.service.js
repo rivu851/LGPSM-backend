@@ -20,6 +20,8 @@ const User_1 = require("../models/User");
 const mongoose_1 = __importDefault(require("mongoose"));
 const Template_1 = require("../models/Template");
 const eventLimits_1 = require("../constants/eventLimits");
+const masterCard_1 = require("../constants/masterCard");
+const defaultTemplates_1 = require("./cardTemplates/defaultTemplates");
 const eventAccess_1 = require("../utils/eventAccess");
 const platformSettings_service_1 = require("./platformSettings.service");
 const alert_service_1 = require("./alert.service");
@@ -129,6 +131,12 @@ class EventService {
         }
         else {
             delete eventData.templateId;
+        }
+        // while the master card is the only design, every event is made with it
+        if ((0, masterCard_1.masterCardOnly)()) {
+            const masterId = await (0, defaultTemplates_1.ensureMasterTemplate)();
+            if (masterId)
+                eventData.templateId = masterId;
         }
         await assertTitleFitsTemplate(eventData.templateId, eventData.title);
         const now = new Date();
@@ -268,6 +276,12 @@ class EventService {
             const categoryExists = await Category_1.Category.findById(nextCategoryId);
             if (!categoryExists || !(await (0, category_service_1.canUseCategory)(nextCategoryId, updateData.subcategoryId ? String(updateData.subcategoryId) : undefined, String(existingEvent.organizerId))))
                 throw new Error('CATEGORY_NOT_FOUND');
+        }
+        // while the master card is the only design, an event is only ever made with it
+        if (updateData.templateId && (0, masterCard_1.masterCardOnly)()) {
+            const masterId = await (0, defaultTemplates_1.ensureMasterTemplate)();
+            if (masterId)
+                updateData.templateId = masterId;
         }
         if (updateData.templateId && updateData.templateId !== existingEvent.templateId?.toString()) {
             if (!(await template_service_1.templateService.isUsableByOrganizer(String(updateData.templateId), String(existingEvent.organizerId)))) {

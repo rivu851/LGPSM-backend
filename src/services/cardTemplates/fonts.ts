@@ -12,6 +12,7 @@ export const FONT_DIR = assetPath('cardTemplates', 'fonts');
 
 // (family, weight) used by the designs -> file in FONT_DIR
 const FONT_FILES: Record<string, string> = {
+  'Inter:400': 'Inter-Regular.ttf',
   'Inter:500': 'Inter-Medium.ttf',
   'Inter:600': 'Inter-SemiBold.ttf',
   'Inter:700': 'Inter-Bold.ttf',

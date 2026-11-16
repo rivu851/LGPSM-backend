@@ -10,6 +10,8 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const alert_service_1 = require("./alert.service");
 const template_repository_1 = require("../repositories/template.repository");
 const Template_1 = require("../models/Template");
+const masterCard_1 = require("../constants/masterCard");
+const defaultTemplates_1 = require("./cardTemplates/defaultTemplates");
 /** Can this viewer see/use this template? Mirrors the list rules in template.repository.ts. */
 function templateVisibleTo(template, viewer) {
     if (template.isActive === false && !viewer.isAdmin)
@@ -37,6 +39,9 @@ exports.templateService = {
         const limit = Math.min(Math.max(options.limit || 25, 1), 100);
         const skip = (page - 1) * limit;
         const listOptions = { skip, limit, mineOnly: options.mineOnly, kind: options.kind };
+        // (the master card is installed the first time it is needed, so no manual step stands between the code and the list)
+        if ((0, masterCard_1.masterCardOnly)())
+            await (0, defaultTemplates_1.ensureMasterTemplate)();
         const [templates, total] = await Promise.all([
             template_repository_1.templateRepository.findAll(categoryId, viewer, listOptions),
             template_repository_1.templateRepository.count(categoryId, viewer, listOptions),

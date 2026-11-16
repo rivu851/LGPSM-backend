@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_TEMPLATES = void 0;
 exports.planDefaultTemplates = planDefaultTemplates;
+exports.ensureMasterTemplate = ensureMasterTemplate;
 exports.installDefaultTemplates = installDefaultTemplates;
 const mongoose_1 = __importDefault(require("mongoose"));
 const sharp_1 = __importDefault(require("sharp"));
@@ -12,15 +13,11 @@ const qrcode_1 = __importDefault(require("qrcode"));
 const Category_1 = require("../../models/Category");
 const Template_1 = require("../../models/Template");
 const Media_1 = require("../../models/Media");
+const User_1 = require("../../models/User");
 const renderer_1 = require("./renderer");
+const masterCard_1 = require("./masterCard");
 exports.DEFAULT_TEMPLATES = [
-    { key: 'corporate-awards', name: 'Corporate Awards', cardDesign: 'CORPORATE_V1', category: 'Corporate', subcategory: 'Awards & Recognition' },
-    { key: 'leadership-summit', name: 'Leadership Summit', cardDesign: 'CORPORATE_V2', category: 'Corporate', subcategory: 'Conference & Summit' },
-    { key: 'tech-conference', name: 'Tech Conference', cardDesign: 'CORPORATE_V2', category: 'Technology' },
-    { key: 'wedding-reception', name: 'Wedding Reception', cardDesign: 'WEDDING', category: 'Personal', subcategory: 'Wedding' },
-    { key: 'rice-ceremony', name: 'Rice Ceremony', cardDesign: 'RICE_CEREMONY', category: 'Personal', subcategory: 'Rice Ceremony' },
-    { key: 'birthday-party', name: 'Birthday Party', cardDesign: 'BIRTHDAY', category: 'Personal', subcategory: 'Birthday' },
-    { key: 'general-event', name: 'General Event', cardDesign: 'CORPORATE_V2', category: 'General' }
+    { key: 'master-card', name: 'Master Card', cardDesign: 'MASTER' }
 ];
 const same = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
 const findCategory = (cats, name) => cats.find((c) => same(c.name, name));
@@ -32,6 +29,14 @@ async function planDefaultTemplates() {
     const plannedCategories = new Set();
     const plannedSubs = new Set();
     for (const spec of exports.DEFAULT_TEMPLATES) {
+        if (!spec.category) {
+            // not tied to an event type
+            if (templates.some((t) => t.cardDesign === spec.cardDesign && !t.categoryId))
+                plan.templatesPresent.push(spec.name);
+            else
+                plan.templatesToCreate.push({ name: spec.name, cardDesign: spec.cardDesign });
+            continue;
+        }
         const category = findCategory(categories, spec.category);
         const sub = spec.subcategory ? category?.subcategories?.find((s) => same(s.name, spec.subcategory)) : undefined;
         if (!category && !plannedCategories.has(spec.category.toLowerCase())) {
@@ -57,14 +62,20 @@ async function planDefaultTemplates() {
 }
 // A small JPEG of the design with the designers' sample text, stored as media so web and mobile can show it
 async function storePreview(spec, ownerId) {
-    if (!(0, renderer_1.isTemplateDesign)(spec.cardDesign))
-        throw new Error(`No artwork for design ${spec.cardDesign}`);
     const originalName = `default-template:${spec.key}`;
     const existing = await Media_1.Media.findOne({ purpose: Media_1.MediaPurpose.TEMPLATE, originalName }).select('_id');
     if (existing)
         return `media:${existing._id}`;
     const qr = await qrcode_1.default.toBuffer('https://lgpsm.example/sample-card-not-a-real-invitation', { errorCorrectionLevel: 'H', margin: 4, width: 400 });
-    const png = await (0, renderer_1.renderTemplateCard)({ design: spec.cardDesign, texts: (0, renderer_1.sampleTexts)(spec.cardDesign), qr, scale: 1.5, useSamplePhoto: true });
+    let png;
+    if (spec.cardDesign === 'MASTER') {
+        png = await (0, masterCard_1.renderMasterCard)({ ...masterCard_1.MASTER_SAMPLE, qr, useSampleLogo: true, scale: 1.5 });
+    }
+    else {
+        if (!(0, renderer_1.isTemplateDesign)(spec.cardDesign))
+            throw new Error(`No artwork for design ${spec.cardDesign}`);
+        png = await (0, renderer_1.renderTemplateCard)({ design: spec.cardDesign, texts: (0, renderer_1.sampleTexts)(spec.cardDesign), qr, scale: 1.5, useSamplePhoto: true });
+    }
     const { data, info } = await (0, sharp_1.default)(png).jpeg({ quality: 86, mozjpeg: true }).toBuffer({ resolveWithObject: true });
     const media = await Media_1.Media.create({
         ownerId: new mongoose_1.default.Types.ObjectId(ownerId),
@@ -78,12 +89,48 @@ async function storePreview(spec, ownerId) {
     });
     return `media:${media._id}`;
 }
+let ensuring = null;
+/**
+ * The master card's template id, installing it first when the database has none yet (an administrator owns its preview picture). Lets the
+ * master-card-only mode work without a manual install step. Null when there is no administrator account to own it.
+ */
+function ensureMasterTemplate() {
+    if (!ensuring) {
+        ensuring = (async () => {
+            const find = () => Template_1.Template.findOne({ cardDesign: 'MASTER', isActive: { $ne: false } }).select('_id').lean();
+            const existing = await find();
+            if (existing)
+                return String(existing._id);
+            const admin = await User_1.User.findOne({ role: User_1.Role.ADMIN, isActive: { $ne: false } }).select('_id').lean();
+            if (!admin)
+                return null;
+            await installDefaultTemplates(String(admin._id));
+            const installed = await find();
+            return installed ? String(installed._id) : null;
+        })().finally(() => { ensuring = null; });
+    }
+    return ensuring;
+}
 async function installDefaultTemplates(ownerId) {
     const plan = await planDefaultTemplates();
     const created = [];
     for (const spec of exports.DEFAULT_TEMPLATES) {
         if (!plan.templatesToCreate.some((t) => t.name === spec.name))
             continue;
+        if (!spec.category) {
+            if (await Template_1.Template.exists({ cardDesign: spec.cardDesign, categoryId: { $exists: false }, isActive: { $ne: false } }))
+                continue;
+            await Template_1.Template.create({
+                name: spec.name,
+                cardDesign: spec.cardDesign,
+                previewImageKey: await storePreview(spec, ownerId),
+                isSystemTemplate: true,
+                isPublished: true,
+                isActive: true
+            });
+            created.push(spec.name);
+            continue;
+        }
         // category (with the subcategory it needs), created only when absent
         let category = await Category_1.Category.findOne({ ownerId: null, name: new RegExp(`^${spec.category.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') });
         if (!category) {

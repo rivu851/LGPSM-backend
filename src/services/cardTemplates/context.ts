@@ -4,6 +4,7 @@ import { Category } from '../../models/Category';
 import { User } from '../../models/User';
 import { resolveCardDesign } from './designs';
 import { DesignSpec, safeParseDesignSpec } from './designSpec';
+import { masterCardOnly } from '../../constants/masterCard';
 
 export interface CardContext {
   cardDesign: ReturnType<typeof resolveCardDesign>;
@@ -47,9 +48,11 @@ export async function loadCardContext(event: EventLike): Promise<CardContext> {
   // unreadable one) falls back to the design that suits the event type, so a card is always produced.
   let designSpec: DesignSpec | undefined;
   let templateDesign: string | null | undefined = template?.cardDesign;
-  if (template?.cardDesign === 'CUSTOM') {
+  // (while the master card is the only design, no custom or uploaded design is drawn: every event's card is the master card)
+  if (template?.cardDesign === 'CUSTOM' && !masterCardOnly()) {
+    // (a "retired" template is no longer offered in the template list, but the events that already use it keep their card)
     const usable =
-      template.isActive !== false &&
+      (template.isActive !== false || (template as any).templateData?.retired === true) &&
       (!template.ownerId || (template.isSystemTemplate && template.isPublished !== false) || String(template.ownerId) === String(event.organizerId));
     const parsed = usable ? safeParseDesignSpec(template.designSpec) : null;
     if (parsed?.ok && parsed.spec.kind === 'INVITATION') designSpec = parsed.spec;

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Template, ITemplate } from '../models/Template';
 import { User, Role } from '../models/User';
+import { masterCardOnly } from '../constants/masterCard';
 
 /**
  * Who is asking, for visibility. Admins see every template (drafts included); an organizer sees the published
@@ -24,6 +25,8 @@ const CATEGORY_FIELDS = 'name description isActive';
 
 function listQuery(categoryId: string | undefined, viewer: TemplateViewer, options: TemplateListOptions, adminIds?: mongoose.Types.ObjectId[]) {
   const query: any = { isActive: true };
+  // while the master card is the only design, it is the only template listed
+  if (masterCardOnly()) query.cardDesign = 'MASTER';
   if (categoryId) query.categoryId = categoryId;
   if (options.kind) query.kind = options.kind === 'INVITATION' ? { $in: ['INVITATION', null] } : 'POSTER';
   const own = viewer.userId && mongoose.Types.ObjectId.isValid(viewer.userId) ? { ownerId: new mongoose.Types.ObjectId(viewer.userId) } : null;

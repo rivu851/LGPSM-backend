@@ -4,7 +4,8 @@ import QRCode from 'qrcode';
 import type { CardDesign } from '../models/Template';
 import { assetPath } from '../utils/assetPath';
 import { renderTemplateCard, isTemplateDesign, TemplateDesign } from './cardTemplates/renderer';
-import { buildTemplateTexts, photoInitials, buildSpecTexts } from './cardTemplates/content';
+import { buildTemplateTexts, photoInitials, buildSpecTexts, masterDateTime, addressLine } from './cardTemplates/content';
+import { renderMasterCard } from './cardTemplates/masterCard';
 import type { DesignSpec } from './cardTemplates/designSpec';
 import { renderDesignSpec, outputSize } from './cardTemplates/specRenderer';
 import { appendInfoFooter, footerHeightFor, insertGuestBand, FOOTER_STYLES, FooterStyle } from './cardTemplates/infoFooter';
@@ -468,6 +469,30 @@ async function renderFromSpec(fullSpec: DesignSpec, data: InvitationCardData, bo
   return result.png;
 }
 
+/**
+ * The master card: its details are a column that closes up around whatever is switched off. The event's location is always printed
+ * (it is mandatory); the guest's QR code, the logo, the title, the date and the additional information follow "Select data to show on card".
+ * Nothing is added under or over it: no details block, no guest band.
+ */
+async function renderMasterFromData(data: InvitationCardData): Promise<Buffer> {
+  const show = cardDisplayOf(data.cardDisplay);
+  let qr = show.qr ? dataUrlToBuffer(data.qrDataUrl) : undefined;
+  if (show.qr && !qr && data.invitationUrl) qr = await QRCode.toBuffer(data.invitationUrl, { errorCorrectionLevel: 'H', margin: 4, width: 480 });
+  const logo = show.logo ? dataUrlToBuffer(data.event.photoBase64) : undefined;
+  return renderMasterCard({
+    title: show.title ? data.event.title || '' : '',
+    primary: data.invitee?.name || '',
+    secondary: data.invitee?.companyName || '',
+    // (a preview with nothing entered yet shows where each detail will go)
+    dateTime: show.dateTime ? masterDateTime(data.event.startIso, data.event.endIso) || (data.isPreview ? 'Event date and time' : '') : '',
+    location: addressLine({ design: 'CORPORATE_V1', title: '', venue: data.event.venue, locationSub: data.event.locationSub, isVirtual: data.event.isVirtual }) || (data.isPreview ? 'Event location' : ''),
+    logo,
+    // the designers' placeholder logo only ever stands in on previews, never on a card that is sent
+    useSampleLogo: show.logo && !logo && data.isPreview === true,
+    qr
+  });
+}
+
 export const invitationCardService = {
   /** SVG of the generic design. The template designs are drawn as images, see generateInvitationCardPNG. */
   async generateInvitationCardSVG(data: InvitationCardData): Promise<string> {
@@ -475,6 +500,7 @@ export const invitationCardService = {
   },
 
   async generateInvitationCardPNG(data: InvitationCardData): Promise<Buffer> {
+    if (data.cardDesign === 'MASTER' && !data.designSpec) return renderMasterFromData(data);
     if (data.designSpec) {
       const spec = data.designSpec;
       const covered = coverageOfSpec(spec);

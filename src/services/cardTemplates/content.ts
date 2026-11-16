@@ -38,6 +38,16 @@ export function parts(d: Date) {
   };
 }
 
+/** "Thu 31 Dec 2026 2:00 PM – Fri 1 Jan 2027 4:00 PM"; "Thu 31 Dec 2026 2:00 PM – 4:00 PM" on one day; just the start when there is no end (the master card) */
+export function masterDateTime(startIso?: string | Date | null, endIso?: string | Date | null): string {
+  const start = toDate(startIso);
+  if (!start) return '';
+  const end = toDate(endIso);
+  const at = (d: Date) => `${fmt(d, { weekday: 'short' })} ${fmt(d, { day: 'numeric' })} ${fmt(d, { month: 'short' })} ${fmt(d, { year: 'numeric' })} ${fmt(d, { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+  if (!end || end.getTime() <= start.getTime()) return at(start);
+  return sameDay(start, end) ? `${at(start)} – ${fmt(end, { hour: 'numeric', minute: '2-digit', hour12: true })}` : `${at(start)} – ${at(end)}`;
+}
+
 export function ordinal(n: number): string {
   const mod100 = n % 100;
   if (mod100 >= 11 && mod100 <= 13) return `${n}th`;

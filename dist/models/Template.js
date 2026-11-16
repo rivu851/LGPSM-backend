@@ -42,6 +42,8 @@ exports.CARD_DESIGNS = [
     'WEDDING',
     'RICE_CEREMONY',
     'BIRTHDAY',
+    // The master card: one watercolour design whose details are laid out as a column (services/cardTemplates/masterCard.ts)
+    'MASTER',
     // Rendered from `designSpec` (see services/cardTemplates/designSpec.ts) instead of fixed Figma artwork
     'CUSTOM'
 ];

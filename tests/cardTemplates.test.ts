@@ -20,34 +20,41 @@ describe('which design an event gets', () => {
     expect(resolveCardDesign({ templateDesign: 'CLASSIC', subcategoryName: 'Birthday' })).toBe('CLASSIC');
   });
 
+  describe('with the full set of designs (MASTER_CARD_ONLY=false)', () => {
+    beforeAll(() => { process.env.MASTER_CARD_ONLY = 'false'; });
+    afterAll(() => { delete process.env.MASTER_CARD_ONLY; });
+    it.each([
+      [{ subcategoryName: 'Birthday' }, 'BIRTHDAY'],
+      [{ subcategoryName: 'Rice Ceremony' }, 'RICE_CEREMONY'],
+      [{ categoryName: 'Wedding' }, 'WEDDING'],
+      [{ subcategoryName: 'Awards & Recognition' }, 'CORPORATE_V1'],
+      [{ categoryName: 'General' }, 'CORPORATE_V2']
+    ])('maps %j to %s', (type, expected) => {
+      expect(resolveCardDesign(type)).toBe(expected);
+    });
+  });
+
+  // the master card is the only design offered for now: the event type (and the template) no longer pick a design
+  describe('with the master card only (the default outside the tests)', () => {
+    beforeAll(() => { process.env.MASTER_CARD_ONLY = 'true'; });
+    afterAll(() => { delete process.env.MASTER_CARD_ONLY; });
   it.each([
-    [{ subcategoryName: 'Birthday' }, 'BIRTHDAY'],
-    [{ subcategoryName: "Child's B'day Party" }, 'BIRTHDAY'],
-    [{ subcategoryName: 'Rice Ceremony' }, 'RICE_CEREMONY'],
-    [{ subcategoryName: 'Annaprasan' }, 'RICE_CEREMONY'],
-    [{ subcategoryName: 'Wedding Reception' }, 'WEDDING'],
-    [{ categoryName: 'Wedding' }, 'WEDDING'],
-    [{ subcategoryName: 'Engagement' }, 'WEDDING'],
-    [{ subcategoryName: 'Awards & Recognition' }, 'CORPORATE_V1'],
-    [{ categoryName: 'Corporate', subcategoryName: 'Leadership Summit' }, 'CORPORATE_V2'],
-    [{ categoryName: 'Technology' }, 'CORPORATE_V2'],
-    [{ categoryName: 'General' }, 'CORPORATE_V2']
-  ])('maps %j to %s', (type, expected) => {
-    expect(resolveCardDesign(type)).toBe(expected);
+    [{ subcategoryName: 'Birthday' }],
+    [{ subcategoryName: 'Rice Ceremony' }],
+    [{ subcategoryName: 'Wedding Reception' }],
+    [{ categoryName: 'Wedding' }],
+    [{ subcategoryName: 'Awards & Recognition' }],
+    [{ categoryName: 'Corporate', subcategoryName: 'Leadership Summit' }],
+    [{ categoryName: 'General', title: "Riya's Birthday!!" }],
+    [{}]
+  ])('gives %j the master card', (type) => {
+    expect(resolveCardDesign(type)).toBe('MASTER');
   });
 
-  it('prefers the specific type over words that merely appear in the title', () => {
-    expect(resolveCardDesign({ subcategoryName: 'Rice Ceremony', title: 'Ria Birthday and Rice' })).toBe('RICE_CEREMONY');
+  it('gives the master card whatever template was chosen', () => {
+    expect(resolveCardDesign({ templateDesign: 'WEDDING', subcategoryName: 'Birthday' })).toBe('MASTER');
+    expect(resolveCardDesign({ templateDesign: 'SPACESHIP' })).toBe('MASTER');
   });
-
-  it('falls back to the title, then to a safe default', () => {
-    expect(resolveCardDesign({ categoryName: 'General', title: "Riya's Birthday!!" })).toBe('BIRTHDAY');
-    expect(resolveCardDesign({ categoryName: 'General', title: 'Team meetup' })).toBe(DEFAULT_CARD_DESIGN);
-    expect(resolveCardDesign({})).toBe(DEFAULT_CARD_DESIGN);
-  });
-
-  it('ignores a design name it does not know', () => {
-    expect(resolveCardDesign({ templateDesign: 'SPACESHIP', subcategoryName: 'Birthday' })).toBe('BIRTHDAY');
   });
 });
 
@@ -257,18 +264,20 @@ describe("the designers' sample photos are for previews only", () => {
   });
 });
 
-describe('end to end: an event with no template still gets a card for its type', () => {
+describe('end to end: an event with no template still gets the master card', () => {
   let mongoServer: MongoMemoryServer;
   beforeAll(async () => {
+    process.env.MASTER_CARD_ONLY = 'true';
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
   });
   afterAll(async () => {
+    delete process.env.MASTER_CARD_ONLY;
     await mongoose.disconnect();
     await mongoServer.stop();
   });
 
-  it('chooses the birthday design from the event category and renders it', async () => {
+  it('gives the master card whatever the event type and renders it', async () => {
     const category = await Category.create({ name: 'Personal', isActive: true, subcategories: [{ name: 'Birthday' }, { name: 'Wedding' }] });
     const organizerId = new mongoose.Types.ObjectId();
     const event = await Event.create({
@@ -278,17 +287,18 @@ describe('end to end: an event with no template still gets a card for its type',
     });
 
     const ctx = await loadCardContext(event);
-    expect(ctx).toMatchObject({ cardDesign: 'BIRTHDAY', categoryName: 'Personal', subcategoryName: 'Birthday' });
+    expect(ctx).toMatchObject({ cardDesign: 'MASTER', categoryName: 'Personal', subcategoryName: 'Birthday' });
 
     const { png, qr } = await invitationService.previewInvitationCard(String(event._id), String(organizerId));
     expect(qr).toBe('SAMPLE');
     const meta = await sharp(png).metadata();
-    // the artwork is 786x1364; the guest lines (and contact line when set) are added below it, never over it
+    // the master card is 786x1364 and nothing is added under it
     expect(meta.width).toBe(786);
-    expect(meta.height).toBeGreaterThanOrEqual(1364);
+    expect(meta.height).toBe(1364);
   });
 
-  it("honours an explicit template's design over the event type", async () => {
+  it("honours an explicit template's design over the event type (full set of designs)", async () => {
+    process.env.MASTER_CARD_ONLY = 'false';
     const category = await Category.create({ name: 'Anything', isActive: true });
     const template = await Template.create({ name: 'Mine', cardDesign: 'WEDDING' });
     const event = await Event.create({
@@ -296,6 +306,8 @@ describe('end to end: an event with no template still gets a card for its type',
       categoryId: category._id, templateId: template._id, schedule: { start: new Date(), end: new Date() }
     });
     expect((await loadCardContext(event)).cardDesign).toBe('WEDDING');
+    process.env.MASTER_CARD_ONLY = 'true';
+    expect((await loadCardContext(event)).cardDesign).toBe('MASTER'); // while the master card is the only design
   });
 
   it('keeps the generic design when a template asks for it', async () => {

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sameDay = exports.toDate = void 0;
 exports.parts = parts;
+exports.masterDateTime = masterDateTime;
 exports.ordinal = ordinal;
 exports.shortDateRange = shortDateRange;
 exports.longDate = longDate;
@@ -26,6 +27,17 @@ function parts(d) {
         weekday: fmt(d, { weekday: 'long' }),
         time: fmt(d, { hour: 'numeric', minute: '2-digit', hour12: true }),
     };
+}
+/** "Thu 31 Dec 2026 2:00 PM – Fri 1 Jan 2027 4:00 PM"; "Thu 31 Dec 2026 2:00 PM – 4:00 PM" on one day; just the start when there is no end (the master card) */
+function masterDateTime(startIso, endIso) {
+    const start = (0, exports.toDate)(startIso);
+    if (!start)
+        return '';
+    const end = (0, exports.toDate)(endIso);
+    const at = (d) => `${fmt(d, { weekday: 'short' })} ${fmt(d, { day: 'numeric' })} ${fmt(d, { month: 'short' })} ${fmt(d, { year: 'numeric' })} ${fmt(d, { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+    if (!end || end.getTime() <= start.getTime())
+        return at(start);
+    return (0, exports.sameDay)(start, end) ? `${at(start)} – ${fmt(end, { hour: 'numeric', minute: '2-digit', hour12: true })}` : `${at(start)} – ${at(end)}`;
 }
 function ordinal(n) {
     const mod100 = n % 100;

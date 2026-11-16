@@ -10,6 +10,7 @@ const qrcode_1 = __importDefault(require("qrcode"));
 const assetPath_1 = require("../utils/assetPath");
 const renderer_1 = require("./cardTemplates/renderer");
 const content_1 = require("./cardTemplates/content");
+const masterCard_1 = require("./cardTemplates/masterCard");
 const specRenderer_1 = require("./cardTemplates/specRenderer");
 const infoFooter_1 = require("./cardTemplates/infoFooter");
 const cardDisplay_1 = require("../utils/cardDisplay");
@@ -406,12 +407,38 @@ async function renderFromSpec(fullSpec, data, bottomInset = 0) {
     });
     return result.png;
 }
+/**
+ * The master card: its details are a column that closes up around whatever is switched off. The event's location is always printed
+ * (it is mandatory); the guest's QR code, the logo, the title, the date and the additional information follow "Select data to show on card".
+ * Nothing is added under or over it: no details block, no guest band.
+ */
+async function renderMasterFromData(data) {
+    const show = (0, cardDisplay_1.cardDisplayOf)(data.cardDisplay);
+    let qr = show.qr ? dataUrlToBuffer(data.qrDataUrl) : undefined;
+    if (show.qr && !qr && data.invitationUrl)
+        qr = await qrcode_1.default.toBuffer(data.invitationUrl, { errorCorrectionLevel: 'H', margin: 4, width: 480 });
+    const logo = show.logo ? dataUrlToBuffer(data.event.photoBase64) : undefined;
+    return (0, masterCard_1.renderMasterCard)({
+        title: show.title ? data.event.title || '' : '',
+        primary: data.invitee?.name || '',
+        secondary: data.invitee?.companyName || '',
+        // (a preview with nothing entered yet shows where each detail will go)
+        dateTime: show.dateTime ? (0, content_1.masterDateTime)(data.event.startIso, data.event.endIso) || (data.isPreview ? 'Event date and time' : '') : '',
+        location: (0, content_1.addressLine)({ design: 'CORPORATE_V1', title: '', venue: data.event.venue, locationSub: data.event.locationSub, isVirtual: data.event.isVirtual }) || (data.isPreview ? 'Event location' : ''),
+        logo,
+        // the designers' placeholder logo only ever stands in on previews, never on a card that is sent
+        useSampleLogo: show.logo && !logo && data.isPreview === true,
+        qr
+    });
+}
 exports.invitationCardService = {
     /** SVG of the generic design. The template designs are drawn as images, see generateInvitationCardPNG. */
     async generateInvitationCardSVG(data) {
         return buildClassicSVG(data);
     },
     async generateInvitationCardPNG(data) {
+        if (data.cardDesign === 'MASTER' && !data.designSpec)
+            return renderMasterFromData(data);
         if (data.designSpec) {
             const spec = data.designSpec;
             const covered = (0, coverage_1.coverageOfSpec)(spec);

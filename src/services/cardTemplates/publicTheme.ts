@@ -19,6 +19,7 @@ const FIXED: Record<string, Omit<PublicTheme, 'design'>> = {
   CORPORATE_V2: { background: '#F6F7F9', primary: '#E3340F', accent: '#123C8F', ink: '#15191C', heading: 'sans' },
   WEDDING: { background: '#F7F5F0', primary: '#2B2B2B', accent: '#A8946A', ink: '#202020', heading: 'serif' },
   RICE_CEREMONY: { background: '#FFF8EA', primary: '#660410', accent: '#C98A3B', ink: '#3A0A0F', heading: 'serif' },
+  MASTER: { background: '#EEEEEE', primary: '#004387', accent: '#EF851A', ink: '#004387', heading: 'sans' },
   BIRTHDAY: { background: '#FBF6EC', primary: '#794807', accent: '#C9A24B', ink: '#3B2A10', heading: 'serif' },
   CLASSIC: { background: '#F6F7F9', primary: '#E3340F', accent: '#123C8F', ink: '#15191C', heading: 'sans' }
 };
@@ -37,5 +38,5 @@ export function publicThemeFor(design: CardDesign, spec?: { palette?: Record<str
       heading: title && SERIF_FONTS.has(title.fontFamily) ? 'serif' : 'sans'
     };
   }
-  return { design, ...(FIXED[design] || FIXED.CORPORATE_V2) };
+  return { design, ...(FIXED[design] || FIXED.MASTER) };
 }

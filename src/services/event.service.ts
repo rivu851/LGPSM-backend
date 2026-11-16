@@ -13,6 +13,8 @@ import { Role } from '../models/User';
 import mongoose from 'mongoose';
 import { Template } from '../models/Template';
 import { EVENT_TITLE_MAX_LENGTH } from '../constants/eventLimits';
+import { masterCardOnly } from '../constants/masterCard';
+import { ensureMasterTemplate } from './cardTemplates/defaultTemplates';
 import { findManageableEvent } from '../utils/eventAccess';
 import { platformSettingsService } from './platformSettings.service';
 import { alertService } from './alert.service';
@@ -125,6 +127,11 @@ export class EventService {
       delete eventData.templateId;
     }
 
+    // while the master card is the only design, every event is made with it
+    if (masterCardOnly()) {
+      const masterId = await ensureMasterTemplate();
+      if (masterId) eventData.templateId = masterId;
+    }
     await assertTitleFitsTemplate(eventData.templateId, eventData.title);
 
     const now = new Date();
@@ -264,6 +271,12 @@ export class EventService {
       const nextCategoryId = String(updateData.categoryId || existingEvent.categoryId);
       const categoryExists = await Category.findById(nextCategoryId);
       if (!categoryExists || !(await canUseCategory(nextCategoryId, updateData.subcategoryId ? String(updateData.subcategoryId) : undefined, String(existingEvent.organizerId)))) throw new Error('CATEGORY_NOT_FOUND');
+    }
+
+    // while the master card is the only design, an event is only ever made with it
+    if (updateData.templateId && masterCardOnly()) {
+      const masterId = await ensureMasterTemplate();
+      if (masterId) updateData.templateId = masterId;
     }
 
     if (updateData.templateId && updateData.templateId !== existingEvent.templateId?.toString()) {
