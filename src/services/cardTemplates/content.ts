@@ -177,7 +177,7 @@ export function buildTemplateTexts(input: CardContentInput): Record<string, stri
       };
     case 'WEDDING':
       return {
-        names: deriveSubject(input.title, WEDDING_WORDS),
+        names: input.title.trim(),
         subline: weddingSubline(kind),
         timeLine: start ? timeRange(start, end) : '',
         day: p?.day || '',
@@ -190,7 +190,7 @@ export function buildTemplateTexts(input: CardContentInput): Record<string, stri
       return {
         heading: /annaprasan|annaprashan/i.test(input.subcategoryName || '') ? input.subcategoryName!.trim() : 'Rice Ceremony',
         subline: 'of our beloved child',
-        honoree: deriveSubject(input.title, RICE_WORDS),
+        honoree: input.title.trim(),
         scanLabel,
         timeLine: start ? timeRange(start, end, true) : '',
         day: p?.day || '',
@@ -201,7 +201,7 @@ export function buildTemplateTexts(input: CardContentInput): Record<string, stri
     case 'BIRTHDAY':
       return {
         intro: 'Please Join us to celebrate',
-        honoree: deriveSubject(input.title, BIRTHDAY_WORDS),
+        honoree: input.title.trim(),
         // "Birthday Party" unless the organizer's subcategory says something more specific ("First Birthday", "Birthday Bash")
         heading: /birthday|bday/i.test(input.subcategoryName || '') && (input.subcategoryName || '').trim().split(/\s+/).length > 1 ? input.subcategoryName!.trim() : 'Birthday Party',
         scanLabel,

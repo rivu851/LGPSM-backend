@@ -81,7 +81,7 @@ describe('card wording', () => {
 
   it('writes a birthday card for a birthday', () => {
     const t = buildTemplateTexts({ design: 'BIRTHDAY', title: 'Moloy Birthday Celebration!!!', subcategoryName: 'Birthday', venue: '24, Shanti Pally', locationSub: 'Kolkata', ...when });
-    expect(t).toMatchObject({ intro: 'Please Join us to celebrate', honoree: 'Moloy', heading: 'Birthday Party', month: 'November 2026', weekday: 'Monday', day: '02 – 05', time: 'At 10:00 AM', address: '24, Shanti Pally, Kolkata' });
+    expect(t).toMatchObject({ intro: 'Please Join us to celebrate', honoree: 'Moloy Birthday Celebration!!!', heading: 'Birthday Party', month: 'November 2026', weekday: 'Monday', day: '02 – 05', time: 'At 10:00 AM', address: '24, Shanti Pally, Kolkata' });
   });
 
   it('keeps "Birthday Party" unless the subcategory is more specific', () => {
@@ -101,7 +101,7 @@ describe('card wording', () => {
 
   it('writes a rice ceremony card', () => {
     const t = buildTemplateTexts({ design: 'RICE_CEREMONY', title: 'Ayanika Rice Ceremony', ...when });
-    expect(t).toMatchObject({ heading: 'Rice Ceremony', subline: 'of our beloved child', honoree: 'Ayanika', timeLine: 'Monday, 10:00 am', day: '02', month: '11', year: '26' });
+    expect(t).toMatchObject({ heading: 'Rice Ceremony', subline: 'of our beloved child', honoree: 'Ayanika Rice Ceremony', timeLine: 'Monday, 10:00 am', day: '02', month: '11', year: '26' });
   });
 
   it("personalises corporate cards with the guest's details", () => {
@@ -251,7 +251,7 @@ describe("the designers' sample photos are for previews only", () => {
     const base = { invitee: { name: 'A' }, event: { title: 'Riya Birthday' }, sessions: [], cardDesign: 'BIRTHDAY' as const };
     const sent = await invitationCardService.generateInvitationCardPNG(base);
     const preview = await invitationCardService.generateInvitationCardPNG({ ...base, isPreview: true });
-    const placeholderCard = await renderTemplateCard({ design: 'BIRTHDAY', texts: buildTemplateTexts({ design: 'BIRTHDAY', title: 'Riya Birthday', invitee: { name: 'A' } }), initials: 'R' });
+    const placeholderCard = await renderTemplateCard({ design: 'BIRTHDAY', texts: buildTemplateTexts({ design: 'BIRTHDAY', title: 'Riya Birthday', invitee: { name: 'A' } }), initials: 'RB' });
     expect(preview.equals(sent)).toBe(false);
     expect(await frameCentre('BIRTHDAY', sent)).toEqual(await frameCentre('BIRTHDAY', placeholderCard));
   });

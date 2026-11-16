@@ -11,6 +11,8 @@ import { CheckIn } from '../models/CheckIn';
 import { SystemUserAssignment } from '../models/SystemUserAssignment';
 import { Role } from '../models/User';
 import mongoose from 'mongoose';
+import { Template } from '../models/Template';
+import { EVENT_TITLE_MAX_LENGTH } from '../constants/eventLimits';
 import { findManageableEvent } from '../utils/eventAccess';
 import { platformSettingsService } from './platformSettings.service';
 import { alertService } from './alert.service';
@@ -53,6 +55,19 @@ const pickEventFields = (data: any, extra: readonly string[] = []) => {
   if (out.location !== undefined) out.location = normalizeLocation(out.location);
   return out;
 };
+
+/**
+ * An admin's uploaded design can hold fewer title characters than the usual limit (templateData.titleMaxChars, worked out from its title area).
+ * The Add Event form applies the same number; the server checks it too, so the two always agree.
+ */
+async function assertTitleFitsTemplate(templateId: unknown, title: unknown): Promise<void> {
+  if (!templateId || typeof title !== 'string' || !mongoose.Types.ObjectId.isValid(String(templateId))) return;
+  const t = await Template.findById(String(templateId)).select('templateData').lean();
+  const max = Number((t?.templateData as any)?.titleMaxChars);
+  if (Number.isFinite(max) && max > 0 && title.trim().length > Math.min(EVENT_TITLE_MAX_LENGTH, max)) {
+    throw { statusCode: 400, message: `Title cannot exceed ${Math.min(EVENT_TITLE_MAX_LENGTH, max)} characters on this template.` };
+  }
+}
 
 export class EventService {
   /** True once any invitation for the event was sent or attempted (the event is locked from then on). */
@@ -109,6 +124,8 @@ export class EventService {
     } else {
       delete eventData.templateId;
     }
+
+    await assertTitleFitsTemplate(eventData.templateId, eventData.title);
 
     const now = new Date();
     const tomorrow = new Date(now.getTime() + 86400000);
@@ -256,6 +273,11 @@ export class EventService {
         if (!copyId) throw new Error('TEMPLATE_NOT_FOUND');
         updateData.templateId = copyId;
       }
+    }
+
+    // a new title or a new template: the title must fit the template's design (older events are left as they are until one of them changes)
+    if (updateData.title !== undefined || updateData.templateId) {
+      await assertTitleFitsTemplate(updateData.templateId ?? (existingEvent.templateId as any)?._id ?? existingEvent.templateId, updateData.title ?? existingEvent.title);
     }
 
     // The check-in window is validated against the schedule that will be in force after this update

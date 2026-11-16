@@ -272,13 +272,13 @@ const silhouette = (cx, cy, r, ink) => `<g fill="${ink}" fill-opacity="0.35"><ci
 // `from`/`to` sit in clear background just outside the frame, so nothing else the design prints is inside the band. `blend`
 // is how many px above the cut are cross-faded into the rows below it, so textured backgrounds join without a hard seam.
 // `smooth`: the artwork is textured (watercolour, paper), so the filler is a soft wash; flat-colour artwork is carried straight on (a blur would smear its edges).
-// `top` is the share of the freed room that goes above the content (the rest opens a gap between what was above and below the QR).
+// `top` is the share of the freed room that goes above the content (the rest opens a gap between what was above and below the QR). It is 0: the artwork at the top (balloons, photo frame) stays where it was designed.
 const QR_BANDS = {
-    CORPORATE_V1: { from: 303, to: 520, blend: 6, top: 0.65, smooth: true }, // stamp frame 307-513; the date pill starts at 526
-    CORPORATE_V2: { from: 192, to: 452, blend: 8, top: 0.65, smooth: false }, // frame and pointer 196-417, caption to ~447; the guest name starts ~469
-    WEDDING: { from: 386, to: 595, blend: 8, top: 0.65, smooth: false }, // ornament 392-558 (the lines above it belong to the date row); the pin is at ~608
-    RICE_CEREMONY: { from: 334, to: 503, blend: 8, top: 0.65, smooth: false }, // frame 341-475, caption to ~498; the time line starts ~520
-    BIRTHDAY: { from: 328, to: 520, blend: 8, top: 0.65, smooth: true }, // frame 333-488, caption to ~513; the month starts ~532
+    CORPORATE_V1: { from: 303, to: 520, blend: 6, top: 0, smooth: true }, // stamp frame 307-513; the date pill starts at 526
+    CORPORATE_V2: { from: 192, to: 452, blend: 8, top: 0, smooth: false }, // frame and pointer 196-417, caption to ~447; the guest name starts ~469
+    WEDDING: { from: 386, to: 595, blend: 8, top: 0, smooth: false }, // ornament 392-558 (the lines above it belong to the date row); the pin is at ~608
+    RICE_CEREMONY: { from: 334, to: 503, blend: 8, top: 0, smooth: false }, // frame 341-475, caption to ~498; the time line starts ~520
+    BIRTHDAY: { from: 328, to: 520, blend: 8, top: 0, smooth: true }, // frame 333-488, caption to ~513; the month starts ~532
 };
 /** Removes rows [from, to) of an RGBA image, cross-fading the last `blend` rows above the cut into the rows that follow it. */
 async function cutBand(png, band, scale) {
