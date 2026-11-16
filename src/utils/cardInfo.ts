@@ -77,6 +77,8 @@ const sampleOf = (field: CardInfoField, cardInfo?: CardInfo | null): string => {
   const { title, show } = labelOf(field, cardInfo);
   // the sample stands in for a value: the title itself, or "Title: Sample" when the title is printed in front of it
   if (show && title) return `${title}: Sample`;
+  // the second custom detail with no title typed yet has nothing to stand in for it: the line stays empty rather than showing another detail's name
+  if (field === 'SECONDARY_IDENTITY') return title;
   return title || SAMPLE[field];
 };
 /** A custom title that only renames a column the Excel already has ("Ph No" for Mobile) prints that guest value, not a column of its own */

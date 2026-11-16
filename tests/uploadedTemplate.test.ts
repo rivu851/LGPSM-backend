@@ -38,7 +38,7 @@ describe('upload your own template', () => {
     expect(presetFor()).toBe('INVITATION_CARD');
   });
 
-  it('turns an organizer\'s own image into a private template whose card is that image with the guest QR on it', async () => {
+  it('turns an organizer\'s own image into a private template whose card is that image exactly as it is (no QR code added)', async () => {
     const key = await upload(a);
     const res = await make(a, { name: 'My Gala Card', imageKey: key });
     expect(res.status).toBe(201);
@@ -62,7 +62,7 @@ describe('upload your own template', () => {
     expect(meta.height!).toBeGreaterThanOrEqual(1920);
     const px = await sharp(prev.body).extract({ left: 20, top: 20, width: 1, height: 1 }).raw().toBuffer();
     expect([...px].slice(0, 3)).toEqual([0xcc, 0x11, 0x22]);
-    expect(await decodeQr(prev.body)).toMatch(/^https?:\/\//);
+    expect(await decodeQr(prev.body)).toBeNull();
   });
 
   it('an admin upload is dynamic and shared at once: organizers can use it, and once its wording is found or marked the event\'s details replace that wording', async () => {
@@ -85,7 +85,7 @@ describe('upload your own template', () => {
     expect((await request(app).put(`/api/v1/templates/${res.body.data._id}/text-zones`).set(auth(admin)).send({ zones: [zone] })).status).toBe(200);
     t = await Template.findById(res.body.data._id).lean();
     expect(t.designSpec.elements.filter((e: any) => e.type === 'text').map((e: any) => e.role)).toEqual(['title']);
-    // an organizer's upload stays "finished design + QR"
+    // an organizer's upload stays the finished design, as it is
     const org: any = await Template.findById((await make(a, { name: 'Org Plain', imageKey: await upload(a) })).body.data._id).lean();
     expect(org.designSpec.elements.some((e: any) => e.role === 'title')).toBe(false);
 

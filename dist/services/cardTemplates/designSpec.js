@@ -154,12 +154,14 @@ exports.designSpecSchema = zod_1.z
     /** An organizer's own uploaded design, painted full-bleed behind everything else (an uploaded image only, never a URL) */
     backgroundMedia: zod_1.z.string().regex(/^media:[0-9a-fA-F]{24}$/).optional(),
     palette: zod_1.z.object({ background: hex, primary: hex, accent: hex, text: hex }).strict(),
-    elements: zod_1.z.array(exports.elementSchema).min(1).max(exports.MAX_ELEMENTS),
+    elements: zod_1.z.array(exports.elementSchema).max(exports.MAX_ELEMENTS),
     /** Where the design came from; informational only, never used for rendering */
-    meta: zod_1.z.object({ generator: zod_1.z.enum(['STITCH', 'MANUAL', 'UPLOAD']).default('MANUAL'), /** an uploaded design whose own wording is replaced by the event's details (text elements sit on patched areas) */ zones: zod_1.z.boolean().optional(), archetype: zod_1.z.string().max(40).optional(), styleNotes: zod_1.z.array(zod_1.z.string().max(80)).max(8).optional() }).strict().default({ generator: 'MANUAL' })
+    meta: zod_1.z.object({ generator: zod_1.z.enum(['STITCH', 'MANUAL', 'UPLOAD']).default('MANUAL'), /** an uploaded design whose own wording is replaced by the event's details (text elements sit on patched areas) */ zones: zod_1.z.boolean().optional(), /** an organizer's own finished design, sent exactly as it is: nothing is added to it, not even a QR code */ plain: zod_1.z.boolean().optional(), archetype: zod_1.z.string().max(40).optional(), styleNotes: zod_1.z.array(zod_1.z.string().max(80)).max(8).optional() }).strict().default({ generator: 'MANUAL' })
 })
     .strict()
     .superRefine((spec, ctx) => {
+    if (spec.elements.length === 0 && !spec.meta.plain)
+        ctx.addIssue({ code: 'custom', message: 'A design needs at least one element', path: ['elements'] });
     const qrs = spec.elements.filter((e) => e.type === 'qr');
     if (qrs.length > 1)
         ctx.addIssue({ code: 'custom', message: 'A design has at most one QR code', path: ['elements'] });
@@ -167,7 +169,7 @@ exports.designSpecSchema = zod_1.z
         ctx.addIssue({ code: 'custom', message: 'An invitation carries the guest QR code, not a registration link', path: ['elements'] });
     if (spec.kind === 'POSTER' && qrs.some((q) => q.type === 'qr' && q.purpose === 'INVITATION'))
         ctx.addIssue({ code: 'custom', message: 'A poster has no personal guest QR code', path: ['elements'] });
-    if (spec.kind === 'INVITATION' && qrs.length === 0)
+    if (spec.kind === 'INVITATION' && qrs.length === 0 && !spec.meta.plain)
         ctx.addIssue({ code: 'custom', message: 'An invitation needs a QR code for check-in', path: ['elements'] });
     // an uploaded design already carries its own title in the artwork
     if (spec.meta.generator !== 'UPLOAD' && !spec.elements.some((e) => e.type === 'text' && e.role === 'title'))

@@ -58,7 +58,8 @@ async function renderTemplateForEvent(input) {
             qrKind = 'LINK';
         }
     }
-    else {
+    else if (event.cardDisplay?.qr !== false && !parsed.spec.meta.plain) {
+        // the organizer chose to send the card without a QR code: the preview shows it the same way
         qr = await qrcode_1.default.toBuffer((0, qrPayload_1.previewSampleUrl)(), { errorCorrectionLevel: 'H', margin: 4, width: 640 });
         qrKind = 'SAMPLE';
     }

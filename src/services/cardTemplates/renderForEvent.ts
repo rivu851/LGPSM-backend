@@ -73,7 +73,8 @@ export async function renderTemplateForEvent(input: RenderForEventInput): Promis
       qr = await QRCode.toBuffer(input.registrationUrl, { errorCorrectionLevel: 'H', margin: 4, width: 640 });
       qrKind = 'LINK';
     }
-  } else {
+  } else if ((event as any).cardDisplay?.qr !== false && !parsed.spec.meta.plain) {
+    // the organizer chose to send the card without a QR code: the preview shows it the same way
     qr = await QRCode.toBuffer(previewSampleUrl(), { errorCorrectionLevel: 'H', margin: 4, width: 640 });
     qrKind = 'SAMPLE';
   }

@@ -55,7 +55,8 @@ function buildSpecFromZones(imageKey: string, width: number | undefined, height:
   const side = Math.max(120, Math.min(1600, Math.round(q ? Math.min(q.w, q.h) : 0.27 * W)));
   const qx = Math.round(q ? q.x : (W - side) / 2), qy = Math.round(q ? q.y : H - Math.round(0.06 * H) - side);
   const ink = lightPicture ? '#111111' : '#FFFFFF';
-  elements.push({ type: 'qr', purpose: 'INVITATION', id: 'qr', x: qx, y: qy, size: side, padding: q?.frame ? 0.04 : 0.07, radius: q?.frame ? 0 : 22, ...(q?.frame ? { frameColor: '#FFFFFF' } : {}) });
+  // an organizer's own design is sent exactly as it is: no QR code (or anything else) is added to it
+  if (replaceWording) elements.push({ type: 'qr', purpose: 'INVITATION', id: 'qr', x: qx, y: qy, size: side, padding: q?.frame ? 0.04 : 0.07, radius: q?.frame ? 0 : 22, ...(q?.frame ? { frameColor: '#FFFFFF' } : {}) });
   return parseDesignSpec({
     version: 1,
     kind: 'INVITATION',
@@ -64,7 +65,7 @@ function buildSpecFromZones(imageKey: string, width: number | undefined, height:
     backgroundMedia: imageKey,
     palette: { background: '#000000', primary: ink, accent: ink, text: ink },
     elements,
-    meta: { generator: 'UPLOAD', ...(replaceWording && kept.some((z) => WORDING.includes(z.role)) ? { zones: true } : {}) }
+    meta: { generator: 'UPLOAD', ...(replaceWording ? {} : { plain: true }), ...(replaceWording && kept.some((z) => WORDING.includes(z.role)) ? { zones: true } : {}) }
   });
 }
 
@@ -92,6 +93,18 @@ async function isLightAtBottom(imageKey: string, width: number, height: number):
     return false;
   }
 }
+
+/**
+ * How many characters an event title may have on an admin's uploaded design: what its title area can hold at the smallest size the text
+ * may shrink to. A short area gives a shorter limit, so the title always fits the design. (Nothing for a design with no title area.)
+ */
+export function titleCharLimit(spec: any): number | undefined {
+  const t = (spec?.elements || []).find((e: any) => e.type === 'text' && e.role === 'title');
+  if (!t) return undefined;
+  const perLine = Math.floor(t.w / Math.max(6, (t.minSize || t.size || 24) * 0.55));
+  return Math.max(12, Math.min(50, perLine * Math.max(1, t.maxLines || 1)));
+}
+const withTitleLimit = (spec: any) => ({ 'templateData.titleMaxChars': titleCharLimit(spec) ?? null });
 
 export class UploadError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -121,7 +134,7 @@ export async function createUploadedTemplate(actor: { userId: string; role?: str
     kind: 'INVITATION',
     designSpec: spec,
     // lets the Templates screen tell an uploaded design from an AI-made one
-    templateData: { uploaded: true, layoutVersion: 2, ...(dynamic ? { dynamicDetails: true, textAreas: detection.detected ? 'AUTO' : 'NONE' } : {}) },
+    templateData: { uploaded: true, layoutVersion: 2, ...(dynamic ? { dynamicDetails: true, textAreas: detection.detected ? 'AUTO' : 'NONE', ...(titleCharLimit(spec) ? { titleMaxChars: titleCharLimit(spec) } : {}) } : {}) },
     ownerId: new mongoose.Types.ObjectId(actor.userId),
     // an organizer's upload is private to them; an admin's is shared: every organizer can use it (for its category / subcategory)
     isSystemTemplate: dynamic,
@@ -184,7 +197,7 @@ async function saveZones(t: OwnUpload, zones: TextZone[], mode: 'AUTO' | 'MANUAL
   const dynamic = t.templateData?.dynamicDetails === true;
   const light = await isLightAtBottom(t.previewImageKey as string, W, H);
   const next = dynamic ? buildDynamicUploadedSpec(t.previewImageKey as string, W, H, light, zones) : buildUploadedSpec(t.previewImageKey as string, W, H, zones, light);
-  const updated = await Template.findByIdAndUpdate(t._id, { designSpec: next, 'templateData.layoutVersion': 2, ...(dynamic ? { 'templateData.textAreas': mode } : {}) }, { new: true });
+  const updated = await Template.findByIdAndUpdate(t._id, { designSpec: next, 'templateData.layoutVersion': 2, ...(dynamic ? { 'templateData.textAreas': mode, ...withTitleLimit(next) } : {}) }, { new: true });
   return { updated };
 }
 
@@ -223,7 +236,7 @@ export async function rebuildUploadedLayout(templateId: string) {
   // An upload by an administrator is shared with every organizer (a few older ones were saved as private): repaired here, so it can be chosen and used
   const owner = (t as any).ownerId ? await User.findById((t as any).ownerId).select('role').lean() : null;
   const shareIt = owner?.role === 'ADMIN' && (t as any).isSystemTemplate !== true;
-  await Template.findByIdAndUpdate(t._id, { designSpec: next, 'templateData.layoutVersion': 2, ...(dynamic ? { 'templateData.textAreas': found.detected ? 'AUTO' : 'NONE' } : {}), ...(shareIt ? { isSystemTemplate: true } : {}) });
+  await Template.findByIdAndUpdate(t._id, { designSpec: next, 'templateData.layoutVersion': 2, ...(dynamic ? { 'templateData.textAreas': found.detected ? 'AUTO' : 'NONE', ...withTitleLimit(next) } : {}), ...(shareIt ? { isSystemTemplate: true } : {}) });
   return { dynamic, detected: found.detected, zones: found.zones.map((z) => z.role), reason: found.reason, shared: shareIt };
 }
 

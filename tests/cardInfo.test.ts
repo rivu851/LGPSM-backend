@@ -25,6 +25,10 @@ describe('card guest lines', () => {
 });
 
 describe('custom detail title', () => {
+  it('a second custom detail with no title typed yet leaves its preview line empty (not "Employee ID")', () => {
+    expect(cardGuestLines(null, { primary: 'INVITEE_NAME', secondary: 'SECONDARY_IDENTITY' }).companyName).toBe('');
+  });
+
   it('previews print the organizer\'s own title instead of "Employee ID"', () => {
     expect(cardGuestLines(null, { primary: 'INVITEE_NAME', secondary: 'PROFESSIONAL_IDENTITY', identityLabel: 'Designation' }).companyName).toBe('Designation');
     expect(cardGuestLines(null, { primary: 'INVITEE_NAME', secondary: 'PROFESSIONAL_IDENTITY' }).companyName).toBe('Employee ID');
