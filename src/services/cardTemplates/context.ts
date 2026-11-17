@@ -48,8 +48,8 @@ export async function loadCardContext(event: EventLike): Promise<CardContext> {
   // unreadable one) falls back to the design that suits the event type, so a card is always produced.
   let designSpec: DesignSpec | undefined;
   let templateDesign: string | null | undefined = template?.cardDesign;
-  // (while the master card is the only design, no custom or uploaded design is drawn: every event's card is the master card)
-  if (template?.cardDesign === 'CUSTOM' && !masterCardOnly()) {
+  // (while the master card is the only shared design, only an organizer's own uploaded design is drawn besides it, for that organizer's events)
+  if (template?.cardDesign === 'CUSTOM' && (!masterCardOnly() || (!!template.ownerId && String(template.ownerId) === String(event.organizerId)))) {
     // (a "retired" template is no longer offered in the template list, but the events that already use it keep their card)
     const usable =
       (template.isActive !== false || (template as any).templateData?.retired === true) &&

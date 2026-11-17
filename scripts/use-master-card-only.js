@@ -35,10 +35,10 @@ const BACKUP = './retired-templates-backup.json';
     return;
   }
 
-  const offered = await templates.find({ isActive: { $ne: false }, cardDesign: { $ne: 'MASTER' } }).project({ name: 1, cardDesign: 1, isSystemTemplate: 1 }).toArray();
+  const offered = await templates.find({ isActive: { $ne: false }, cardDesign: { $ne: 'MASTER' }, $nor: [{ cardDesign: 'CUSTOM', ownerId: { $exists: true, $ne: null } }] }).project({ name: 1, cardDesign: 1, isSystemTemplate: 1 }).toArray();
   const master = await templates.countDocuments({ cardDesign: 'MASTER', isActive: { $ne: false } });
   console.log(`Master card templates now offered: ${master}`);
-  console.log(`Other templates now offered (would be retired): ${offered.length}`);
+  console.log(`Other templates now offered (would be retired; organizers' own uploads are kept): ${offered.length}`);
   for (const t of offered) console.log(`  ${String(t._id)}  ${t.cardDesign}  ${t.name}${t.isSystemTemplate ? '  (shared)' : ''}`);
 
   if (!apply) {

@@ -15,6 +15,12 @@ import { Template } from '../models/Template';
 import { EVENT_TITLE_MAX_LENGTH } from '../constants/eventLimits';
 import { masterCardOnly } from '../constants/masterCard';
 import { ensureMasterTemplate } from './cardTemplates/defaultTemplates';
+
+/** Is this template an uploaded design owned by this organizer (the one kind that is kept while the master card is the only shared design)? */
+async function isOwnUploadOf(templateId: unknown, organizerId: string): Promise<boolean> {
+  if (!templateId || !mongoose.Types.ObjectId.isValid(String(templateId)) || !mongoose.Types.ObjectId.isValid(organizerId)) return false;
+  return !!(await Template.exists({ _id: String(templateId), ownerId: organizerId, cardDesign: 'CUSTOM', isActive: { $ne: false } }));
+}
 import { findManageableEvent } from '../utils/eventAccess';
 import { platformSettingsService } from './platformSettings.service';
 import { alertService } from './alert.service';
@@ -127,8 +133,8 @@ export class EventService {
       delete eventData.templateId;
     }
 
-    // while the master card is the only design, every event is made with it
-    if (masterCardOnly()) {
+    // while the master card is the only shared design, every event is made with it, except one made with the organizer's own uploaded design
+    if (masterCardOnly() && !(await isOwnUploadOf(eventData.templateId, String(organizerId)))) {
       const masterId = await ensureMasterTemplate();
       if (masterId) eventData.templateId = masterId;
     }
@@ -273,12 +279,6 @@ export class EventService {
       if (!categoryExists || !(await canUseCategory(nextCategoryId, updateData.subcategoryId ? String(updateData.subcategoryId) : undefined, String(existingEvent.organizerId)))) throw new Error('CATEGORY_NOT_FOUND');
     }
 
-    // while the master card is the only design, an event is only ever made with it
-    if (updateData.templateId && masterCardOnly()) {
-      const masterId = await ensureMasterTemplate();
-      if (masterId) updateData.templateId = masterId;
-    }
-
     if (updateData.templateId && updateData.templateId !== existingEvent.templateId?.toString()) {
       if (!(await templateService.isUsableByOrganizer(String(updateData.templateId), String(existingEvent.organizerId)))) {
         // An admin editing an organizer's event may pick a design they uploaded themselves: the organizer gets their own copy
@@ -286,6 +286,12 @@ export class EventService {
         if (!copyId) throw new Error('TEMPLATE_NOT_FOUND');
         updateData.templateId = copyId;
       }
+    }
+
+    // while the master card is the only shared design, an event is only ever made with it, or with the organizer's own uploaded design
+    if (updateData.templateId && masterCardOnly() && !(await isOwnUploadOf(updateData.templateId, String(existingEvent.organizerId)))) {
+      const masterId = await ensureMasterTemplate();
+      if (masterId) updateData.templateId = masterId;
     }
 
     // a new title or a new template: the title must fit the template's design (older events are left as they are until one of them changes)

@@ -34,9 +34,12 @@ export interface TemplatePreviewInput {
 export async function renderTemplatePreview(templateId: string | null, input: TemplatePreviewInput, isAdmin: boolean, userId?: string): Promise<Buffer> {
   // With no template chosen the card still gets the design that suits the event type, exactly as it will when sent
   // (while the master card is the only design, the preview is always the master card, whatever template the form still remembers)
-  const rawTemplate = templateId && !masterCardOnly() ? await Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec templateData').lean() : null;
+  // (the person's own uploaded design is still drawn while the master card is the only shared one)
+  const loaded = templateId ? await Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec templateData').lean() : null;
+  const ownUpload = !!loaded && (loaded as any).cardDesign === 'CUSTOM' && !!(loaded as any).ownerId && !!userId && String((loaded as any).ownerId) === String(userId);
+  const rawTemplate = !masterCardOnly() || ownUpload ? loaded : null;
   // organizers only see what the template list shows them: published templates and their own, never another organizer's
-  if (templateId && !masterCardOnly() && (!rawTemplate || !templateVisibleTo(rawTemplate as any, { userId, isAdmin }))) throw new Error('TEMPLATE_NOT_FOUND');
+  if (templateId && (!masterCardOnly() || ownUpload) && (!rawTemplate || !templateVisibleTo(rawTemplate as any, { userId, isAdmin }))) throw new Error('TEMPLATE_NOT_FOUND');
   // (an admin's upload saved before the design's own wording was read has it read now, once)
   const template = await withCurrentLayout(rawTemplate as any);
   // a custom design is drawn from its stored specification
