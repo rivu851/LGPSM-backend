@@ -10,6 +10,9 @@ const envSchema = z.object({
   ATLAS_URL: z.string().min(1, 'ATLAS_URL is required'),
   DNS_SERVER: z.string().optional().default('8.8.8.8'),
   FRONTEND_URL: z.string().default('http://localhost:3000'),
+  // This API's own public address (for example https://lgpsm-backend.onrender.com). Emails sent through an HTTPS mail service (which cannot
+  // embed images by attachment) link to the card, QR and icons at this address instead.
+  PUBLIC_API_URL: z.string().optional(),
   // Extra browser origins allowed by CORS (comma-separated), e.g. beta or preview deployments
   CORS_ORIGINS: z.string().optional(),
   // Time zone used when dates are rendered on the server (invitation cards, emails, WhatsApp)

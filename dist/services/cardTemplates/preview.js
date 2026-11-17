@@ -19,9 +19,12 @@ const masterCard_1 = require("../../constants/masterCard");
 async function renderTemplatePreview(templateId, input, isAdmin, userId) {
     // With no template chosen the card still gets the design that suits the event type, exactly as it will when sent
     // (while the master card is the only design, the preview is always the master card, whatever template the form still remembers)
-    const rawTemplate = templateId && !(0, masterCard_1.masterCardOnly)() ? await Template_1.Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec templateData').lean() : null;
+    // (the person's own uploaded design is still drawn while the master card is the only shared one)
+    const loaded = templateId ? await Template_1.Template.findOne({ _id: templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec templateData').lean() : null;
+    const ownUpload = !!loaded && loaded.cardDesign === 'CUSTOM' && !!loaded.ownerId && !!userId && String(loaded.ownerId) === String(userId);
+    const rawTemplate = !(0, masterCard_1.masterCardOnly)() || ownUpload ? loaded : null;
     // organizers only see what the template list shows them: published templates and their own, never another organizer's
-    if (templateId && !(0, masterCard_1.masterCardOnly)() && (!rawTemplate || !(0, template_service_1.templateVisibleTo)(rawTemplate, { userId, isAdmin })))
+    if (templateId && (!(0, masterCard_1.masterCardOnly)() || ownUpload) && (!rawTemplate || !(0, template_service_1.templateVisibleTo)(rawTemplate, { userId, isAdmin })))
         throw new Error('TEMPLATE_NOT_FOUND');
     // (an admin's upload saved before the design's own wording was read has it read now, once)
     const template = await (0, uploadedTemplate_1.withCurrentLayout)(rawTemplate);

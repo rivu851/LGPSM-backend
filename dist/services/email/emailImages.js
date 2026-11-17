@@ -5,9 +5,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.iconCid = exports.PLATFORM_LOGO_CID = void 0;
 exports.inlineImagesFor = inlineImagesFor;
+exports.emailAssetByCid = emailAssetByCid;
 const promises_1 = require("fs/promises");
 const sharp_1 = __importDefault(require("sharp"));
 const assetPath_1 = require("../../utils/assetPath");
+const publicUrl_1 = require("../../utils/publicUrl");
 /**
  * The small images the invitation email uses besides the card: Material-style icons for the details rows and the LGPSM logo
  * (shown at the top until the organizer uploads their own). Gmail strips inline SVG, so each icon is drawn once to a PNG
@@ -50,5 +52,12 @@ function images() {
 async function inlineImagesFor(html) {
     const all = await images().catch(() => new Map());
     const used = new Set([...html.matchAll(/src="cid:([^"]+)"/g)].map((m) => m[1]));
-    return [...all.values()].filter((a) => used.has(a.cid));
+    const base = (0, publicUrl_1.publicApiUrl)();
+    // a mail service used over HTTPS links to these at the address below (see the public email-assets route)
+    return [...all.values()].filter((a) => used.has(a.cid)).map((a) => (base ? { ...a, url: `${base}/api/v1/public/email-assets/${a.cid}.png` } : a));
+}
+/** One of the icon / logo images by its cid, for the public email-assets route (null when there is no such image) */
+async function emailAssetByCid(cid) {
+    const all = await images().catch(() => new Map());
+    return all.get(cid) ?? null;
 }

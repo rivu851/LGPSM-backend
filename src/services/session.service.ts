@@ -36,7 +36,7 @@ export const sessionService = {
     if (!event) {
       throw new Error('EVENT_NOT_FOUND');
     }
-    assertEventOpenForChanges(event);
+    assertEventOpenForChanges(event as any);
     const admissionError = validateAdmissionInput(data.schedule as any, data.admission as any);
     if (admissionError) throw { statusCode: 400, message: admissionError };
 
@@ -118,7 +118,7 @@ export const sessionService = {
 
   async updateSession(sessionId: string, organizerId: string, data: Partial<ISession>): Promise<ISession> {
     const session = await this.getSessionById(sessionId, organizerId); // Ensures ownership
-    const owningEvent = await Event.findById(session.eventId).select('status').lean();
+    const owningEvent = await Event.findById(session.eventId).select('status schedule').lean();
     if (owningEvent) assertEventOpenForChanges(owningEvent as any);
     if (data.admission !== undefined || data.schedule) {
       const admissionError = validateAdmissionInput(data.schedule ?? session.schedule, (data.admission ?? session.admission) as any);
@@ -159,7 +159,7 @@ export const sessionService = {
 
   async deleteSession(sessionId: string, organizerId: string): Promise<ISession> {
     const session = await this.getSessionById(sessionId, organizerId); // Ensures ownership
-    const owningEvent = await Event.findById(session.eventId).select('status').lean();
+    const owningEvent = await Event.findById(session.eventId).select('status schedule').lean();
     if (owningEvent) assertEventOpenForChanges(owningEvent as any);
     // Deleting it would leave attendance records pointing at nothing and lose what they were for
     if (await CheckIn.exists({ sessionId: session._id })) {

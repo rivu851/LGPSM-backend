@@ -1,49 +1,70 @@
-import { sendEmail } from '../src/utils/email.provider';
+/**
+ * Mail over HTTPS (Brevo's API), which is how mail has to go on hosts that block SMTP (Render's free tier): inline images are linked by
+ * their public address instead of embedded by attachment, images the guest needs are attached as plain files when they cannot be linked,
+ * and a refusal from the mail service is reported with its reason.
+ */
+import request from 'supertest';
 
-describe('sendEmail over the Brevo HTTPS API', () => {
-  const original = { ...process.env };
+describe('mail sent over HTTPS', () => {
   const fetchMock = jest.fn();
+  const load = (publicUrl?: string) => {
+    jest.resetModules();
+    process.env.BREVO_API_KEY = 'xkeysib-test';
+    process.env.BREVO_SENDER = 'LGPSM <events@example.com>';
+    if (publicUrl === undefined) delete process.env.PUBLIC_API_URL; else process.env.PUBLIC_API_URL = publicUrl;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('../src/utils/email.provider') as typeof import('../src/utils/email.provider');
+  };
+  beforeEach(() => { fetchMock.mockReset(); fetchMock.mockResolvedValue({ ok: true, status: 201, json: async () => ({}) }); (global as any).fetch = fetchMock; });
+  afterAll(() => { delete process.env.BREVO_API_KEY; delete process.env.BREVO_SENDER; delete process.env.PUBLIC_API_URL; });
+  const sent = () => JSON.parse(fetchMock.mock.calls[0][1].body);
 
-  beforeEach(() => {
-    process.env.BREVO_API_KEY = 'test-key';
-    process.env.SMTP_FROM = '"LGPSM Events <sender@example.com>"';
-    delete process.env.BREVO_SENDER;
-    fetchMock.mockReset();
-    (global as any).fetch = fetchMock;
+  it('sends a plain email with the sender and recipient', async () => {
+    const { sendEmail } = load();
+    await sendEmail('guest@x.com', 'Hello', '<p>Hi</p>');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.brevo.com/v3/smtp/email');
+    expect(sent()).toMatchObject({ sender: { name: 'LGPSM', email: 'events@example.com' }, to: [{ email: 'guest@x.com' }], subject: 'Hello', htmlContent: '<p>Hi</p>' });
+    expect(sent().attachment).toBeUndefined();
   });
 
-  afterAll(() => {
-    process.env = original;
+  it('links an inline image by its public address instead of attaching it, and trims a trailing slash from the API address', async () => {
+    const { sendEmail, publicApiUrl } = load('https://api.example.com/');
+    expect(publicApiUrl()).toBe('https://api.example.com');
+    await sendEmail('g@x.com', 'S', '<img src="cid:card-1"><img src="cid:icon-1">', [
+      { filename: 'card.png', content: Buffer.from('png'), cid: 'card-1', url: 'https://api.example.com/api/v1/public/invitations/T/card', essential: true },
+      { filename: 'icon.png', content: Buffer.from('png'), cid: 'icon-1', url: 'https://api.example.com/api/v1/public/email-assets/icon-1.png' },
+    ]);
+    expect(sent().htmlContent).toBe('<img src="https://api.example.com/api/v1/public/invitations/T/card"><img src="https://api.example.com/api/v1/public/email-assets/icon-1.png">');
+    expect(sent().attachment).toBeUndefined();
   });
 
-  it('posts the message with the parsed sender', async () => {
-    fetchMock.mockResolvedValue({ ok: true, status: 201 });
-    process.env.SMTP_FROM = 'LGPSM Events <sender@example.com>';
-
-    await expect(sendEmail('a@b.com', 'Hi', '<p>x</p>')).resolves.toBe(true);
-
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://api.brevo.com/v3/smtp/email');
-    expect(init.headers['api-key']).toBe('test-key');
-    expect(JSON.parse(init.body)).toMatchObject({
-      sender: { name: 'LGPSM Events', email: 'sender@example.com' },
-      to: [{ email: 'a@b.com' }],
-      subject: 'Hi',
-    });
+  it('without a public address, attaches only the images the guest needs, as plain files', async () => {
+    const { sendEmail } = load();
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await sendEmail('g@x.com', 'S', '<img src="cid:card-1"><img src="cid:icon-1">', [
+      { filename: 'invitation-card.png', content: Buffer.from('card'), cid: 'card-1', essential: true },
+      { filename: 'icon.png', content: Buffer.from('icon'), cid: 'icon-1' },
+    ]);
+    expect(sent().attachment).toEqual([{ name: 'invitation-card.png', content: Buffer.from('card').toString('base64') }]);
   });
 
-  it('throws FAILED_TO_SEND_EMAIL when the API rejects the request', async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 401 });
-    process.env.SMTP_FROM = 'sender@example.com';
-
-    await expect(sendEmail('a@b.com', 'Hi', '<p>x</p>')).rejects.toThrow('FAILED_TO_SEND_EMAIL');
+  it('reports a refusal with Brevo\'s reason (never the key) and fails the send', async () => {
+    const { sendEmail } = load();
+    const err = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    fetchMock.mockResolvedValue({ ok: false, status: 400, json: async () => ({ code: 'invalid_parameter', message: 'Sender is not valid' }) });
+    await expect(sendEmail('g@x.com', 'S', '<p>x</p>')).rejects.toThrow('FAILED_TO_SEND_EMAIL');
+    expect(JSON.stringify(err.mock.calls)).toMatch(/Sender is not valid/);
+    expect(JSON.stringify(err.mock.calls)).not.toMatch(/xkeysib/);
   });
 
-  it('does not use the API when the message has attachments', async () => {
-    process.env.SMTP_HOST = '';
-    await expect(
-      sendEmail('a@b.com', 'Hi', '<p>x</p>', [{ filename: 'a.png', content: 'x', cid: 'c' }])
-    ).rejects.toThrow('PROVIDER_NOT_CONFIGURED');
-    expect(fetchMock).not.toHaveBeenCalled();
+  it('serves the email icons and logo publicly, and nothing else', async () => {
+    load();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const app = require('../src/app').default;
+    const ok = await request(app).get('/api/v1/public/email-assets/lgpsm-icon-event.png');
+    expect(ok.status).toBe(200);
+    expect(ok.headers['content-type']).toMatch(/image\/png/);
+    expect((await request(app).get('/api/v1/public/email-assets/not-an-image.png')).status).toBe(404);
+    expect((await request(app).get('/api/v1/public/email-assets/..%2Fsecret.png')).status).toBe(404);
   });
 });

@@ -37,6 +37,22 @@ exports.publicInvitationController = {
         }
     },
     // The entry QR alone, for events whose cards are printed without it
+    /** The organizer's logo for the guest's email (the mail service links to it instead of embedding it) */
+    async getPublicInvitationLogo(req, res) {
+        try {
+            const logo = await invitation_service_1.invitationService.publicInvitationLogo(req.params.token);
+            if (!logo)
+                return res.status(404).json({ success: false, message: 'No logo' });
+            res.setHeader('Content-Type', logo.contentType);
+            res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+            res.setHeader('Cache-Control', 'private, max-age=3600');
+            return res.status(200).send(logo.content);
+        }
+        catch {
+            // the same answer for a wrong, replaced or withdrawn link: nothing is revealed
+            return res.status(404).json({ success: false, message: 'Invitation not found or token is invalid' });
+        }
+    },
     async getPublicInvitationQr(req, res) {
         try {
             const token = req.params.token;

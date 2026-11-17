@@ -144,6 +144,9 @@ exports.eventController = {
             else if (error.message === 'EVENT_CLOSED') {
                 res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_CLOSED', message: 'A closed or cancelled event can no longer be edited.' });
             }
+            else if (error.message === 'EVENT_ENDED') {
+                res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_ENDED', message: 'This event is over, so it can no longer be edited.' });
+            }
             else if (error.message === 'EVENT_LOCKED') {
                 res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_LOCKED', message: 'This event can’t be edited after invitations have been sent.', details: [] });
             }
@@ -173,7 +176,7 @@ exports.eventController = {
                 res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
             }
             else if (message === 'INVALID_TRANSITION') {
-                res.status(409).json({ success: false, error: 'Conflict', code: 'INVALID_TRANSITION', message: 'A completed or closed event cannot be cancelled.' });
+                res.status(409).json({ success: false, error: 'Conflict', code: 'INVALID_TRANSITION', message: 'An event that is over or closed cannot be cancelled. It can be deleted instead.' });
             }
             else if (message === 'FORBIDDEN') {
                 res.status(403).json({ success: false, error: 'Forbidden', message: 'You are not authorized to cancel this event' });

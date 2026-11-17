@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.canTransition = exports.eventHasEnded = void 0;
 exports.assertEventOpenForChanges = assertEventOpenForChanges;
 const Event_1 = require("../models/Event");
+const clock_1 = require("./clock");
 /**
  * Server-side event lifecycle. Status is never taken from a client request body: it only changes through the
  * explicit operations below (close, cancel), each of which checks the transition here.
@@ -25,7 +26,7 @@ const TRANSITIONS = {
  * An event is over once it was closed, or once its end time has passed: nobody has to press anything. Entry and QR passes
  * already stop at that moment (the admission window); this is the same test for the rules that wait until an event is over.
  */
-const eventHasEnded = (event, now = new Date()) => {
+const eventHasEnded = (event, now = clock_1.clock.now()) => {
     if (event.status === Event_1.EventStatus.COMPLETED)
         return true;
     if (event.status !== Event_1.EventStatus.PUBLISHED)
@@ -35,7 +36,7 @@ const eventHasEnded = (event, now = new Date()) => {
 };
 exports.eventHasEnded = eventHasEnded;
 /**
- * A closed or cancelled event is a historical record: its guests, sessions and staff no longer change.
+ * A closed, cancelled or finished (end time passed) event is a historical record: its guests, sessions and staff no longer change.
  * Throws a 409 the global error handler reports as it stands.
  */
 function assertEventOpenForChanges(event) {
@@ -45,6 +46,10 @@ function assertEventOpenForChanges(event) {
             code: 'EVENT_CLOSED',
             message: event.status === Event_1.EventStatus.CANCELLED ? 'This event has been cancelled, so it can no longer be changed.' : 'This event has been closed, so it can no longer be changed.',
         };
+    }
+    // an event whose end time has passed is over too (nobody has to press anything): its guests, sessions and staff no longer change
+    if ((0, exports.eventHasEnded)(event)) {
+        throw { statusCode: 409, code: 'EVENT_ENDED', message: 'This event is over, so it can no longer be changed.' };
     }
 }
 const canTransition = (from, to) => TRANSITIONS[from]?.includes(to) ?? false;

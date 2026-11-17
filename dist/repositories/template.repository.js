@@ -12,14 +12,14 @@ const masterCard_1 = require("../constants/masterCard");
 const CATEGORY_FIELDS = 'name description isActive';
 function listQuery(categoryId, viewer, options, adminIds) {
     const query = { isActive: true };
-    // while the master card is the only design, it is the only template listed
+    const own = viewer.userId && mongoose_1.default.Types.ObjectId.isValid(viewer.userId) ? { ownerId: new mongoose_1.default.Types.ObjectId(viewer.userId) } : null;
+    // while the master card is the only shared design, it is the only shared template listed; a person's own uploaded templates still are
     if ((0, masterCard_1.masterCardOnly)())
-        query.cardDesign = 'MASTER';
+        query.$and = [{ $or: [{ cardDesign: 'MASTER' }, ...(own ? [{ cardDesign: 'CUSTOM', ...own }] : [])] }];
     if (categoryId)
         query.categoryId = categoryId;
     if (options.kind)
         query.kind = options.kind === 'INVITATION' ? { $in: ['INVITATION', null] } : 'POSTER';
-    const own = viewer.userId && mongoose_1.default.Types.ObjectId.isValid(viewer.userId) ? { ownerId: new mongoose_1.default.Types.ObjectId(viewer.userId) } : null;
     if (options.mineOnly) {
         query.ownerId = own?.ownerId ?? { $exists: false, $eq: null };
         return query;

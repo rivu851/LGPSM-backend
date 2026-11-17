@@ -109,7 +109,7 @@ exports.sessionService = {
     },
     async updateSession(sessionId, organizerId, data) {
         const session = await this.getSessionById(sessionId, organizerId); // Ensures ownership
-        const owningEvent = await Event_1.Event.findById(session.eventId).select('status').lean();
+        const owningEvent = await Event_1.Event.findById(session.eventId).select('status schedule').lean();
         if (owningEvent)
             (0, eventLifecycle_1.assertEventOpenForChanges)(owningEvent);
         if (data.admission !== undefined || data.schedule) {
@@ -148,7 +148,7 @@ exports.sessionService = {
     },
     async deleteSession(sessionId, organizerId) {
         const session = await this.getSessionById(sessionId, organizerId); // Ensures ownership
-        const owningEvent = await Event_1.Event.findById(session.eventId).select('status').lean();
+        const owningEvent = await Event_1.Event.findById(session.eventId).select('status schedule').lean();
         if (owningEvent)
             (0, eventLifecycle_1.assertEventOpenForChanges)(owningEvent);
         // Deleting it would leave attendance records pointing at nothing and lose what they were for

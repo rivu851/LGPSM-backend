@@ -2,6 +2,7 @@ import { readFile } from 'fs/promises';
 import sharp from 'sharp';
 import { assetPath } from '../../utils/assetPath';
 import type { EmailAttachment } from '../../utils/email.provider';
+import { publicApiUrl } from '../../utils/publicUrl';
 
 /**
  * The small images the invitation email uses besides the card: Material-style icons for the details rows and the LGPSM logo
@@ -47,5 +48,13 @@ function images(): Promise<Map<string, EmailAttachment>> {
 export async function inlineImagesFor(html: string): Promise<EmailAttachment[]> {
   const all = await images().catch(() => new Map<string, EmailAttachment>());
   const used = new Set([...html.matchAll(/src="cid:([^"]+)"/g)].map((m) => m[1]));
-  return [...all.values()].filter((a) => used.has(a.cid!));
+  const base = publicApiUrl();
+  // a mail service used over HTTPS links to these at the address below (see the public email-assets route)
+  return [...all.values()].filter((a) => used.has(a.cid!)).map((a) => (base ? { ...a, url: `${base}/api/v1/public/email-assets/${a.cid}.png` } : a));
+}
+
+/** One of the icon / logo images by its cid, for the public email-assets route (null when there is no such image) */
+export async function emailAssetByCid(cid: string): Promise<EmailAttachment | null> {
+  const all = await images().catch(() => new Map<string, EmailAttachment>());
+  return all.get(cid) ?? null;
 }

@@ -22,6 +22,12 @@ const Template_1 = require("../models/Template");
 const eventLimits_1 = require("../constants/eventLimits");
 const masterCard_1 = require("../constants/masterCard");
 const defaultTemplates_1 = require("./cardTemplates/defaultTemplates");
+/** Is this template an uploaded design owned by this organizer (the one kind that is kept while the master card is the only shared design)? */
+async function isOwnUploadOf(templateId, organizerId) {
+    if (!templateId || !mongoose_1.default.Types.ObjectId.isValid(String(templateId)) || !mongoose_1.default.Types.ObjectId.isValid(organizerId))
+        return false;
+    return !!(await Template_1.Template.exists({ _id: String(templateId), ownerId: organizerId, cardDesign: 'CUSTOM', isActive: { $ne: false } }));
+}
 const eventAccess_1 = require("../utils/eventAccess");
 const platformSettings_service_1 = require("./platformSettings.service");
 const alert_service_1 = require("./alert.service");
@@ -132,8 +138,8 @@ class EventService {
         else {
             delete eventData.templateId;
         }
-        // while the master card is the only design, every event is made with it
-        if ((0, masterCard_1.masterCardOnly)()) {
+        // while the master card is the only shared design, every event is made with it, except one made with the organizer's own uploaded design
+        if ((0, masterCard_1.masterCardOnly)() && !(await isOwnUploadOf(eventData.templateId, String(organizerId)))) {
             const masterId = await (0, defaultTemplates_1.ensureMasterTemplate)();
             if (masterId)
                 eventData.templateId = masterId;
@@ -259,6 +265,9 @@ class EventService {
         // A closed or cancelled event is a historical record
         if (existingEvent.status === Event_1.EventStatus.COMPLETED || existingEvent.status === Event_1.EventStatus.CANCELLED)
             throw new Error('EVENT_CLOSED');
+        // ... and so is one whose end time has passed
+        if ((0, eventLifecycle_1.eventHasEnded)(existingEvent))
+            throw new Error('EVENT_ENDED');
         // Feedback 14: once invitations have gone out (or were attempted), neither the organizer nor an admin can edit
         // the event, so guests' cards and passes always match what was sent. The web edit form applies the same rule.
         if (await this.invitationsStarted(existingEvent._id))
@@ -277,12 +286,6 @@ class EventService {
             if (!categoryExists || !(await (0, category_service_1.canUseCategory)(nextCategoryId, updateData.subcategoryId ? String(updateData.subcategoryId) : undefined, String(existingEvent.organizerId))))
                 throw new Error('CATEGORY_NOT_FOUND');
         }
-        // while the master card is the only design, an event is only ever made with it
-        if (updateData.templateId && (0, masterCard_1.masterCardOnly)()) {
-            const masterId = await (0, defaultTemplates_1.ensureMasterTemplate)();
-            if (masterId)
-                updateData.templateId = masterId;
-        }
         if (updateData.templateId && updateData.templateId !== existingEvent.templateId?.toString()) {
             if (!(await template_service_1.templateService.isUsableByOrganizer(String(updateData.templateId), String(existingEvent.organizerId)))) {
                 // An admin editing an organizer's event may pick a design they uploaded themselves: the organizer gets their own copy
@@ -291,6 +294,12 @@ class EventService {
                     throw new Error('TEMPLATE_NOT_FOUND');
                 updateData.templateId = copyId;
             }
+        }
+        // while the master card is the only shared design, an event is only ever made with it, or with the organizer's own uploaded design
+        if (updateData.templateId && (0, masterCard_1.masterCardOnly)() && !(await isOwnUploadOf(updateData.templateId, String(existingEvent.organizerId)))) {
+            const masterId = await (0, defaultTemplates_1.ensureMasterTemplate)();
+            if (masterId)
+                updateData.templateId = masterId;
         }
         // a new title or a new template: the title must fit the template's design (older events are left as they are until one of them changes)
         if (updateData.title !== undefined || updateData.templateId) {
@@ -383,6 +392,9 @@ class EventService {
         if (!existing)
             throw new Error('EVENT_NOT_FOUND');
         if (existing.status === Event_1.EventStatus.COMPLETED)
+            throw new Error('INVALID_TRANSITION');
+        // an event that is already over is deleted, not cancelled (cancelling would tell its guests it was called off)
+        if (existing.status !== Event_1.EventStatus.CANCELLED && (0, eventLifecycle_1.eventHasEnded)(existing))
             throw new Error('INVALID_TRANSITION');
         const cleanReason = typeof reason === 'string' ? reason.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 500) || undefined : undefined;
         let alreadyCancelled = existing.status === Event_1.EventStatus.CANCELLED;

@@ -101,7 +101,7 @@ export const passNoticeService = {
         if (!invitee.email) return { state: 'UNAVAILABLE', reason: 'No email address on record' };
         if (notice.kind === 'REPLACED') {
           const cid = `pass-${invitee._id}`;
-          await sendEmail(invitee.email, `Your new access pass: ${event.title}`, replacedEmail({ guest: invitee.name, title: event.title, when, link, cid }), [{ filename: 'access-pass.png', content: card!, cid, contentType: 'image/png' }]);
+          await sendEmail(invitee.email, `Your new access pass: ${event.title}`, replacedEmail({ guest: invitee.name, title: event.title, when, link, cid }), [{ filename: 'access-pass.png', content: card!, cid, contentType: 'image/png', essential: true }]);
         } else {
           await sendEmail(invitee.email, `Access pass withdrawn: ${event.title}`, revokedEmail({ guest: invitee.name, title: event.title, contact: event.contactNumber }));
         }

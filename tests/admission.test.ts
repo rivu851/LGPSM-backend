@@ -121,8 +121,8 @@ describe('P0.2 — admission windows and secure QR admission', () => {
     it('blocks scanning that session at once and leaves the other sessions working', async () => {
       const assignment: any = await SystemUserAssignment.findOne({ userId: staff._id, eventId: event._id });
       const assign = (sessionIds: string[]) => request(app).patch(`/api/v1/assignments/${assignment._id}`).set(auth(tOrg)).send({ sessionIds });
+      setNow(at(START, 60e3)); // the event is running (a finished event no longer changes its staff)
       expect((await assign([String(s1._id), String(s2._id)])).status).toBeLessThan(300);
-      setNow(at(START, 60e3));
       expect((await scan(guestToken, { sessionId: String(s2._id) }, tStaff)).status).toBe(201);
       expect((await assign([String(s1._id)])).status).toBeLessThan(300);
       const blocked = await scan(guestToken2, { sessionId: String(s2._id) }, tStaff);
@@ -454,6 +454,7 @@ describe('P0.2 — admission windows and secure QR admission', () => {
     });
 
     it('is allowed after invitations were sent (the general edit stays locked)', async () => {
+      setNow(at(START, 60e3)); // the event is running: the lock that applies is the one for sent invitations
       await Invitation.create({ eventId: event._id, inviteeId: guest._id, channel: DeliveryChannel.EMAIL, status: InvitationDeliveryStatus.SENT, tokenHash: hashToken('x') });
       expect((await patch({ closesAt: '2026-10-31T12:30:00.000Z' })).status).toBe(200);
       const edit = await request(app).patch(`/api/v1/events/${event._id}`).set(auth(tOrg)).send({ title: 'Renamed' });
@@ -494,7 +495,7 @@ describe('P0.2 — admission windows and secure QR admission', () => {
       // dates in the future (the API refuses a start in the past), relative to now so the test does not age
       const day = Date.now() + 30 * 86400000;
       const iso = (hours: number) => new Date(day + hours * 3600000).toISOString();
-      await Event.updateOne({ _id: event._id }, { 'admission.opensAt': new Date(day + 1 * 3600000) });
+      await Event.updateOne({ _id: event._id }, { 'admission.opensAt': new Date(day + 1 * 3600000), schedule: { start: new Date(day + 2 * 3600000), end: new Date(day + 3 * 3600000) } });
       const bad = await request(app).patch(`/api/v1/events/${event._id}`).set(auth(tOrg))
         .send({ schedule: { start: iso(2), end: iso(3) } }); // stored opening (1h) stays valid
       expect(bad.status).toBe(200);

@@ -229,8 +229,8 @@ exports.inviteeSetService = {
      */
     async clearUnused(actor, eventId) {
         const event = await manageableEvent(actor, eventId);
-        if (event.status === Event_1.EventStatus.COMPLETED || event.status === Event_1.EventStatus.CANCELLED)
-            throw fail(409, 'This event is closed, so its invitee lists cannot be changed.', 'EVENT_CLOSED');
+        if (event.status === Event_1.EventStatus.COMPLETED || event.status === Event_1.EventStatus.CANCELLED || (0, eventLifecycle_1.eventHasEnded)(event))
+            throw fail(409, 'This event is over or closed, so its invitee lists cannot be changed.', 'EVENT_CLOSED');
         const eid = new mongoose_1.default.Types.ObjectId(eventId);
         const [attempt, checkIn, credential, answered, passed] = await Promise.all([
             Invitation_1.Invitation.exists({ eventId: eid }),

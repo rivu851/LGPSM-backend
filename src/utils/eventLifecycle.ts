@@ -1,4 +1,5 @@
 import { EventStatus } from '../models/Event';
+import { clock } from './clock';
 
 /**
  * Server-side event lifecycle. Status is never taken from a client request body: it only changes through the
@@ -23,7 +24,7 @@ const TRANSITIONS: Record<EventStatus, readonly EventStatus[]> = {
  * An event is over once it was closed, or once its end time has passed: nobody has to press anything. Entry and QR passes
  * already stop at that moment (the admission window); this is the same test for the rules that wait until an event is over.
  */
-export const eventHasEnded = (event: { status?: string; schedule?: { end?: Date | string | null } | null }, now: Date = new Date()): boolean => {
+export const eventHasEnded = (event: { status?: string; schedule?: { end?: Date | string | null } | null }, now: Date = clock.now()): boolean => {
   if (event.status === EventStatus.COMPLETED) return true;
   if (event.status !== EventStatus.PUBLISHED) return false;
   const end = event.schedule?.end ? new Date(event.schedule.end) : null;
@@ -31,16 +32,20 @@ export const eventHasEnded = (event: { status?: string; schedule?: { end?: Date 
 };
 
 /**
- * A closed or cancelled event is a historical record: its guests, sessions and staff no longer change.
+ * A closed, cancelled or finished (end time passed) event is a historical record: its guests, sessions and staff no longer change.
  * Throws a 409 the global error handler reports as it stands.
  */
-export function assertEventOpenForChanges(event: { status?: string }): void {
+export function assertEventOpenForChanges(event: { status?: string; schedule?: { end?: Date | string | null } | null }): void {
   if (event.status === EventStatus.COMPLETED || event.status === EventStatus.CANCELLED) {
     throw {
       statusCode: 409,
       code: 'EVENT_CLOSED',
       message: event.status === EventStatus.CANCELLED ? 'This event has been cancelled, so it can no longer be changed.' : 'This event has been closed, so it can no longer be changed.',
     };
+  }
+  // an event whose end time has passed is over too (nobody has to press anything): its guests, sessions and staff no longer change
+  if (eventHasEnded(event)) {
+    throw { statusCode: 409, code: 'EVENT_ENDED', message: 'This event is over, so it can no longer be changed.' };
   }
 }
 

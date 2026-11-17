@@ -63,6 +63,7 @@ describe('P0.3 — event cancellation lifecycle', () => {
   };
 
   beforeEach(async () => {
+    jest.spyOn(clock, "now").mockReturnValue(DURING); // the event is running: an event that is already over is deleted, not cancelled
     await Promise.all([User, Event, Session, Invitee, Invitation, SystemUserAssignment, CheckIn, AuditLog, CancellationNotice].map((m: any) => m.deleteMany({})));
     for (const k of Object.keys(guests)) delete guests[k];
     const mk = (fullName: string, email: string, role: Role) => User.create({ fullName, email, role, isActive: true });

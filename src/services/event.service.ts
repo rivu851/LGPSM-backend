@@ -262,6 +262,8 @@ export class EventService {
     if (!existingEvent) throw new Error('EVENT_NOT_FOUND');
     // A closed or cancelled event is a historical record
     if (existingEvent.status === EventStatus.COMPLETED || existingEvent.status === EventStatus.CANCELLED) throw new Error('EVENT_CLOSED');
+    // ... and so is one whose end time has passed
+    if (eventHasEnded(existingEvent)) throw new Error('EVENT_ENDED');
     // Feedback 14: once invitations have gone out (or were attempted), neither the organizer nor an admin can edit
     // the event, so guests' cards and passes always match what was sent. The web edit form applies the same rule.
     if (await this.invitationsStarted(existingEvent._id as any)) throw new Error('EVENT_LOCKED');
@@ -389,6 +391,8 @@ export class EventService {
     const existing = await findManageableEvent(eventId, actor.userId, actor.role);
     if (!existing) throw new Error('EVENT_NOT_FOUND');
     if (existing.status === EventStatus.COMPLETED) throw new Error('INVALID_TRANSITION');
+    // an event that is already over is deleted, not cancelled (cancelling would tell its guests it was called off)
+    if (existing.status !== EventStatus.CANCELLED && eventHasEnded(existing)) throw new Error('INVALID_TRANSITION');
 
     const cleanReason = typeof reason === 'string' ? reason.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 500) || undefined : undefined;
     let alreadyCancelled = existing.status === EventStatus.CANCELLED;

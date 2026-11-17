@@ -23,6 +23,7 @@ const qrPayload_1 = require("../utils/qrPayload");
 const credentialTokens_1 = require("../utils/credentialTokens");
 const tokenCipher_1 = require("../utils/tokenCipher");
 const email_provider_1 = require("../utils/email.provider");
+const publicUrl_1 = require("../utils/publicUrl");
 const whatsapp_service_1 = require("./whatsapp.service");
 const invitationCard_service_1 = require("./invitationCard.service");
 const concurrency_1 = require("../utils/concurrency");
@@ -97,6 +98,11 @@ exports.invitationService = {
     async publicInvitationQr(rawToken) {
         const { admissionToken } = await this.publicPass(rawToken);
         return qrcode_1.default.toBuffer((0, qrPayload_1.admissionPayloadFor)(admissionToken), { errorCorrectionLevel: 'H', margin: 4, width: 640 });
+    },
+    /** The organizer's logo shown in the guest's email (behind the guest's own link, like the card); null when the organizer has none */
+    async publicInvitationLogo(rawToken) {
+        const { event } = await this.publicPass(rawToken);
+        return (await organizerBrand(event.organizerId)).logo;
     },
     /** The guest behind an invitation link, their event, and their current admission credential; refused like the card is */
     async publicPass(rawToken) {
@@ -313,12 +319,16 @@ exports.invitationService = {
                         showQr: event.cardDisplay?.qr !== false,
                         sessions: assignedSessions,
                     });
+                    // for a mail service used over HTTPS (it cannot embed images): where this guest's card, QR and logo are served, behind their own link token
+                    const hostedImage = (what) => ((0, publicUrl_1.publicApiUrl)() ? `${(0, publicUrl_1.publicApiUrl)()}/api/v1/public/invitations/${invitationToken.raw}/${what}` : undefined);
                     const attachments = [
                         {
                             filename: 'invitation-card.png',
                             content: cardBuffer,
                             cid: cardCid,
-                            contentType: 'image/png'
+                            contentType: 'image/png',
+                            url: hostedImage('card'),
+                            essential: true
                         },
                         // the QR goes in only when the email shows it on its own, i.e. there is no card image to carry it (an unused inline image
                         // would appear as a loose attachment in Gmail)
@@ -326,9 +336,11 @@ exports.invitationService = {
                                 filename: 'invitation-qr.png',
                                 content: qrBuffer,
                                 cid,
-                                contentType: 'image/png'
+                                contentType: 'image/png',
+                                url: hostedImage('qr'),
+                                essential: true
                             }] : []),
-                        ...(brand.logo ? [{ filename: 'organizer-logo', content: brand.logo.content, cid: `organizer-logo-${invitee._id}`, contentType: brand.logo.contentType }] : []),
+                        ...(brand.logo ? [{ filename: 'organizer-logo', content: brand.logo.content, cid: `organizer-logo-${invitee._id}`, contentType: brand.logo.contentType, url: hostedImage('logo') }] : []),
                         // the details icons, and the LGPSM logo while the organizer has none of their own
                         ...(await (0, emailImages_1.inlineImagesFor)(htmlContent))
                     ];
@@ -628,12 +640,16 @@ exports.invitationService = {
                             showQr: event.cardDisplay?.qr !== false,
                             sessions: assignedSessions,
                         });
+                        // for a mail service used over HTTPS (it cannot embed images): where this guest's card, QR and logo are served, behind their own link token
+                        const hostedImage = (what) => ((0, publicUrl_1.publicApiUrl)() ? `${(0, publicUrl_1.publicApiUrl)()}/api/v1/public/invitations/${invitationToken.raw}/${what}` : undefined);
                         const attachments = [
                             {
                                 filename: 'invitation-card.png',
                                 content: cardBuffer,
                                 cid: cardCid,
-                                contentType: 'image/png'
+                                contentType: 'image/png',
+                                url: hostedImage('card'),
+                                essential: true
                             },
                             // the QR goes in only when the email shows it on its own, i.e. there is no card image to carry it (an unused inline image
                             // would appear as a loose attachment in Gmail)
@@ -641,9 +657,11 @@ exports.invitationService = {
                                     filename: 'invitation-qr.png',
                                     content: qrBuffer,
                                     cid,
-                                    contentType: 'image/png'
+                                    contentType: 'image/png',
+                                    url: hostedImage('qr'),
+                                    essential: true
                                 }] : []),
-                            ...(brand.logo ? [{ filename: 'organizer-logo', content: brand.logo.content, cid: `organizer-logo-${invitee._id}`, contentType: brand.logo.contentType }] : []),
+                            ...(brand.logo ? [{ filename: 'organizer-logo', content: brand.logo.content, cid: `organizer-logo-${invitee._id}`, contentType: brand.logo.contentType, url: hostedImage('logo') }] : []),
                             // the details icons, and the LGPSM logo while the organizer has none of their own
                             ...(await (0, emailImages_1.inlineImagesFor)(htmlContent))
                         ];
