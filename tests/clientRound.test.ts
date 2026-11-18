@@ -12,6 +12,7 @@ jest.mock('../src/utils/email.provider', () => ({ sendEmail: (...args: any[]) =>
 import app from '../src/app';
 import { User, Role } from '../src/models/User';
 import { Category } from '../src/models/Category';
+import { Template } from '../src/models/Template';
 import { Event } from '../src/models/Event';
 import { Invitee } from '../src/models/Invitee';
 import { InviteeSet } from '../src/models/InviteeSet';
@@ -107,6 +108,15 @@ describe('what the cards print', () => {
     expect(decoded).toContain(pass);
     expect(decoded).not.toContain(link);
     expect((await request(app).get(`/api/v1/public/invitations/${generateSecureToken()}/qr`)).status).toBe(404);
+  });
+
+  it('an organizer\'s own static card carries no QR, so the guest page shows the entry QR on its own even with the QR setting left on', async () => {
+    const t: any = await Template.create({ name: 'Own static', cardDesign: 'CUSTOM', kind: 'INVITATION', ownerId: a._id, isSystemTemplate: false, isPublished: true, isActive: true, templateData: { uploaded: true },
+      designSpec: { version: 1, kind: 'INVITATION', canvas: { preset: 'INVITATION_PORTRAIT', width: 1080, height: 1920 }, background: '#000000', palette: { background: '#000000', primary: '#FFFFFF', accent: '#FFFFFF', text: '#FFFFFF' }, elements: [], meta: { generator: 'UPLOAD', plain: true } } });
+    const ev = await mkEvent(a, { cardDisplay: { qr: true }, templateId: t._id });
+    const link = generateSecureToken(); const pass = generateSecureToken();
+    await Invitee.create({ eventId: ev._id, name: 'G2', email: 'g2@x.invalid', invitationStatus: 'SENT', rsvpStatus: 'PENDING', invitationTokenHash: hashToken(link), invitationTokenCipher: encryptToken(link), qrTokenHash: hashToken(pass), qrTokenCipher: encryptToken(pass) });
+    expect((await request(app).get(`/api/v1/public/invitations/${link}`)).body.data.cardShowsQr).toBe(false);
   });
 });
 

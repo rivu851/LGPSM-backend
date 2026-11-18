@@ -8,7 +8,7 @@ import { CredentialEvent } from '../models/CredentialEvent';
 import { credentialStatus } from '../utils/credentialPolicy';
 import { hashToken } from '../utils/invitation.util';
 import { inviteeAllowedInSession } from '../utils/sessionAccess';
-import { cardHostName } from './cardTemplates/context';
+import { cardHostName, loadCardContext, cardCarriesQr } from './cardTemplates/context';
 import { env } from '../config/env';
 import { Template } from '../models/Template';
 import { Category } from '../models/Category';
@@ -153,7 +153,7 @@ export const publicInvitationService = {
       },
       theme,
       // false when the organizer chose not to print the QR on the cards: the page then shows the entry QR on its own
-      cardShowsQr: (event as any).cardDisplay?.qr !== false,
+      cardShowsQr: cardCarriesQr(event as any, await loadCardContext(event as any).catch(() => ({ designSpec: null }))),
       // The guest's CURRENT pass: the page hides the pass image when it is revoked (never says "replaced" for a pass that has a successor)
       credential: { status: credentialStatus(invitee as any, event as any).status },
       invitee: {

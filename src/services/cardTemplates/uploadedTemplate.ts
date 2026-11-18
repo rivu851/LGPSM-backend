@@ -245,7 +245,22 @@ export async function rebuildUploadedLayout(templateId: string) {
  * event's details replace that wording. Called wherever a card is drawn from a template (previews and real sends). Returns the template
  * with its current layout; never throws (a design that cannot be read is drawn as it is).
  */
-export async function withCurrentLayout<T extends { _id?: unknown; designSpec?: unknown; templateData?: any }>(template: T | null): Promise<T | null> {
+/**
+ * An organizer's own uploaded design is the picture exactly as it is: nothing is drawn on it. A design saved by an older version can still
+ * carry a QR code, wording zones or patches in its stored specification, so they are dropped whenever the design is read.
+ */
+export function asStaticUpload<T extends { designSpec?: unknown; templateData?: any; isSystemTemplate?: boolean }>(template: T | null): T | null {
+  const d = template?.templateData;
+  // an administrator's upload is a shared (system) design whose details are replaced by the event's: it is left as it is
+  if (!template || !d?.uploaded || d.dynamicDetails || template.isSystemTemplate) return template;
+  const spec: any = template.designSpec;
+  if (!spec || typeof spec !== 'object') return template;
+  if ((spec.elements ?? []).length === 0 && spec.meta?.plain) return template;
+  return { ...template, designSpec: { ...spec, elements: [], meta: { ...(spec.meta ?? {}), plain: true } } };
+}
+
+export async function withCurrentLayout<T extends { _id?: unknown; designSpec?: unknown; templateData?: any }>(input: T | null): Promise<T | null> {
+  const template = asStaticUpload(input);
   const d = template?.templateData;
   if (!template || !d?.uploaded || !d.dynamicDetails || d.textAreas === 'MANUAL') return template;
   if (d.textAreas !== undefined && d.layoutVersion === 2) return template;

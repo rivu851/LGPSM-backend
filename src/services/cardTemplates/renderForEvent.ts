@@ -9,6 +9,7 @@ import { resolveImageKeyBase64 } from '../../utils/resolveImageBase64';
 import { templateVisibleTo } from '../template.service';
 import { buildSpecTexts } from './content';
 import { safeParseDesignSpec } from './designSpec';
+import { asStaticUpload } from './uploadedTemplate';
 import { cardHostName } from './context';
 import { cardGuestLines } from '../../utils/cardInfo';
 import { renderDesignSpec } from './specRenderer';
@@ -44,7 +45,7 @@ const dataUrlToBuffer = (dataUrl?: string): Buffer | undefined => {
  * workflow, which issues and renders it per attendee. Poster templates carry the registration link when one is given.
  */
 export async function renderTemplateForEvent(input: RenderForEventInput): Promise<RenderForEventResult> {
-  const template = await Template.findOne({ _id: input.templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec').lean();
+  const template = asStaticUpload(await Template.findOne({ _id: input.templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec templateData').lean());
   if (!template || !templateVisibleTo(template as any, { userId: input.userId, isAdmin: input.isAdmin })) throw new Error('TEMPLATE_NOT_FOUND');
   const parsed = template.cardDesign === 'CUSTOM' ? safeParseDesignSpec(template.designSpec) : null;
   if (!parsed?.ok) throw new Error('TEMPLATE_NOT_USABLE');

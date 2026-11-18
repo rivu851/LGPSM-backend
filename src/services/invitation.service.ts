@@ -20,7 +20,7 @@ import { publicApiUrl } from '../utils/publicUrl';
 import { whatsappService, describeWhatsAppError } from './whatsapp.service';
 import { invitationCardService } from './invitationCard.service';
 import { mapLimit } from '../utils/concurrency';
-import { loadCardContext } from './cardTemplates/context';
+import { loadCardContext, cardCarriesQr } from './cardTemplates/context';
 import { cardGuestLines } from '../utils/cardInfo';
 import { resolveImageKeyBase64 } from '../utils/resolveImageBase64';
 import { escapeHtml } from '../utils/html';
@@ -362,7 +362,7 @@ export const invitationService = {
             description: (event as any).description,
             contactNumber: (event as any).contactNumber,
             rsvpBy: (event as any).rsvp?.enabled ? (event as any).rsvp?.acceptanceLastDate : undefined,
-            showQr: (event as any).cardDisplay?.qr !== false,
+            showQr: cardCarriesQr(event as any, cardContext),
             sessions: assignedSessions,
           });
 
@@ -379,7 +379,7 @@ export const invitationService = {
             },
             // the QR goes in only when the email shows it on its own, i.e. there is no card image to carry it (an unused inline image
             // would appear as a loose attachment in Gmail)
-            ...((event as any).cardDisplay?.qr !== false && !cardBuffer?.length ? [{
+            ...(cardCarriesQr(event as any, cardContext) && !cardBuffer?.length ? [{
               filename: 'invitation-qr.png',
               content: qrBuffer,
               cid,
@@ -696,7 +696,7 @@ export const invitationService = {
             description: (event as any).description,
             contactNumber: (event as any).contactNumber,
             rsvpBy: (event as any).rsvp?.enabled ? (event as any).rsvp?.acceptanceLastDate : undefined,
-            showQr: (event as any).cardDisplay?.qr !== false,
+            showQr: cardCarriesQr(event as any, cardContext),
             sessions: assignedSessions,
           });
 
@@ -713,7 +713,7 @@ export const invitationService = {
             },
             // the QR goes in only when the email shows it on its own, i.e. there is no card image to carry it (an unused inline image
             // would appear as a loose attachment in Gmail)
-            ...((event as any).cardDisplay?.qr !== false && !cardBuffer?.length ? [{
+            ...(cardCarriesQr(event as any, cardContext) && !cardBuffer?.length ? [{
               filename: 'invitation-qr.png',
               content: qrBuffer,
               cid,

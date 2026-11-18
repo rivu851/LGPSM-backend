@@ -15,6 +15,7 @@ const resolveImageBase64_1 = require("../../utils/resolveImageBase64");
 const template_service_1 = require("../template.service");
 const content_1 = require("./content");
 const designSpec_1 = require("./designSpec");
+const uploadedTemplate_1 = require("./uploadedTemplate");
 const context_1 = require("./context");
 const cardInfo_1 = require("../../utils/cardInfo");
 const specRenderer_1 = require("./specRenderer");
@@ -28,7 +29,7 @@ const dataUrlToBuffer = (dataUrl) => {
  * workflow, which issues and renders it per attendee. Poster templates carry the registration link when one is given.
  */
 async function renderTemplateForEvent(input) {
-    const template = await Template_1.Template.findOne({ _id: input.templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec').lean();
+    const template = (0, uploadedTemplate_1.asStaticUpload)(await Template_1.Template.findOne({ _id: input.templateId, isActive: { $ne: false } }).select('cardDesign isPublished isSystemTemplate isActive ownerId kind designSpec templateData').lean());
     if (!template || !(0, template_service_1.templateVisibleTo)(template, { userId: input.userId, isAdmin: input.isAdmin }))
         throw new Error('TEMPLATE_NOT_FOUND');
     const parsed = template.cardDesign === 'CUSTOM' ? (0, designSpec_1.safeParseDesignSpec)(template.designSpec) : null;

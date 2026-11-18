@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.cardCarriesQr = void 0;
 exports.cardHostName = cardHostName;
 exports.loadCardContext = loadCardContext;
 const uploadedTemplate_1 = require("./uploadedTemplate");
@@ -54,3 +55,9 @@ async function loadCardContext(event) {
         organizerName: cardHostName(organizer)
     };
 }
+/**
+ * Does the card itself carry the guest's entry QR? Not when the organizer turned the QR off on the card, and not on an organizer's own
+ * static design (the picture is sent exactly as it is). Then the guest's email and invitation page show the QR on its own.
+ */
+const cardCarriesQr = (event, context) => event.cardDisplay?.qr !== false && !context.designSpec?.meta?.plain;
+exports.cardCarriesQr = cardCarriesQr;

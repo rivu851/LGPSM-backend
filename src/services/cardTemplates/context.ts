@@ -70,3 +70,10 @@ export async function loadCardContext(event: EventLike): Promise<CardContext> {
     organizerName: cardHostName(organizer)
   };
 }
+
+/**
+ * Does the card itself carry the guest's entry QR? Not when the organizer turned the QR off on the card, and not on an organizer's own
+ * static design (the picture is sent exactly as it is). Then the guest's email and invitation page show the QR on its own.
+ */
+export const cardCarriesQr = (event: { cardDisplay?: { qr?: boolean } | null }, context: { designSpec?: { meta?: { plain?: boolean } } | null }): boolean =>
+  event.cardDisplay?.qr !== false && !context.designSpec?.meta?.plain;

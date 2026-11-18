@@ -13,6 +13,7 @@ exports.getTextZones = getTextZones;
 exports.setTextZones = setTextZones;
 exports.redetectTextZones = redetectTextZones;
 exports.rebuildUploadedLayout = rebuildUploadedLayout;
+exports.asStaticUpload = asStaticUpload;
 exports.withCurrentLayout = withCurrentLayout;
 const User_1 = require("../../models/User");
 const category_service_1 = require("../category.service");
@@ -263,7 +264,24 @@ async function rebuildUploadedLayout(templateId) {
  * event's details replace that wording. Called wherever a card is drawn from a template (previews and real sends). Returns the template
  * with its current layout; never throws (a design that cannot be read is drawn as it is).
  */
-async function withCurrentLayout(template) {
+/**
+ * An organizer's own uploaded design is the picture exactly as it is: nothing is drawn on it. A design saved by an older version can still
+ * carry a QR code, wording zones or patches in its stored specification, so they are dropped whenever the design is read.
+ */
+function asStaticUpload(template) {
+    const d = template?.templateData;
+    // an administrator's upload is a shared (system) design whose details are replaced by the event's: it is left as it is
+    if (!template || !d?.uploaded || d.dynamicDetails || template.isSystemTemplate)
+        return template;
+    const spec = template.designSpec;
+    if (!spec || typeof spec !== 'object')
+        return template;
+    if ((spec.elements ?? []).length === 0 && spec.meta?.plain)
+        return template;
+    return { ...template, designSpec: { ...spec, elements: [], meta: { ...(spec.meta ?? {}), plain: true } } };
+}
+async function withCurrentLayout(input) {
+    const template = asStaticUpload(input);
     const d = template?.templateData;
     if (!template || !d?.uploaded || !d.dynamicDetails || d.textAreas === 'MANUAL')
         return template;

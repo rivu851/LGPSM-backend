@@ -155,7 +155,7 @@ exports.publicInvitationService = {
             },
             theme,
             // false when the organizer chose not to print the QR on the cards: the page then shows the entry QR on its own
-            cardShowsQr: event.cardDisplay?.qr !== false,
+            cardShowsQr: (0, context_1.cardCarriesQr)(event, await (0, context_1.loadCardContext)(event).catch(() => ({ designSpec: null }))),
             // The guest's CURRENT pass: the page hides the pass image when it is revoked (never says "replaced" for a pass that has a successor)
             credential: { status: (0, credentialPolicy_1.credentialStatus)(invitee, event).status },
             invitee: {

@@ -7,7 +7,8 @@ import { User, Role } from '../src/models/User';
 import { Media, MediaPurpose } from '../src/models/Media';
 import { Template } from '../src/models/Template';
 import { generateAccessToken } from '../src/utils/token';
-import { presetFor } from '../src/services/cardTemplates/uploadedTemplate';
+import { presetFor, buildDynamicUploadedSpec } from '../src/services/cardTemplates/uploadedTemplate';
+import { loadCardContext } from '../src/services/cardTemplates/context';
 import { decodeQr } from './helpers/qr';
 
 jest.setTimeout(60000);
@@ -99,7 +100,7 @@ describe('upload your own template', () => {
     expect(await decodeQr(full.body)).toMatch(/^https?:\/\//);
   });
 
-  it('an upload saved before the layout was read is laid out when drawn: the code goes in the design\'s own box and the name is left off', async () => {
+  it('an organizer\'s upload saved by an older version (with a QR code and a name zone in it) is now drawn as the plain picture', async () => {
     // the design has a white QR box in the middle; the old saved layout put the code and the name at the bottom-left
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><rect width="1080" height="1920" fill="#f6c9d8"/><rect x="390" y="1000" width="300" height="300" fill="#ffffff" stroke="#5a2030" stroke-width="6"/></svg>';
     const data = await sharp(Buffer.from(svg)).png().toBuffer();
@@ -122,9 +123,9 @@ describe('upload your own template', () => {
     // nothing drawn at the old bottom-left spot: it is the plain picture
     const old = await sharp(prev.body).extract({ left: 60, top: 1500, width: 291, height: 291 }).removeAlpha().raw().toBuffer();
     expect(old.every((v, i) => (i % 3 === 0 ? v === 0xf6 : i % 3 === 1 ? v === 0xc9 : v === 0xd8))).toBe(true);
-    // the code is inside the design's box, and scans
+    // and no code appears anywhere else on it either (an organizer's own design is sent exactly as it is)
     const box = await sharp(prev.body).extract({ left: 400, top: 1010, width: 280, height: 280 }).png().toBuffer();
-    expect(await decodeQr(box)).toMatch(/^https?:\/\//);
+    expect(await decodeQr(box)).toBeNull();
   });
 
   it('needs no name and no category: an unnamed upload gets a dated name and suits every event type', async () => {
@@ -144,5 +145,21 @@ describe('upload your own template', () => {
     expect(await Template.countDocuments({})).toBe(0);
     const staff = await User.create({ fullName: 'S', email: 's@x.com', role: Role.SYSTEM_USER, isActive: true });
     expect((await make(staff, { name: 'Staff Template', imageKey: await upload(staff) })).status).toBe(403);
+  });
+
+  it('draws nothing on an organizer\'s own static design, even one saved by an older version with a QR code and wording in it', async () => {
+    const key = await upload(a);
+    // an older version stored the organizer's picture with a QR code on it (the layout an admin\'s dynamic upload has)
+    const legacy = buildDynamicUploadedSpec(key, 800, 1200, false, []);
+    expect(legacy.elements.some((e: any) => e.type === 'qr')).toBe(true);
+    const t: any = await Template.create({ name: 'Old static', cardDesign: 'CUSTOM', kind: 'INVITATION', designSpec: legacy, previewImageKey: key, ownerId: a._id, isSystemTemplate: false, isPublished: true, isActive: true, templateData: { uploaded: true } });
+    const ctx = await loadCardContext({ templateId: t._id, organizerId: a._id, categoryId: undefined, title: 'E' } as any);
+    expect(ctx.cardDesign).toBe('CUSTOM');
+    expect(ctx.designSpec?.elements).toEqual([]);
+    expect(ctx.designSpec?.meta.plain).toBe(true);
+    // an admin's dynamic upload is untouched: it keeps its QR code
+    const dynamic: any = await Template.create({ name: 'Admin dynamic', cardDesign: 'CUSTOM', kind: 'INVITATION', designSpec: legacy, previewImageKey: key, ownerId: admin._id, isSystemTemplate: true, isPublished: true, isActive: true, templateData: { uploaded: true, dynamicDetails: true, textAreas: 'NONE', layoutVersion: 2 } });
+    const ctx2 = await loadCardContext({ templateId: dynamic._id, organizerId: a._id, title: 'E' } as any);
+    expect(ctx2.designSpec?.elements.some((e: any) => e.type === 'qr')).toBe(true);
   });
 });
