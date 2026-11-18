@@ -47,6 +47,8 @@ const InviteeSetSchema = new mongoose_1.Schema({
     mode: { type: String, enum: Object.values(ImportMode), required: true },
     createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
     createdByRole: { type: String },
-    importedCount: { type: Number, default: 0 }
+    importedCount: { type: Number, default: 0 },
+    removedAt: { type: Date, default: null },
+    removedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', default: null }
 }, { timestamps: { createdAt: true, updatedAt: false } });
 exports.InviteeSet = mongoose_1.default.model('InviteeSet', InviteeSetSchema);

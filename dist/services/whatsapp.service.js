@@ -181,6 +181,40 @@ exports.whatsappService = {
         }
         return { messageId: data.messages?.[0]?.id || '' };
     },
+    /** Tells a guest they were removed from an event's guest list, with the organizer's reason, through an approved template (name, event, reason). */
+    async sendRemovalWhatsApp(params) {
+        const accessToken = process.env.WHATSAPP_ACCESS_TOKEN || env_1.env.WHATSAPP_ACCESS_TOKEN;
+        const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || env_1.env.WHATSAPP_PHONE_NUMBER_ID;
+        const apiVersion = process.env.WHATSAPP_API_VERSION || env_1.env.WHATSAPP_API_VERSION || 'v25.0';
+        const templateName = process.env.WHATSAPP_REMOVAL_TEMPLATE || env_1.env.WHATSAPP_REMOVAL_TEMPLATE;
+        const languageCode = process.env.WHATSAPP_TEMPLATE_LANGUAGE || env_1.env.WHATSAPP_TEMPLATE_LANGUAGE || 'en';
+        if (!accessToken)
+            throw new Error('WHATSAPP_CONFIG_MISSING: Access token not configured');
+        if (!phoneNumberId)
+            throw new Error('WHATSAPP_CONFIG_MISSING: Phone number ID not configured');
+        if (!templateName)
+            throw new Error('WHATSAPP_REMOVAL_TEMPLATE_NOT_CONFIGURED');
+        const formattedPhone = normalizePhoneNumber(params.recipientPhone);
+        if (!formattedPhone || formattedPhone.length < 10 || formattedPhone.length > 15)
+            throw new Error('INVALID_PHONE_NUMBER: Phone number format is invalid');
+        const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messaging_product: 'whatsapp', recipient_type: 'individual', to: formattedPhone, type: 'template',
+                template: { name: templateName, language: { code: languageCode }, components: [{ type: 'body', parameters: [
+                                { type: 'text', text: params.inviteeName || 'Guest' },
+                                { type: 'text', text: params.eventTitle || 'Event' },
+                                { type: 'text', text: (params.reason || '-').replace(/\s+/g, ' ').slice(0, 500) }
+                            ] }] }
+            }),
+            signal: AbortSignal.timeout(15_000)
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok)
+            throw new Error(`WHATSAPP_TEMPLATE_SEND_FAILED: ${data.error?.message || data.error?.error_data?.details || 'WhatsApp API request failed'}`);
+        return { messageId: data.messages?.[0]?.id || '' };
+    },
     /**
      * Tells a guest their access pass was replaced (with the new card) or revoked, through an approved template. With no template
      * configured, or no credentials, it refuses before calling Meta, so nothing is ever claimed as sent. A message id means Meta

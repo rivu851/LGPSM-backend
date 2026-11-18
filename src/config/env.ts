@@ -36,6 +36,7 @@ const envSchema = z.object({
   // Name of an approved WhatsApp template (3 text body parameters: guest name, event title, event date) used to tell
   // guests an event was cancelled. Deliberately has no default: without it cancellation notices report WhatsApp as unavailable.
   WHATSAPP_CANCELLATION_TEMPLATE: z.string().optional(),
+  WHATSAPP_REMOVAL_TEMPLATE: z.string().optional(),
   // Approved templates for access-pass notices. No defaults: until they exist the WhatsApp channel is reported as unavailable.
   // REPLACEMENT: image header (the new card) + 3 text params (guest, event, date). REVOCATION: 3 text params (guest, event, date).
   WHATSAPP_REPLACEMENT_TEMPLATE: z.string().optional(),

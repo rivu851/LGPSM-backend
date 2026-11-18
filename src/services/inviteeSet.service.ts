@@ -129,6 +129,10 @@ export const inviteeSetService = {
       Invitee.find({ eventId: eid }).select('inviteeSetId invitationStatus rsvpStatus qrTokenHash createdAt').lean<IInvitee[]>(),
       InviteeSet.find({ eventId: eid }).sort({ createdAt: 1 }).lean()
     ]);
+    const allSets = sets as any[];
+    const removedSets = allSets.filter((s) => s.removedAt);
+    // lists the organizer deleted stay as history only; they are not active lists
+    sets.splice(0, sets.length, ...allSets.filter((s) => !s.removedAt));
     const activity = await loadActivity(eid, invitees);
     const reasons = lockReasonsBySet(invitees, activity);
     // when invitations from each list went out: the first and the latest successful hand-off
@@ -206,7 +210,13 @@ export const inviteeSetService = {
         sessionLists.push({ id: `session:${sess._id}`, name: sess.name, source: 'SESSION', mode: 'APPEND', sessionId: String(sess._id), createdAt: null, uploadedBy: null, importedCount: null, ...r, unsent: r.notSent, setAside: 0, locked: false, lockReasons: null, replaceableGuests: 0, firstSentAt: null, lastSentAt: null });
       }
     }
-    return { sets: out, sessionLists, archivedCount, hasSent: out.some((s) => s.locked) };
+    const removedBy = await nameMap(removedSets.map((s: any) => s.removedBy));
+    const removedLists = removedSets.map((s: any) => ({
+      id: String(s._id), name: s.name, source: 'EXCEL', createdAt: s.createdAt, importedCount: s.importedCount ?? null, removedAt: s.removedAt,
+      uploadedBy: s.createdBy ? people.get(String(s.createdBy)) || null : null, removedBy: s.removedBy ? removedBy.get(String(s.removedBy)) || null : null,
+      setAside: asideBySet.get(String(s._id)) || 0
+    }));
+    return { sets: out, sessionLists, removedLists, archivedCount, hasSent: out.some((s) => s.locked) };
   },
 
   /**
@@ -232,6 +242,49 @@ export const inviteeSetService = {
     const invitees = await Invitee.deleteMany({ eventId: eid }).setOptions({ includeArchived: true } as any);
     const lists = await InviteeSet.deleteMany({ eventId: eid });
     return { deletedInvitees: invitees.deletedCount || 0, deletedLists: lists.deletedCount || 0 };
+  },
+
+  /**
+   * Deletes an uploaded list. Only an Open list can go (nothing sent, answered or checked in from it): its guests, who were never
+   * contacted, are removed with it. The list's record stays as history (when it was uploaded, by whom, when and by whom it was deleted),
+   * and so do its set-aside guests. A Locked list is refused.
+   */
+  async removeList(actor: Actor, eventId: string, setId: string) {
+    const event = await manageableEvent(actor, eventId);
+    if (event.status === EventStatus.COMPLETED || event.status === EventStatus.CANCELLED || eventHasEnded(event)) throw fail(409, 'This event is over or closed, so its invitee lists cannot be changed.', 'EVENT_CLOSED');
+    if (!mongoose.Types.ObjectId.isValid(setId)) throw fail(400, 'Invalid list id');
+    return withEventLock(eventId, async () => {
+      const list: any = await InviteeSet.findOne({ _id: setId, eventId, removedAt: null });
+      if (!list) throw fail(404, 'List not found');
+      const members = await Invitee.find({ eventId, inviteeSetId: list._id });
+      if (members.length > 0) {
+        const activity = await loadActivity(list.eventId, members);
+        if (members.some((m) => !neverAttempted(activity.get(String(m._id))!)) || lockedSetKeys(members, activity).size > 0) {
+          throw fail(409, 'Invitations were already sent from this list (or a guest answered or checked in), so it is locked and cannot be deleted.', 'SET_LOCKED');
+        }
+        await Invitee.deleteMany({ _id: { $in: members.map((m) => m._id) } });
+      }
+      list.removedAt = new Date();
+      list.removedBy = mongoose.Types.ObjectId.isValid(actor.userId) ? new mongoose.Types.ObjectId(actor.userId) : null;
+      await list.save();
+      return { id: String(list._id), name: list.name, removedAt: list.removedAt, guestsRemoved: members.length };
+    });
+  },
+
+  /** Renames an uploaded list (the name shown under Uploaded lists). A Locked list keeps its name: it is a record of what was sent. */
+  async renameList(actor: Actor, eventId: string, setId: string, name: string) {
+    const event = await manageableEvent(actor, eventId);
+    if (event.status === EventStatus.COMPLETED || event.status === EventStatus.CANCELLED || eventHasEnded(event)) throw fail(409, 'This event is over or closed, so its invitee lists cannot be changed.', 'EVENT_CLOSED');
+    const clean = String(name ?? '').trim().slice(0, 200);
+    if (!clean) throw fail(400, 'Give the list a name.');
+    if (!mongoose.Types.ObjectId.isValid(setId)) throw fail(400, 'Invalid list id');
+    const list: any = await InviteeSet.findOne({ _id: setId, eventId, removedAt: null });
+    if (!list) throw fail(404, 'List not found');
+    const members = await Invitee.find({ eventId, inviteeSetId: list._id }).select('invitationStatus rsvpStatus qrTokenHash inviteeSetId');
+    if (lockedSetKeys(members, await loadActivity(list.eventId, members)).size > 0) throw fail(409, 'This list is locked: invitations were sent from it, so it is kept as it is.', 'SET_LOCKED');
+    list.name = clean;
+    await list.save();
+    return { id: String(list._id), name: list.name };
   },
 
   /** The guests currently in one list, with each guest's delivery state. No tokens, no credentials. */

@@ -17,6 +17,9 @@ export interface IInviteeSet extends Document {
   createdByRole?: string;
   /** Guests this upload added (rows that matched someone already on the event are not counted) */
   importedCount?: number;
+  /** Set when the organizer deleted this (empty) list: it leaves the active lists but stays in the list history */
+  removedAt?: Date | null;
+  removedBy?: mongoose.Types.ObjectId | null;
   createdAt: Date;
 }
 
@@ -28,7 +31,9 @@ const InviteeSetSchema = new Schema<IInviteeSet>(
     mode: { type: String, enum: Object.values(ImportMode), required: true },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
     createdByRole: { type: String },
-    importedCount: { type: Number, default: 0 }
+    importedCount: { type: Number, default: 0 },
+    removedAt: { type: Date, default: null },
+    removedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null }
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );

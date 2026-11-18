@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.inviteeController = void 0;
+const removalNotice_service_1 = require("../services/removalNotice.service");
+const Event_1 = require("../models/Event");
 const credential_service_1 = require("../services/credential.service");
 const passNotice_service_1 = require("../services/passNotice.service");
 const invitee_service_1 = require("../services/invitee.service");
@@ -82,6 +84,22 @@ exports.inviteeController = {
     async clearUnusedLists(req, res, next) {
         try {
             res.status(200).json({ success: true, data: await inviteeSet_service_1.inviteeSetService.clearUnused(req.user, req.params.eventId) });
+        }
+        catch (error) {
+            sendSetError(res, next, error);
+        }
+    },
+    async removeList(req, res, next) {
+        try {
+            res.status(200).json({ success: true, data: await inviteeSet_service_1.inviteeSetService.removeList(req.user, req.params.eventId, req.params.setId) });
+        }
+        catch (error) {
+            sendSetError(res, next, error);
+        }
+    },
+    async renameList(req, res, next) {
+        try {
+            res.status(200).json({ success: true, data: await inviteeSet_service_1.inviteeSetService.renameList(req.user, req.params.eventId, req.params.setId, req.body?.name) });
         }
         catch (error) {
             sendSetError(res, next, error);
@@ -265,9 +283,22 @@ exports.inviteeController = {
         try {
             const organizerId = req.user.userId;
             const inviteeId = req.params.inviteeId;
+            // Optional: the organizer's reason and where to send it. A reason is required when a channel is chosen.
+            const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 500) : '';
+            const wantEmail = req.body?.notify?.email === true;
+            const wantWhatsapp = req.body?.notify?.whatsapp === true;
+            if ((wantEmail || wantWhatsapp) && !reason) {
+                res.status(400).json({ success: false, message: 'Write the reason that will be sent to the guest.' });
+                return;
+            }
             const invitee = await invitee_service_1.inviteeService.deleteInvitee(inviteeId, organizerId, req.user.role);
+            let notice;
+            if (wantEmail || wantWhatsapp) {
+                const ev = await Event_1.Event.findById(invitee.eventId).select('title').lean();
+                notice = await removalNotice_service_1.removalNoticeService.notify({ name: invitee.name, email: invitee.email, mobile: invitee.mobile }, ev?.title || 'the event', reason, { email: wantEmail, whatsapp: wantWhatsapp });
+            }
             // a guest with history is set aside (restorable, pass withdrawn) rather than erased
-            res.status(200).json({ success: true, data: { inviteeId: invitee._id, deleted: true, setAside: !!invitee.removedWithHistory } });
+            res.status(200).json({ success: true, data: { inviteeId: invitee._id, deleted: true, setAside: !!invitee.removedWithHistory, notice } });
         }
         catch (error) {
             if (error.message === 'INVITEE_NOT_FOUND') {
