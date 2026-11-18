@@ -36,11 +36,17 @@ const sendViaBrevoApi = async (apiKey: string, to: string, subject: string, html
   let body = html;
   const files: { name: string; content: string }[] = [];
   for (const a of attachments ?? []) {
-    if (a.cid && a.url) { body = body.split(`cid:${a.cid}`).join(a.url); continue; }
+    if (a.cid && a.url) {
+      body = body.split(`cid:${a.cid}`).join(a.url);
+      // the guest's card and QR also go as a plain file, so a mail app that blocks remote images still gives them their pass
+      if (!a.essential) continue;
+    }
     if (a.cid && !a.essential) continue;
     const content = Buffer.isBuffer(a.content) ? a.content.toString('base64') : typeof a.content === 'string' ? Buffer.from(a.content, a.encoding === 'base64' ? 'base64' : 'utf8').toString('base64') : null;
     if (content && a.filename) files.push({ name: a.filename.includes('.') ? a.filename : `${a.filename}.png`, content });
   }
+  // an image that could not be linked (and cannot be embedded) is dropped from the HTML, so the mail app never shows a broken-image box
+  body = body.replace(/<img\b[^>]*\bsrc="cid:[^"]*"[^>]*>/gi, '');
   if (attachments?.some((a) => a.cid && !a.url) && !publicApiUrl()) {
     console.warn('Email: PUBLIC_API_URL is not set, so the images inside emails cannot be linked; the card and QR go as attachments only.');
   }

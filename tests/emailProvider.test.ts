@@ -27,7 +27,7 @@ describe('mail sent over HTTPS', () => {
     expect(sent().attachment).toBeUndefined();
   });
 
-  it('links an inline image by its public address instead of attaching it, and trims a trailing slash from the API address', async () => {
+  it('links an inline image by its public address (the guest\'s card also goes as a plain file), and trims a trailing slash from the API address', async () => {
     const { sendEmail, publicApiUrl } = load('https://api.example.com/');
     expect(publicApiUrl()).toBe('https://api.example.com');
     await sendEmail('g@x.com', 'S', '<img src="cid:card-1"><img src="cid:icon-1">', [
@@ -35,7 +35,18 @@ describe('mail sent over HTTPS', () => {
       { filename: 'icon.png', content: Buffer.from('png'), cid: 'icon-1', url: 'https://api.example.com/api/v1/public/email-assets/icon-1.png' },
     ]);
     expect(sent().htmlContent).toBe('<img src="https://api.example.com/api/v1/public/invitations/T/card"><img src="https://api.example.com/api/v1/public/email-assets/icon-1.png">');
-    expect(sent().attachment).toBeUndefined();
+    // only the card the guest needs is also attached; the small icon is just linked
+    expect(sent().attachment).toEqual([{ name: 'card.png', content: Buffer.from('png').toString('base64') }]);
+  });
+
+  it('an image that can be neither linked nor embedded is removed from the HTML, not left broken', async () => {
+    const { sendEmail } = load();
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await sendEmail('g@x.com', 'S', '<p>Hi</p><img src="cid:icon-1" width="20"><img src="cid:logo-1">', [
+      { filename: 'icon.png', content: Buffer.from('icon'), cid: 'icon-1' },
+      { filename: 'logo.png', content: Buffer.from('logo'), cid: 'logo-1' },
+    ]);
+    expect(sent().htmlContent).toBe('<p>Hi</p>');
   });
 
   it('without a public address, attaches only the images the guest needs, as plain files', async () => {
