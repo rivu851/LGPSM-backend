@@ -12,6 +12,7 @@ const env_1 = require("../config/env");
 const crypto_1 = __importDefault(require("crypto"));
 const mongoose_1 = __importDefault(require("mongoose"));
 const Media_1 = require("../models/Media");
+const mediaStorage_1 = require("./mediaStorage");
 exports.MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 // Longest edge kept per purpose; larger images are downscaled before storing
 const MAX_EDGE = {
@@ -61,22 +62,48 @@ class MediaService {
         const { data, info } = keepAlpha
             ? await pipeline.png({ compressionLevel: 9 }).toBuffer({ resolveWithObject: true })
             : await pipeline.jpeg({ quality: 85, mozjpeg: true }).toBuffer({ resolveWithObject: true });
-        const media = await Media_1.Media.create({
-            ownerId: new mongoose_1.default.Types.ObjectId(ownerId),
-            purpose,
-            contentType: keepAlpha ? 'image/png' : 'image/jpeg',
-            size: info.size,
-            width: info.width,
-            height: info.height,
-            originalName: originalName?.slice(0, 200),
-            data
-        });
+        const contentType = keepAlpha ? 'image/png' : 'image/jpeg';
+        const record = { ownerId: new mongoose_1.default.Types.ObjectId(ownerId), purpose, contentType, size: info.size, width: info.width, height: info.height, originalName: originalName?.slice(0, 200) };
+        let media;
+        if ((0, mediaStorage_1.mediaDir)()) {
+            // kept as a file; the database holds only the record. If the record cannot be saved the file is removed again.
+            const id = new mongoose_1.default.Types.ObjectId();
+            const fileName = await (0, mediaStorage_1.writeMediaFile)(String(id), contentType, data);
+            try {
+                media = await Media_1.Media.create({ ...record, _id: id, storage: 'DISK', fileName });
+            }
+            catch (err) {
+                await (0, mediaStorage_1.removeMediaFile)(fileName);
+                throw err;
+            }
+        }
+        else {
+            media = await Media_1.Media.create({ ...record, storage: 'DB', data });
+        }
         return { key: `media:${media._id}`, contentType: media.contentType, width: info.width, height: info.height, size: info.size };
+    }
+    // The image's bytes wherever they are kept (database or file); null when there is no such image or its file is gone
+    // For serving to browsers: the public address of the file when a media address is configured, otherwise the bytes
+    async resolveForServing(id) {
+        if (!mongoose_1.default.Types.ObjectId.isValid(id))
+            return null;
+        const media = await Media_1.Media.findById(id).select('contentType storage fileName');
+        if (media?.storage === 'DISK') {
+            const publicUrl = await (0, mediaStorage_1.publicUrlFor)(media.fileName);
+            if (publicUrl)
+                return { contentType: media.contentType, publicUrl };
+        }
+        const image = await this.getImage(id);
+        return image ? { contentType: image.contentType, data: image.data } : null;
     }
     async getImage(id) {
         if (!mongoose_1.default.Types.ObjectId.isValid(id))
             return null;
-        return Media_1.Media.findById(id).select('+data contentType updatedAt');
+        const media = await Media_1.Media.findById(id).select('+data contentType updatedAt storage fileName');
+        if (!media)
+            return null;
+        const data = media.storage === 'DISK' ? await (0, mediaStorage_1.readMediaFile)(media.fileName || '') : media.data;
+        return data ? { contentType: media.contentType, updatedAt: media.updatedAt, data } : null;
     }
 }
 exports.MediaService = MediaService;

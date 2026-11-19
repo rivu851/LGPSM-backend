@@ -1,3 +1,4 @@
+import { deleteMedia } from './mediaStorage';
 import { activeAssignmentsOf } from './systemUserAssignment.service';
 import { canUseCategory } from './category.service';
 import { eventRepository, EventFilter, Pagination } from '../repositories/event.repository';
@@ -502,7 +503,7 @@ export class EventService {
     await purgeOperationalData(eventId);
     const logoKey = (event as any).media?.logoKey;
     if (typeof logoKey === 'string' && /^media:[0-9a-fA-F]{24}$/.test(logoKey)) {
-      await Media.deleteOne({ _id: logoKey.slice(6), purpose: MediaPurpose.EVENT_LOGO });
+      await deleteMedia({ _id: logoKey.slice(6), purpose: MediaPurpose.EVENT_LOGO });
     }
     await Event.deleteOne({ _id: event._id });
     return { title: String(event.title) };

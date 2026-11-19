@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.eventService = exports.EventService = void 0;
 exports.normalizeLocation = normalizeLocation;
+const mediaStorage_1 = require("./mediaStorage");
 const systemUserAssignment_service_1 = require("./systemUserAssignment.service");
 const category_service_1 = require("./category.service");
 const event_repository_1 = require("../repositories/event.repository");
@@ -504,7 +505,7 @@ class EventService {
         await purgeOperationalData(eventId);
         const logoKey = event.media?.logoKey;
         if (typeof logoKey === 'string' && /^media:[0-9a-fA-F]{24}$/.test(logoKey)) {
-            await Media_1.Media.deleteOne({ _id: logoKey.slice(6), purpose: Media_1.MediaPurpose.EVENT_LOGO });
+            await (0, mediaStorage_1.deleteMedia)({ _id: logoKey.slice(6), purpose: Media_1.MediaPurpose.EVENT_LOGO });
         }
         await Event_1.Event.deleteOne({ _id: event._id });
         return { title: String(event.title) };

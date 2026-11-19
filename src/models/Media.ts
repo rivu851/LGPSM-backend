@@ -17,7 +17,11 @@ export interface IMedia extends Document {
   width?: number;
   height?: number;
   originalName?: string;
-  data: Buffer;
+  /** the image bytes: here for images kept in the database; absent when `storage` is DISK */
+  data?: Buffer;
+  /** DB = bytes in this record; DISK = bytes in a file named `fileName` inside MEDIA_DIR */
+  storage: 'DB' | 'DISK';
+  fileName?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,7 +35,9 @@ const MediaSchema = new Schema<IMedia>(
     width: { type: Number },
     height: { type: Number },
     originalName: { type: String },
-    data: { type: Buffer, required: true, select: false }
+    storage: { type: String, enum: ['DB', 'DISK'], default: 'DB' },
+    fileName: { type: String },
+    data: { type: Buffer, required: function (this: { storage?: string }) { return this.storage !== 'DISK'; }, select: false }
   },
   { timestamps: true }
 );

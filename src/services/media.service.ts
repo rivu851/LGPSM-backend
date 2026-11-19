@@ -6,6 +6,7 @@ import { env } from '../config/env';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { Media, MediaPurpose } from '../models/Media';
+import { mediaDir, publicUrlFor, readMediaFile, removeMediaFile, writeMediaFile } from './mediaStorage';
 
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 // Longest edge kept per purpose; larger images are downscaled before storing
@@ -64,23 +65,41 @@ export class MediaService {
       ? await pipeline.png({ compressionLevel: 9 }).toBuffer({ resolveWithObject: true })
       : await pipeline.jpeg({ quality: 85, mozjpeg: true }).toBuffer({ resolveWithObject: true });
 
-    const media = await Media.create({
-      ownerId: new mongoose.Types.ObjectId(ownerId),
-      purpose,
-      contentType: keepAlpha ? 'image/png' : 'image/jpeg',
-      size: info.size,
-      width: info.width,
-      height: info.height,
-      originalName: originalName?.slice(0, 200),
-      data
-    });
+    const contentType = keepAlpha ? 'image/png' : 'image/jpeg';
+    const record = { ownerId: new mongoose.Types.ObjectId(ownerId), purpose, contentType, size: info.size, width: info.width, height: info.height, originalName: originalName?.slice(0, 200) };
+    let media;
+    if (mediaDir()) {
+      // kept as a file; the database holds only the record. If the record cannot be saved the file is removed again.
+      const id = new mongoose.Types.ObjectId();
+      const fileName = await writeMediaFile(String(id), contentType, data);
+      try { media = await Media.create({ ...record, _id: id, storage: 'DISK', fileName }); }
+      catch (err) { await removeMediaFile(fileName); throw err; }
+    } else {
+      media = await Media.create({ ...record, storage: 'DB', data });
+    }
 
     return { key: `media:${media._id}`, contentType: media.contentType, width: info.width, height: info.height, size: info.size };
   }
 
-  async getImage(id: string) {
+  // The image's bytes wherever they are kept (database or file); null when there is no such image or its file is gone
+  // For serving to browsers: the public address of the file when a media address is configured, otherwise the bytes
+  async resolveForServing(id: string): Promise<{ contentType: string; publicUrl?: string; data?: Buffer } | null> {
     if (!mongoose.Types.ObjectId.isValid(id)) return null;
-    return Media.findById(id).select('+data contentType updatedAt');
+    const media = await Media.findById(id).select('contentType storage fileName');
+    if (media?.storage === 'DISK') {
+      const publicUrl = await publicUrlFor(media.fileName);
+      if (publicUrl) return { contentType: media.contentType, publicUrl };
+    }
+    const image = await this.getImage(id);
+    return image ? { contentType: image.contentType, data: image.data } : null;
+  }
+
+  async getImage(id: string): Promise<{ contentType: string; updatedAt?: Date; data: Buffer } | null> {
+    if (!mongoose.Types.ObjectId.isValid(id)) return null;
+    const media = await Media.findById(id).select('+data contentType updatedAt storage fileName');
+    if (!media) return null;
+    const data = media.storage === 'DISK' ? await readMediaFile(media.fileName || '') : media.data;
+    return data ? { contentType: media.contentType, updatedAt: media.updatedAt, data } : null;
   }
 }
 

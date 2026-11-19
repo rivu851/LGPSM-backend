@@ -51,9 +51,15 @@ export const mediaController = {
   // Public: stored images back event cards, templates and invitation pages viewed by guests
   async serve(req: Request, res: Response, next: NextFunction) {
     try {
-      const media = await mediaService.getImage(String(req.params.id));
+      const media = await mediaService.resolveForServing(String(req.params.id));
       if (!media) {
         return res.status(404).json({ success: false, message: 'Image not found' });
+      }
+      // kept as a file on the media address: send the browser there (the file name never changes, and the media address is cached by the CDN)
+      if (media.publicUrl) {
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        return res.redirect(302, media.publicUrl);
       }
       res.setHeader('Content-Type', media.contentType);
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');

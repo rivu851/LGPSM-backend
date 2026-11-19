@@ -33,6 +33,10 @@ const envSchema = zod_1.z.object({
     AWS_ACCESS_KEY_ID: zod_1.z.string().optional(),
     AWS_SECRET_ACCESS_KEY: zod_1.z.string().optional(),
     AWS_CLOUDFRONT_DOMAIN: zod_1.z.string().optional(),
+    // Folder where uploaded images are kept as files (outside the deployed app folder). Not set: images stay in the database.
+    MEDIA_DIR: zod_1.z.string().optional(),
+    // Public address that serves the files in MEDIA_DIR directly (e.g. https://media.example.com). Set: the API sends browsers there instead of streaming the image itself.
+    MEDIA_PUBLIC_URL: zod_1.z.string().optional(),
     WHATSAPP_ACCESS_TOKEN: zod_1.z.string().optional(),
     WHATSAPP_PHONE_NUMBER_ID: zod_1.z.string().default('1397912796731568'),
     WHATSAPP_BUSINESS_ACCOUNT_ID: zod_1.z.string().default('1366427858610266'),

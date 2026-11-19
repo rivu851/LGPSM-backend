@@ -52,7 +52,9 @@ const MediaSchema = new mongoose_1.Schema({
     width: { type: Number },
     height: { type: Number },
     originalName: { type: String },
-    data: { type: Buffer, required: true, select: false }
+    storage: { type: String, enum: ['DB', 'DISK'], default: 'DB' },
+    fileName: { type: String },
+    data: { type: Buffer, required: function () { return this.storage !== 'DISK'; }, select: false }
 }, { timestamps: true });
 MediaSchema.index({ ownerId: 1, purpose: 1 });
 exports.Media = mongoose_1.default.model('Media', MediaSchema);
