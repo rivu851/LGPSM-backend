@@ -5,6 +5,8 @@ import mongoose from 'mongoose';
 
 jest.mock('../src/repositories/session.repository');
 jest.mock('../src/models/Event');
+// creating a session writes out the access of guests who had no rules; the real behaviour is covered in sessionNewListScope.test.ts
+jest.mock('../src/models/Session', () => ({ ...jest.requireActual('../src/models/Session'), Session: { find: jest.fn(() => ({ select: () => ({ lean: async () => [] }) })), findOne: jest.fn(), exists: jest.fn() } }));
 // Event access resolves the caller's role from the user record
 jest.mock('../src/models/User', () => {
   const actual = jest.requireActual('../src/models/User');

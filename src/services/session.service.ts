@@ -8,6 +8,7 @@ import { findManageableEvent } from '../utils/eventAccess';
 import { assertEventOpenForChanges } from '../utils/eventLifecycle';
 import { validateAdmissionInput } from '../utils/admissionWindow';
 import { CheckIn } from '../models/CheckIn';
+import { accessSessionIdFor } from '../utils/sessionAccess';
 
 // The primary session is the event's first-created session
 async function primarySessionId(eventId: string): Promise<string | null> {
@@ -64,7 +65,18 @@ export const sessionService = {
       eventId: new mongoose.Types.ObjectId(eventId)
     };
 
-    return await sessionRepository.create(sessionData);
+    // A guest with no session rules is "allowed everywhere", which would silently put every guest already on the event into this new session.
+    // Their access is written out for the sessions that exist now, so the new session starts with only the guests uploaded or chosen for it.
+    const existingSessions = await Session.find({ eventId }).select('_id inviteeSource sourceSessionId').lean();
+    const created = await sessionRepository.create(sessionData);
+    if (existingSessions.length > 0) {
+      const ids = [...new Set(existingSessions.map((x) => accessSessionIdFor(x as any)))];
+      await Invitee.updateMany(
+        { eventId: new mongoose.Types.ObjectId(eventId), $or: [{ sessionAccess: { $exists: false } }, { sessionAccess: { $size: 0 } }] },
+        { $set: { sessionAccess: ids.map((id) => ({ sessionId: new mongoose.Types.ObjectId(id), allowed: true })) } }
+      );
+    }
+    return created;
   },
 
   async getSessions(eventId: string, organizerId: string, options: { page?: number; limit?: number } = {}, role?: string) {
@@ -180,7 +192,14 @@ export const sessionService = {
       }
       await Session.updateMany({ _id: { $in: dependents.map((d) => d._id) } }, { inviteeSource: InviteeSource.NEW_LIST, sourceSessionId: null });
     }
-    await Invitee.updateMany({ eventId: session.eventId }, { $pull: { sessionAccess: { sessionId: session._id } } });
+    // A guest whose only rule was this session must not end up with an empty list: that means "allowed everywhere" and would put them into
+    // every other session. Their rule stays, switched off, so they remain "in no session" until someone chooses one.
+    await Invitee.updateMany(
+      { eventId: session.eventId, 'sessionAccess.sessionId': session._id, 'sessionAccess.1': { $exists: false } },
+      { $set: { 'sessionAccess.$[rule].allowed': false } },
+      { arrayFilters: [{ 'rule.sessionId': session._id }] }
+    );
+    await Invitee.updateMany({ eventId: session.eventId, 'sessionAccess.1': { $exists: true } }, { $pull: { sessionAccess: { sessionId: session._id } } });
     // Staff assigned to this session: it is taken off their assignment. An empty list would mean "every session", so someone who was only on
     // this session is taken off the event instead of silently being given all the others.
     const staff = await SystemUserAssignment.find({ eventId: session.eventId, sessionIds: session._id });

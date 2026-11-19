@@ -23,3 +23,18 @@ describe('cardGuestLines with "Invitee name" as its own checkbox', () => {
     expect(cardGuestLines(guest, null)).toEqual({ name: 'Moloy Roy', companyName: 'Proper Bounce' });
   });
 });
+
+describe('primary / secondary slots decide the large and the smaller line', () => {
+  const guest = { name: 'Asha Rao', companyName: 'Acme' } as any;
+  it('name in the secondary slot prints as the smaller line under the primary detail', () => {
+    const lines = cardGuestLines(guest, { primary: 'COMPANY_NAME', secondary: 'INVITEE_NAME' }, { inviteeName: true });
+    expect(lines).toEqual({ name: 'Acme', companyName: 'Asha Rao' });
+  });
+  it('name in the primary slot prints as the large line', () => {
+    const lines = cardGuestLines(guest, { primary: 'INVITEE_NAME', secondary: 'COMPANY_NAME' }, { inviteeName: true });
+    expect(lines).toEqual({ name: 'Asha Rao', companyName: 'Acme' });
+  });
+  it('nothing chosen prints no guest lines', () => {
+    expect(cardGuestLines(guest, { primary: null, secondary: null }, { inviteeName: false })).toEqual({ name: '', companyName: '' });
+  });
+});

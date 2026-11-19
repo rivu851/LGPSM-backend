@@ -31,13 +31,24 @@ function cardGuestLines(guest, cardInfo, cardDisplay) {
  * (name first, then the primary and secondary details); a third value is joined onto the second line with a dot.
  */
 function guestLinesWithNameChoice(guest, cardInfo, showName) {
+    const valueOf = (field) => {
+        if (field === 'INVITEE_NAME')
+            return guest ? (guest.name || '').trim() : SAMPLE.INVITEE_NAME;
+        return guest ? labelled(detailOf(guest, field, cardInfo), field, cardInfo) : sampleOf(field, cardInfo);
+    };
+    const slots = [cardInfo?.primary, cardInfo?.secondary];
+    // The name is chosen in one of the two slots: the primary slot prints as the large line and the secondary slot as the smaller line under it.
+    if (showName && slots.includes('INVITEE_NAME')) {
+        return { name: slots[0] ? valueOf(slots[0]) : '', companyName: slots[1] ? valueOf(slots[1]) : '' };
+    }
+    // Older events (the name ticked on its own, not chosen in a slot): the name first, then the chosen details in order
     const values = [];
     if (showName)
-        values.push(guest ? (guest.name || '').trim() : SAMPLE.INVITEE_NAME);
-    for (const field of [cardInfo?.primary, cardInfo?.secondary]) {
+        values.push(valueOf('INVITEE_NAME'));
+    for (const field of slots) {
         if (!field || field === 'INVITEE_NAME')
-            continue; // the name is its own checkbox now, never repeated here
-        const v = guest ? labelled(detailOf(guest, field, cardInfo), field, cardInfo) : sampleOf(field, cardInfo);
+            continue;
+        const v = valueOf(field);
         if (v)
             values.push(v);
     }
