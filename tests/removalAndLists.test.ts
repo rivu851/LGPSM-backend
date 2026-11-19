@@ -31,7 +31,7 @@ beforeEach(async () => {
 
 describe('deleting an invitee with a reason', () => {
   it('sends the reason by email when asked, and says what happened', async () => {
-    const g: any = await Invitee.create({ eventId: ev._id, name: 'Guest One', email: 'g1@x.com', mobile: '9876543210' });
+    const g: any = await Invitee.create({ eventId: ev._id, name: 'Guest One', email: 'g1@x.com', mobile: '9876543210', invitationStatus: 'SENT' });
     const res = await request(app).delete(`/api/v1/invitees/${g._id}`).set(auth(org)).send({ reason: 'Venue capacity changed', notify: { email: true, whatsapp: false } });
     expect(res.status).toBe(200);
     expect(res.body.data.notice.email).toBe('SENT');
@@ -41,8 +41,17 @@ describe('deleting an invitee with a reason', () => {
     expect(await Invitee.findById(g._id)).toBeNull();
   });
 
+  it('sends no message to a guest who was never sent an invitation, even when a channel is ticked', async () => {
+    const g: any = await Invitee.create({ eventId: ev._id, name: 'Never Invited', email: 'ni@x.com', mobile: '9876543299' });
+    const res = await request(app).delete(`/api/v1/invitees/${g._id}`).set(auth(org)).send({ reason: 'Not needed', notify: { email: true, whatsapp: true } });
+    expect(res.status).toBe(200);
+    expect(res.body.data.notice).toBeUndefined();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(await Invitee.findById(g._id)).toBeNull();
+  });
+
   it('says WhatsApp is unavailable when no template is configured, without failing the delete', async () => {
-    const g: any = await Invitee.create({ eventId: ev._id, name: 'Guest Two', email: 'g2@x.com', mobile: '9876543211' });
+    const g: any = await Invitee.create({ eventId: ev._id, name: 'Guest Two', email: 'g2@x.com', mobile: '9876543211', invitationStatus: 'SENT' });
     const res = await request(app).delete(`/api/v1/invitees/${g._id}`).set(auth(org)).send({ reason: 'Not on the final list', notify: { email: false, whatsapp: true } });
     expect(res.status).toBe(200);
     expect(res.body.data.notice.whatsapp).toBe('UNAVAILABLE');

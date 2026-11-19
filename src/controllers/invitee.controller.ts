@@ -277,7 +277,10 @@ export const inviteeController = {
       }
       const invitee = await inviteeService.deleteInvitee(inviteeId, organizerId, (req as any).user.role);
       let notice: RemovalNoticeResult | undefined;
-      if (wantEmail || wantWhatsapp) {
+      // The message is for guests who were sent an invitation; a guest who never got one has nothing to be told (in a mixed selection
+      // the same reason is sent only to those who were invited)
+      const wasInvited = (invitee as any).invitationStatus === 'SENT' || !!(invitee as any).removedWithHistory;
+      if ((wantEmail || wantWhatsapp) && wasInvited) {
         const ev: any = await Event.findById(invitee.eventId).select('title').lean();
         notice = await removalNoticeService.notify({ name: invitee.name, email: invitee.email, mobile: invitee.mobile }, ev?.title || 'the event', reason, { email: wantEmail, whatsapp: wantWhatsapp });
       }
