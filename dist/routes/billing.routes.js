@@ -33,12 +33,25 @@ router.get('/billing/events', organizerOnly, async (req, res) => {
     }
 });
 // Starts a Razorpay payment for what is due on one event; the client then confirms it through POST /payments/verify
-router.post('/billing/pay', organizerOnly, async (req, res) => {
-    const parsed = zod_1.z.object({ eventId: zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/) }).safeParse(req.body);
+const objectId = zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/);
+const payBody = zod_1.z.object({ eventId: objectId, inviteeIds: zod_1.z.array(objectId).max(5000).optional() });
+router.post('/billing/quote', organizerOnly, async (req, res) => {
+    const parsed = payBody.safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ success: false, message: 'A valid eventId is required.' });
     try {
-        return res.status(201).json({ success: true, data: await billing_service_1.billingService.createBillOrder(req.user.userId, parsed.data.eventId) });
+        return res.json({ success: true, data: await billing_service_1.billingService.quote(req.user.userId, parsed.data.eventId, parsed.data.inviteeIds || []) });
+    }
+    catch (e) {
+        return fail(res, e);
+    }
+});
+router.post('/billing/pay', organizerOnly, async (req, res) => {
+    const parsed = payBody.safeParse(req.body);
+    if (!parsed.success)
+        return res.status(400).json({ success: false, message: 'A valid eventId is required.' });
+    try {
+        return res.status(201).json({ success: true, data: await billing_service_1.billingService.createBillOrder(req.user.userId, parsed.data.eventId, parsed.data.inviteeIds) });
     }
     catch (e) {
         return fail(res, e);

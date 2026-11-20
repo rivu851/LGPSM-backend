@@ -92,11 +92,11 @@ class MediaService {
     }
     // The image's bytes wherever they are kept (database or file); null when there is no such image or its file is gone
     // For serving to browsers: the public address of the file when a media address is configured, otherwise the bytes
-    async resolveForServing(id) {
+    async resolveForServing(id, usePublicUrl = true) {
         if (!mongoose_1.default.Types.ObjectId.isValid(id))
             return null;
         const media = await Media_1.Media.findById(id).select('contentType storage fileName');
-        if (media?.storage === 'DISK') {
+        if (usePublicUrl && media?.storage === 'DISK') {
             const publicUrl = await (0, mediaStorage_1.publicUrlFor)(media.fileName);
             if (publicUrl)
                 return { contentType: media.contentType, publicUrl };

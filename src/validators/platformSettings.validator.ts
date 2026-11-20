@@ -29,3 +29,7 @@ export const notificationPreferencesSchema = z.object({
 export const pricingSchema = z.object({
   ratePerInvitee: z.number().finite().min(0, 'Rate cannot be negative').max(1000, 'Rate looks too high')
 }).strict();
+
+export const gstSchema = z.object({
+  gstPercent: z.number().finite().min(0, 'GST cannot be negative').max(50, 'GST looks too high')
+}).strict();

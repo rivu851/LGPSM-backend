@@ -10,6 +10,7 @@ import { Category } from '../src/models/Category';
 import { Event } from '../src/models/Event';
 import { Invitee } from '../src/models/Invitee';
 import { Order } from '../src/models/Order';
+import { PlatformSettings } from '../src/models/PlatformSettings';
 import { generateAccessToken } from '../src/utils/token';
 
 jest.setTimeout(60000);
@@ -28,7 +29,7 @@ afterAll(async () => { await mongoose.disconnect(); await mongo.stop(); });
 beforeEach(async () => {
   process.env.RAZORPAY_KEY_ID = 'rzp_test_key';
   process.env.RAZORPAY_KEY_SECRET = 'rzp_test_secret';
-  await Promise.all([User.deleteMany({}), Category.deleteMany({}), Event.deleteMany({}), Invitee.deleteMany({}), Order.deleteMany({})]);
+  await Promise.all([User.deleteMany({}), Category.deleteMany({}), Event.deleteMany({}), Invitee.deleteMany({}), Order.deleteMany({}), PlatformSettings.deleteMany({})]);
   org = await User.create({ fullName: 'Org', email: 'o@x.com', role: Role.ORGANIZER, isActive: true });
   other = await User.create({ fullName: 'Other', email: 'p@x.com', role: Role.ORGANIZER, isActive: true });
   const cat = await Category.create({ name: 'Corporate', isActive: true });
@@ -36,18 +37,51 @@ beforeEach(async () => {
 });
 afterEach(() => jest.restoreAllMocks());
 
+describe('bill for sending to chosen guests', () => {
+  const pending = (count: number) => Invitee.insertMany(Array.from({ length: count }, (_, i) => ({ eventId: ev._id, name: `P${n}${i}`, email: `p${n}${i}@x.com`, mobile: `98000${String(10000 + n * 100 + i).slice(-5)}` })));
+
+  it('quotes invitees x rate + GST, follows the admin GST, and uses prepaid invitations first', async () => {
+    const guests: any[] = await pending(5);
+    const ids = guests.map((g) => String(g._id));
+    let q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send({ eventId: String(ev._id), inviteeIds: ids });
+    expect(q.body.data).toMatchObject({ invitees: 5, rate: 3, subtotal: 15, gstPercent: 18, tax: 2.7, total: 17.7, payable: true });
+
+    const admin = await User.create({ fullName: 'Admin', email: 'a@x.com', role: Role.ADMIN, isActive: true });
+    const g = await request(app).put('/api/v1/settings/gst').set(auth(admin)).send({ gstPercent: 5 });
+    expect(g.status).toBe(200);
+    q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send({ eventId: String(ev._id), inviteeIds: ids });
+    expect(q.body.data).toMatchObject({ subtotal: 15, gstPercent: 5, tax: 0.75, total: 15.75 });
+    const org2 = await request(app).put('/api/v1/settings/gst').set(auth(org)).send({ gstPercent: 0 });
+    expect(org2.status).toBe(403);
+
+    stubRazorpay();
+    const pay = await request(app).post('/api/v1/billing/pay').set(auth(org)).send({ eventId: String(ev._id), inviteeIds: ids });
+    expect(pay.body.data).toMatchObject({ amount: 1575, invitees: 5, total: 15.75 });
+    const o = pay.body.data.providerOrderId;
+    await request(app).post('/api/v1/payments/verify').set(auth(org)).send({ providerOrderId: o, providerPaymentId: 'pay_x', signature: sign(o, 'pay_x') });
+
+    // paid for 5, none sent yet: asking again for the same guests costs nothing
+    q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send({ eventId: String(ev._id), inviteeIds: ids });
+    expect(q.body.data).toMatchObject({ invitees: 0, total: 0, alreadyPaid: 5, payable: false });
+    // once they are sent, nothing is due
+    await Invitee.updateMany({ _id: { $in: ids } }, { $set: { invitationStatus: 'SENT' } });
+    const bills = await request(app).get('/api/v1/billing/events').set(auth(org));
+    expect(bills.body.data.totalDue).toBe(0);
+  });
+});
+
 describe('event bill payment', () => {
   it('lists what is due, pays it, issues an invoice, and only the new invitations are due afterwards', async () => {
     await sendTo(4);
     let res = await request(app).get('/api/v1/billing/events').set(auth(org));
-    expect(res.body.data.totalDue).toBe(12);
-    expect(res.body.data.events[0]).toMatchObject({ invitesSent: 4, due: 12, dueInvitees: 4 });
+    expect(res.body.data.totalDue).toBe(14.16); // 4 x 3 = 12, plus 18% GST
+    expect(res.body.data.events[0]).toMatchObject({ invitesSent: 4, dueSubtotal: 12, dueTax: 2.16, due: 14.16, dueInvitees: 4, gstPercent: 18 });
 
     const spy = stubRazorpay();
     const pay = await request(app).post('/api/v1/billing/pay').set(auth(org)).send({ eventId: String(ev._id) });
     expect(pay.status).toBe(201);
-    expect(pay.body.data).toMatchObject({ keyId: 'rzp_test_key', amount: 1200, currency: 'INR', invitees: 4 });
-    expect(JSON.parse((spy.mock.calls[0][1] as any).body).amount).toBe(1200);
+    expect(pay.body.data).toMatchObject({ keyId: 'rzp_test_key', amount: 1416, currency: 'INR', invitees: 4, subtotal: 12, tax: 2.16, total: 14.16 });
+    expect(JSON.parse((spy.mock.calls[0][1] as any).body).amount).toBe(1416);
     expect(JSON.stringify(pay.body)).not.toContain('rzp_test_secret');
 
     const orderId = pay.body.data.providerOrderId;
@@ -55,7 +89,7 @@ describe('event bill payment', () => {
     expect(bad.status).toBe(400);
     // a failed confirmation leaves nothing paid
     res = await request(app).get('/api/v1/billing/events').set(auth(org));
-    expect(res.body.data.totalDue).toBe(12);
+    expect(res.body.data.totalDue).toBe(14.16);
 
     const pay2 = await request(app).post('/api/v1/billing/pay').set(auth(org)).send({ eventId: String(ev._id) });
     const o2 = pay2.body.data.providerOrderId;
@@ -64,17 +98,17 @@ describe('event bill payment', () => {
     expect(ok.body.data.invoice.invitees).toBe(4);
 
     res = await request(app).get('/api/v1/billing/events').set(auth(org));
-    expect(res.body.data).toMatchObject({ totalDue: 0, totalPaid: 12 });
+    expect(res.body.data).toMatchObject({ totalDue: 0, totalPaid: 14.16 });
     const dup = await request(app).post('/api/v1/billing/pay').set(auth(org)).send({ eventId: String(ev._id) });
     expect(dup.status).toBe(409);
 
     await sendTo(2);
     res = await request(app).get('/api/v1/billing/events').set(auth(org));
-    expect(res.body.data.events[0]).toMatchObject({ due: 6, dueInvitees: 2, paid: 12 });
+    expect(res.body.data.events[0]).toMatchObject({ due: 7.08, dueInvitees: 2, paid: 14.16 });
 
     const inv = await request(app).get('/api/v1/billing/invoices').set(auth(org));
     expect(inv.body.data).toHaveLength(1);
-    expect(inv.body.data[0]).toMatchObject({ eventName: 'Summit', invitees: 4, amount: 12 });
+    expect(inv.body.data[0]).toMatchObject({ eventName: 'Summit', invitees: 4, subtotal: 12, tax: 2.16, amount: 14.16 });
   });
 
   it('refuses another organizer, a missing rate, and unconfigured payments', async () => {

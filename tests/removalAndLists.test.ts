@@ -107,3 +107,38 @@ describe('deleting and renaming an uploaded list', () => {
     expect((await request(app).delete(`${sets(String(ev._id))}/${set._id}`).set(auth(other))).status).toBe(404);
   });
 });
+
+describe('lists follow the guests that are deleted', () => {
+  const list = async (name: string, n: number, extra: any = {}) => {
+    const set: any = await InviteeSet.create({ eventId: ev._id, name, mode: ImportMode.APPEND, importedCount: n });
+    const guests = await Invitee.insertMany(Array.from({ length: n }, (_, i) => ({ eventId: ev._id, inviteeSetId: set._id, name: `${name}${i}`, email: `${name}${i}@x.com`, mobile: `9${String(Math.abs(name.length * 1e8 + i)).padStart(9, '0').slice(-9)}`, ...extra })));
+    return { set, guests };
+  };
+  const lists = async () => (await request(app).get(`/api/v1/events/${ev._id}/invitees/sets`).set(auth(org))).body.data;
+
+  it('lowers the remaining count when some guests are deleted, and drops the list when the last one goes', async () => {
+    const a = await list('Alpha', 3);
+    const b = await list('Beta', 2);
+    await request(app).delete(`/api/v1/invitees/${a.guests[0]._id}`).set(auth(org)).send({});
+    let data = await lists();
+    const alpha = data.sets.find((s: any) => s.name === 'Alpha');
+    expect(alpha).toMatchObject({ total: 2, importedCount: 2 });
+    for (const g of a.guests.slice(1)) await request(app).delete(`/api/v1/invitees/${g._id}`).set(auth(org)).send({});
+    data = await lists();
+    expect(data.sets.map((s: any) => s.name)).toEqual(['Beta']);
+    expect(data.removedLists).toHaveLength(0); // nothing was ever sent from it: no trace
+    expect(await InviteeSet.findById(a.set._id)).toBeNull();
+    expect(data.sets[0]).toMatchObject({ total: 2 });
+    const members = await request(app).get(`/api/v1/events/${ev._id}/invitees/sets/all/members`).set(auth(org));
+    expect(members.body.data.members.every((m: any) => String(m.name).startsWith('Beta'))).toBe(true);
+    void b;
+  });
+
+  it('keeps a list whose invited guests were set aside only as history', async () => {
+    const c = await list('Gamma', 1, { invitationStatus: 'SENT' });
+    await request(app).delete(`/api/v1/invitees/${c.guests[0]._id}`).set(auth(org)).send({ reason: 'x', notify: { email: false, whatsapp: false } });
+    const data = await lists();
+    expect(data.sets.find((s: any) => s.name === 'Gamma')).toBeUndefined();
+    expect(data.removedLists.map((r: any) => r.name)).toEqual(['Gamma']);
+  });
+});

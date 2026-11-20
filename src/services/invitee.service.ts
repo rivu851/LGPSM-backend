@@ -14,7 +14,7 @@ import { InvitationStatus, RsvpStatus } from '../models/Invitee';
 import { whatsappService } from './whatsapp.service';
 import { CheckIn } from '../models/CheckIn';
 import { InviteeSet, ImportMode } from '../models/InviteeSet';
-import { lockedSetKeys, setKeyOf, loadActivity, neverAttempted, deliveryStateOf, withEventLock } from './inviteeSet.service';
+import { lockedSetKeys, setKeyOf, loadActivity, neverAttempted, deliveryStateOf, withEventLock, inviteeSetService } from './inviteeSet.service';
 import { auditLogService } from './auditLog.service';
 import { CredentialEvent } from '../models/CredentialEvent';
 import { assertEventOpenForChanges } from '../utils/eventLifecycle';
@@ -346,12 +346,14 @@ export const inviteeService = {
         action: 'INVITEE_REMOVED', description: passOut ? 'Guest removed from the list; their pass was withdrawn and their history kept' : 'Guest removed from the list; their history kept',
         metadata: { passWithdrawn: passOut }
       } as any);
+      await inviteeSetService.afterGuestRemoved(invitee.inviteeSetId, organizerId);
       return Object.assign(removed, { removedWithHistory: true });
     }
     const deleted = await inviteeRepository.delete(inviteeId);
     if (!deleted) {
       throw new Error('DELETE_FAILED');
     }
+    await inviteeSetService.afterGuestRemoved(invitee.inviteeSetId, organizerId);
     return deleted;
   },
 

@@ -4,7 +4,7 @@ import { authenticate } from '../middlewares/authenticate';
 import { authorizeRoles } from '../middlewares/authorizeRoles';
 import { Role } from '../models/User';
 import { platformSettingsController } from '../controllers/platformSettings.controller';
-import { eventFeaturesSchema, notificationPreferencesSchema, pricingSchema } from '../validators/platformSettings.validator';
+import { eventFeaturesSchema, notificationPreferencesSchema, pricingSchema, gstSchema } from '../validators/platformSettings.validator';
 
 const validate = (schema: ZodSchema) => (req: Request, res: Response, next: NextFunction) => {
   const result = schema.safeParse(req.body);
@@ -25,5 +25,6 @@ router.get('/notifications', authorizeRoles(Role.ADMIN), platformSettingsControl
 router.put('/notifications', authorizeRoles(Role.ADMIN), validate(notificationPreferencesSchema), platformSettingsController.updateNotificationPreferences);
 router.get('/pricing', authorizeRoles(Role.ADMIN), platformSettingsController.getPricing);
 router.put('/pricing', authorizeRoles(Role.ADMIN), validate(pricingSchema), platformSettingsController.updatePricing);
+router.put('/gst', authorizeRoles(Role.ADMIN), validate(gstSchema), platformSettingsController.updateGst);
 
 export default router;

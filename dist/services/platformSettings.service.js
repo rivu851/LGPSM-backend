@@ -42,6 +42,7 @@ exports.platformSettingsService = {
         const history = await PriceRateChange_1.PriceRateChange.find().sort({ createdAt: -1 }).limit(100).populate('changedBy', 'fullName email').lean();
         return {
             ratePerInvitee: settings.pricing?.ratePerInvitee ?? null,
+            gstPercent: settings.pricing?.gstPercent ?? 18,
             currency: currency_1.PLATFORM_CURRENCY,
             updatedAt: settings.pricing?.updatedAt || null,
             history
@@ -57,6 +58,16 @@ exports.platformSettingsService = {
         const currency = currency_1.PLATFORM_CURRENCY;
         await PlatformSettings_1.PlatformSettings.updateOne({ key: KEY }, { $set: { 'pricing.ratePerInvitee': ratePerInvitee, 'pricing.updatedAt': new Date(), 'pricing.updatedBy': new mongoose_1.default.Types.ObjectId(actorId) } });
         await PriceRateChange_1.PriceRateChange.create({ previousRate: previous, newRate: ratePerInvitee, currency, changedBy: actorId });
+        return this.getPricing();
+    },
+    /** GST (%) added to every bill; the current value applies to bills made from now on */
+    async gstPercent() {
+        const settings = await load();
+        const g = Number(settings.pricing?.gstPercent);
+        return Number.isFinite(g) && g >= 0 ? g : 18;
+    },
+    async updateGst(actorId, gstPercent) {
+        await PlatformSettings_1.PlatformSettings.updateOne({ key: KEY }, { $set: { 'pricing.gstPercent': gstPercent, 'pricing.updatedAt': new Date(), 'pricing.updatedBy': new mongoose_1.default.Types.ObjectId(actorId) } });
         return this.getPricing();
     },
     // Rate snapshot stored on a newly created event

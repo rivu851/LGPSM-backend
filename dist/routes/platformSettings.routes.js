@@ -23,4 +23,5 @@ router.get('/notifications', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.AD
 router.put('/notifications', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN), validate(platformSettings_validator_1.notificationPreferencesSchema), platformSettings_controller_1.platformSettingsController.updateNotificationPreferences);
 router.get('/pricing', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN), platformSettings_controller_1.platformSettingsController.getPricing);
 router.put('/pricing', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN), validate(platformSettings_validator_1.pricingSchema), platformSettings_controller_1.platformSettingsController.updatePricing);
+router.put('/gst', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN), validate(platformSettings_validator_1.gstSchema), platformSettings_controller_1.platformSettingsController.updateGst);
 exports.default = router;

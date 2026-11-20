@@ -184,7 +184,8 @@ exports.inviteeSetService = {
         // guests added by hand have no file: show when the first of them was added
         const legacyTimes = invitees.filter((i) => (0, exports.setKeyOf)(i) === exports.LEGACY_SET && i.createdAt).map((i) => new Date(i.createdAt).getTime());
         const legacyAddedAt = legacyTimes.length ? new Date(Math.min(...legacyTimes)) : null;
-        if (rows.has(exports.LEGACY_SET) || asideBySet.has(exports.LEGACY_SET)) {
+        // set-aside guests are shown under Set-aside guests, not as a list: a list with nobody left in it is not displayed
+        if (rows.has(exports.LEGACY_SET)) {
             out.unshift(shape(exports.LEGACY_SET, { name: 'Earlier invitees', source: 'MANUAL', mode: 'APPEND', sessionId: null, createdAt: legacyAddedAt, uploadedBy: null, importedCount: null }));
         }
         const archivedCount = [...asideBySet.values()].reduce((a, b) => a + b, 0);
@@ -284,6 +285,33 @@ exports.inviteeSetService = {
             await list.save();
             return { id: String(list._id), name: list.name, removedAt: list.removedAt, guestsRemoved: members.length };
         });
+    },
+    /**
+     * Keeps the uploaded lists true after guests are deleted. The list's own "added by this upload" count goes down with each guest
+     * removed, and a list with no guests left is taken out of Uploaded lists (and the preview) right away: when nothing was ever
+     * sent from it, it leaves no trace; when guests were set aside (they had been invited) it stays only as history under Deleted lists.
+     */
+    async afterGuestRemoved(inviteeSetId, actorId) {
+        if (!inviteeSetId || !mongoose_1.default.Types.ObjectId.isValid(String(inviteeSetId)))
+            return;
+        const list = await InviteeSet_1.InviteeSet.findOne({ _id: inviteeSetId, removedAt: null });
+        if (!list)
+            return;
+        if (typeof list.importedCount === 'number' && list.importedCount > 0)
+            list.importedCount -= 1;
+        const active = await Invitee_1.Invitee.countDocuments({ eventId: list.eventId, inviteeSetId: list._id });
+        if (active > 0) {
+            await list.save();
+            return;
+        }
+        const kept = await Invitee_1.Invitee.countDocuments({ eventId: list.eventId, inviteeSetId: list._id }).setOptions({ includeArchived: true });
+        if (kept === 0) {
+            await InviteeSet_1.InviteeSet.deleteOne({ _id: list._id });
+            return;
+        }
+        list.removedAt = new Date();
+        list.removedBy = actorId && mongoose_1.default.Types.ObjectId.isValid(actorId) ? new mongoose_1.default.Types.ObjectId(actorId) : null;
+        await list.save();
     },
     /** Renames an uploaded list (the name shown under Uploaded lists). A Locked list keeps its name: it is a record of what was sent. */
     async renameList(actor, eventId, setId, name) {
@@ -447,6 +475,9 @@ exports.inviteeSetService = {
                 }
                 index(g);
                 results.push({ id, status: 'RESTORED' });
+                // the guest is back in their list: it counts again, and a list that had left Uploaded lists returns with them
+                if (g.inviteeSetId)
+                    await InviteeSet_1.InviteeSet.updateOne({ _id: g.inviteeSetId }, { $inc: { importedCount: 1 }, $set: { removedAt: null, removedBy: null } });
                 await auditLog_service_1.auditLogService.record({ ...auditBase, action: 'INVITEE_RESTORED', entityId: id, description: 'Set-aside guest restored to the active list as Not Sent', metadata: { setId: g.inviteeSetId ? String(g.inviteeSetId) : exports.LEGACY_SET, wasSetAsideAt: snapshot.archivedAt, reason: snapshot.reason } });
             }
             const count = (s) => results.filter((r) => r.status === s).length;

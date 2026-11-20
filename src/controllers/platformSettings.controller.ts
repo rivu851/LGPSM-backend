@@ -43,6 +43,23 @@ export const platformSettingsController = {
     }
   },
 
+  async updateGst(req: Request, res: Response, next: NextFunction) {
+    try {
+      const before = await platformSettingsService.gstPercent();
+      const data = await platformSettingsService.updateGst((req as any).user.userId, req.body.gstPercent);
+      if (before !== data.gstPercent) {
+        await alertService.notifyAdmins('changeInPrice', {
+          type: 'BILLING',
+          title: 'GST changed',
+          message: `GST on invitation bills changed from ${before}% to ${data.gstPercent}%. It applies to bills made from now on.`
+        });
+      }
+      res.status(200).json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+
   async updatePricing(req: Request, res: Response, next: NextFunction) {
     try {
       const before = (await platformSettingsService.getPricing()).ratePerInvitee;

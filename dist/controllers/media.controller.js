@@ -50,7 +50,7 @@ exports.mediaController = {
     // Public: stored images back event cards, templates and invitation pages viewed by guests
     async serve(req, res, next) {
         try {
-            const media = await media_service_1.mediaService.resolveForServing(String(req.params.id));
+            const media = await media_service_1.mediaService.resolveForServing(String(req.params.id), req.query.raw !== '1');
             if (!media) {
                 return res.status(404).json({ success: false, message: 'Image not found' });
             }

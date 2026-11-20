@@ -16,7 +16,12 @@ export interface IOrder extends Document {
   /** EVENT_BILL: how many invitations this payment covers */
   invitees?: number;
   quantity: number;
+  /** what was charged in all (subtotal + GST) */
   amount: number;
+  /** EVENT_BILL: invitations x rate before GST, the GST charged, and the GST % used */
+  subtotal?: number;
+  tax?: number;
+  gstPercent?: number;
   currency: string;
   providerOrderId?: string;
   status: OrderStatus;
@@ -33,6 +38,9 @@ const OrderSchema: Schema = new Schema(
     invitees: { type: Number, min: 0 },
     quantity: { type: Number, default: 1, min: 1 },
     amount: { type: Number, required: true, min: 0 },
+    subtotal: { type: Number, min: 0 },
+    tax: { type: Number, min: 0 },
+    gstPercent: { type: Number, min: 0 },
     currency: { type: String, default: 'INR' },
     providerOrderId: { type: String },
     status: { type: String, enum: Object.values(OrderStatus), default: OrderStatus.PENDING }

@@ -330,12 +330,14 @@ exports.inviteeService = {
                 action: 'INVITEE_REMOVED', description: passOut ? 'Guest removed from the list; their pass was withdrawn and their history kept' : 'Guest removed from the list; their history kept',
                 metadata: { passWithdrawn: passOut }
             });
+            await inviteeSet_service_1.inviteeSetService.afterGuestRemoved(invitee.inviteeSetId, organizerId);
             return Object.assign(removed, { removedWithHistory: true });
         }
         const deleted = await invitee_repository_1.inviteeRepository.delete(inviteeId);
         if (!deleted) {
             throw new Error('DELETE_FAILED');
         }
+        await inviteeSet_service_1.inviteeSetService.afterGuestRemoved(invitee.inviteeSetId, organizerId);
         return deleted;
     },
     // Imports an invitee sheet. The latest upload is authoritative for the not-yet-invited ("staged")

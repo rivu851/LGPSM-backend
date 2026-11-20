@@ -63,6 +63,7 @@ const PlatformSettingsSchema = new mongoose_1.Schema({
     },
     pricing: {
         ratePerInvitee: { type: Number, default: null, min: 0 },
+        gstPercent: { type: Number, default: 18, min: 0, max: 100 },
         currency: { type: String, default: currency_1.PLATFORM_CURRENCY },
         updatedAt: { type: Date },
         updatedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }

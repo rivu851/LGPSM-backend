@@ -33,6 +33,8 @@ export interface IPlatformSettings extends Document {
   pricing: {
     // null until the admin sets a rate
     ratePerInvitee: number | null;
+    /** GST (%) added on top of the per-invitee charge in the bill; changed by the admin */
+    gstPercent: number;
     currency: string;
     updatedAt?: Date;
     updatedBy?: mongoose.Types.ObjectId;
@@ -70,6 +72,7 @@ const PlatformSettingsSchema = new Schema<IPlatformSettings>(
     },
     pricing: {
       ratePerInvitee: { type: Number, default: null, min: 0 },
+      gstPercent: { type: Number, default: 18, min: 0, max: 100 },
       currency: { type: String, default: PLATFORM_CURRENCY },
       updatedAt: { type: Date },
       updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
