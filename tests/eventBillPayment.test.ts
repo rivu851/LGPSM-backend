@@ -75,18 +75,18 @@ describe('an event created before any rate was set', () => {
     await Event.updateOne({ _id: ev._id }, { $unset: { pricing: '' } });
     const g: any = await Invitee.create({ eventId: ev._id, name: 'Late', email: 'late@x.com', mobile: '9811122233' });
     let q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send({ eventId: String(ev._id), inviteeIds: [String(g._id)] });
-    expect(q.body.data).toMatchObject({ payable: false, total: 0 }); // no rate set anywhere: free
+    expect(q.body.data).toMatchObject({ payable: true, rate: 3, total: 3.54 }); // nothing set anywhere: the default rate (3) applies
 
-    await PlatformSettings.updateOne({ key: 'global' }, { $set: { 'pricing.ratePerInvitee': 3 } }, { upsert: true });
+    await PlatformSettings.updateOne({ key: 'global' }, { $set: { 'pricing.ratePerInvitee': 4 } }, { upsert: true });
     q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send({ eventId: String(ev._id), inviteeIds: [String(g._id)] });
-    expect(q.body.data).toMatchObject({ payable: true, rate: 3, subtotal: 3, total: 3.54 });
+    expect(q.body.data).toMatchObject({ payable: true, rate: 4, subtotal: 4, total: 4.72 }); // the admin's rate wins over the default
     const stored: any = await Event.findById(ev._id).lean();
-    expect(stored.pricing.ratePerInvitee).toBe(3);
+    expect(stored.pricing.ratePerInvitee).toBe(4);
 
     // a later change of the platform rate does not move this event
     await PlatformSettings.updateOne({ key: 'global' }, { $set: { 'pricing.ratePerInvitee': 9 } });
     q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send({ eventId: String(ev._id), inviteeIds: [String(g._id)] });
-    expect(q.body.data).toMatchObject({ rate: 3, total: 3.54 });
+    expect(q.body.data).toMatchObject({ rate: 4, total: 4.72 });
   });
 });
 
@@ -142,8 +142,10 @@ describe('event bill payment', () => {
     expect(off.status).toBe(503);
     process.env.RAZORPAY_KEY_ID = 'rzp_test_key';
 
+    // no rate stored anywhere: the default applies, so there is a bill (here 2 sent x 3 + 18%)
     await Event.updateOne({ _id: ev._id }, { $set: { 'pricing.ratePerInvitee': null } });
     const norate = await request(app).post('/api/v1/billing/pay').set(auth(org)).send({ eventId: String(ev._id) });
-    expect(norate.status).toBe(409);
+    expect(norate.status).toBe(201);
+    expect(norate.body.data).toMatchObject({ total: 7.08, rate: 3 });
   });
 });

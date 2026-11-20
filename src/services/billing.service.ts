@@ -4,7 +4,7 @@ import { Invitee, InvitationStatus } from '../models/Invitee';
 import { Order, OrderStatus } from '../models/Order';
 import { PaymentStatus } from '../models/Payment';
 import { Invoice } from '../models/Invoice';
-import { PLATFORM_CURRENCY } from '../constants/currency';
+import { PLATFORM_CURRENCY, DEFAULT_RATE_PER_INVITEE } from '../constants/currency';
 import { orderRepository } from '../repositories/order.repository';
 import { paymentRepository } from '../repositories/payment.repository';
 import { platformSettingsService } from './platformSettings.service';
@@ -28,6 +28,8 @@ async function eventState(event: any) {
       await Event.updateOne({ _id: event._id, $or: [{ 'pricing.ratePerInvitee': null }, { 'pricing.ratePerInvitee': { $exists: false } }, { 'pricing.ratePerInvitee': 0 }] }, { $set: { pricing: current } });
     }
   }
+  // Nothing set anywhere yet: the platform default applies (not stored on the event, so a rate the admin sets later takes over)
+  if (!(rate && rate > 0)) rate = DEFAULT_RATE_PER_INVITEE;
   const sent = await Invitee.countDocuments({ eventId: event._id, invitationStatus: InvitationStatus.SENT });
   const paid = await Order.aggregate([
     { $match: { eventId: event._id, kind: 'EVENT_BILL', status: OrderStatus.PAID } },

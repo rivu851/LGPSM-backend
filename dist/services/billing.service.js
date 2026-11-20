@@ -33,6 +33,9 @@ async function eventState(event) {
             await Event_1.Event.updateOne({ _id: event._id, $or: [{ 'pricing.ratePerInvitee': null }, { 'pricing.ratePerInvitee': { $exists: false } }, { 'pricing.ratePerInvitee': 0 }] }, { $set: { pricing: current } });
         }
     }
+    // Nothing set anywhere yet: the platform default applies (not stored on the event, so a rate the admin sets later takes over)
+    if (!(rate && rate > 0))
+        rate = currency_1.DEFAULT_RATE_PER_INVITEE;
     const sent = await Invitee_1.Invitee.countDocuments({ eventId: event._id, invitationStatus: Invitee_1.InvitationStatus.SENT });
     const paid = await Order_1.Order.aggregate([
         { $match: { eventId: event._id, kind: 'EVENT_BILL', status: Order_1.OrderStatus.PAID } },
