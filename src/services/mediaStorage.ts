@@ -20,16 +20,40 @@ export const extensionFor = (contentType: string) => EXT[contentType] || 'bin';
 // only plain file names made by this module are ever opened (no folders, no "..")
 const safeName = (name: string) => (/^[0-9a-f]{24}\.(jpg|png|webp|bin)$/.test(name) ? name : null);
 
+async function setPermissions(target: string, mode: number, label: string): Promise<void> {
+  try {
+    await fs.promises.chmod(target, mode);
+  } catch (error) {
+    console.error(`[media-storage] Could not set ${label} permissions to ${mode.toString(8)} for ${target}:`, error instanceof Error ? error.message : error);
+    throw error;
+  }
+}
+
+export async function setPublicImagePermissions(filePath: string): Promise<void> {
+  await setPermissions(filePath, 0o644, 'public image');
+}
+
 export async function writeMediaFile(id: string, contentType: string, data: Buffer): Promise<string> {
   const dir = mediaDir();
   if (!dir) throw new Error('MEDIA_DIR_NOT_SET');
-  await fs.promises.mkdir(dir, { recursive: true });
+  await fs.promises.mkdir(dir, { recursive: true, mode: 0o755 });
+  await setPermissions(dir, 0o755, 'public image directory');
   const name = `${id}.${extensionFor(contentType)}`;
   const target = path.join(dir, name);
   const temp = `${target}.${process.pid}.tmp`;
   // written beside the final name and renamed, so a half-written file is never served
-  await fs.promises.writeFile(temp, data, { mode: 0o640 });
+  await fs.promises.writeFile(temp, data, { mode: 0o644 });
   await fs.promises.rename(temp, target);
+  try {
+    await setPublicImagePermissions(target);
+  } catch (error) {
+    try {
+      await fs.promises.unlink(target);
+    } catch (cleanupError) {
+      console.error('[media-storage] Could not remove image after its permissions failed:', target, cleanupError instanceof Error ? cleanupError.message : cleanupError);
+    }
+    throw error;
+  }
   return name;
 }
 
@@ -46,7 +70,11 @@ export async function publicUrlFor(fileName?: string | null): Promise<string | n
   const dir = mediaDir();
   const name = fileName ? safeName(fileName) : null;
   if (!base || !/^https:\/\//i.test(base) || !dir || !name) return null;
-  try { await fs.promises.access(path.join(dir, name), fs.constants.R_OK); } catch { return null; }
+  const filePath = path.join(dir, name);
+  try {
+    await setPublicImagePermissions(filePath);
+    await fs.promises.access(filePath, fs.constants.R_OK);
+  } catch { return null; }
   return `${base}/${name}`;
 }
 

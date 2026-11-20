@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.extensionFor = exports.mediaDir = void 0;
+exports.setPublicImagePermissions = setPublicImagePermissions;
 exports.writeMediaFile = writeMediaFile;
 exports.readMediaFile = readMediaFile;
 exports.publicUrlFor = publicUrlFor;
@@ -27,17 +28,42 @@ const extensionFor = (contentType) => EXT[contentType] || 'bin';
 exports.extensionFor = extensionFor;
 // only plain file names made by this module are ever opened (no folders, no "..")
 const safeName = (name) => (/^[0-9a-f]{24}\.(jpg|png|webp|bin)$/.test(name) ? name : null);
+async function setPermissions(target, mode, label) {
+    try {
+        await fs_1.default.promises.chmod(target, mode);
+    }
+    catch (error) {
+        console.error(`[media-storage] Could not set ${label} permissions to ${mode.toString(8)} for ${target}:`, error instanceof Error ? error.message : error);
+        throw error;
+    }
+}
+async function setPublicImagePermissions(filePath) {
+    await setPermissions(filePath, 0o644, 'public image');
+}
 async function writeMediaFile(id, contentType, data) {
     const dir = (0, exports.mediaDir)();
     if (!dir)
         throw new Error('MEDIA_DIR_NOT_SET');
-    await fs_1.default.promises.mkdir(dir, { recursive: true });
+    await fs_1.default.promises.mkdir(dir, { recursive: true, mode: 0o755 });
+    await setPermissions(dir, 0o755, 'public image directory');
     const name = `${id}.${(0, exports.extensionFor)(contentType)}`;
     const target = path_1.default.join(dir, name);
     const temp = `${target}.${process.pid}.tmp`;
     // written beside the final name and renamed, so a half-written file is never served
-    await fs_1.default.promises.writeFile(temp, data, { mode: 0o640 });
+    await fs_1.default.promises.writeFile(temp, data, { mode: 0o644 });
     await fs_1.default.promises.rename(temp, target);
+    try {
+        await setPublicImagePermissions(target);
+    }
+    catch (error) {
+        try {
+            await fs_1.default.promises.unlink(target);
+        }
+        catch (cleanupError) {
+            console.error('[media-storage] Could not remove image after its permissions failed:', target, cleanupError instanceof Error ? cleanupError.message : cleanupError);
+        }
+        throw error;
+    }
     return name;
 }
 async function readMediaFile(fileName) {
@@ -59,8 +85,10 @@ async function publicUrlFor(fileName) {
     const name = fileName ? safeName(fileName) : null;
     if (!base || !/^https:\/\//i.test(base) || !dir || !name)
         return null;
+    const filePath = path_1.default.join(dir, name);
     try {
-        await fs_1.default.promises.access(path_1.default.join(dir, name), fs_1.default.constants.R_OK);
+        await setPublicImagePermissions(filePath);
+        await fs_1.default.promises.access(filePath, fs_1.default.constants.R_OK);
     }
     catch {
         return null;

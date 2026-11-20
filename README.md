@@ -54,6 +54,8 @@ The migration requires `ATLAS_URL`, changes indexes only, and does not modify us
 ## Profile photo upload
 Use the authenticated **PATCH `/api/users/profile/photo`** endpoint with a multipart form field named `file`. The response and **GET `/api/users/profile`** include `profile.avatarKey` (`media:<id>`) and, when available, `profile.avatarUrl`. The key is persisted in the user profile; the URL is resolved from `MEDIA_PUBLIC_URL` or `PUBLIC_API_URL`.
 
+When `MEDIA_DIR` is configured, uploaded public images are saved with `0644` permissions and the media directory is set to `0755`, even when the server's umask is more restrictive. Set `MEDIA_DIR` to a directory reserved for public images; its parent directories must also allow the web server to traverse them.
+
 For browser clients, append the selected file to `FormData` and do not set the `Content-Type` header manually:
 ```js
 const form = new FormData();

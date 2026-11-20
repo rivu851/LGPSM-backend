@@ -68,6 +68,39 @@ describe('MEDIA_DIR set', () => {
     expect((await sharp(got.body).metadata()).width).toBe(64);
   });
 
+  it('sets public image and directory permissions despite a restrictive umask', async () => {
+    if (process.platform === 'win32') return;
+    const mediaDirectory = path.join(dir, 'public');
+    process.env.MEDIA_DIR = mediaDirectory;
+    const res = await (async () => {
+      const previousUmask = process.umask(0o027);
+      try { return await upload(); } finally { process.umask(previousUmask); }
+    })();
+
+    expect(res.status).toBe(201);
+    const id = String(res.body.data.key).replace('media:', '');
+    const rec: any = await Media.findById(id).lean();
+    expect(fs.statSync(path.join(mediaDirectory, rec.fileName)).mode & 0o777).toBe(0o644);
+    expect(fs.statSync(mediaDirectory).mode & 0o777).toBe(0o755);
+  });
+
+  it('logs and fails the upload when public directory permissions cannot be set', async () => {
+    process.env.MEDIA_DIR = dir;
+    const chmod = jest.spyOn(fs.promises, 'chmod').mockRejectedValue(new Error('permission denied'));
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await upload();
+      expect(res.status).toBe(500);
+      expect(errorLog).toHaveBeenCalledWith(
+        expect.stringContaining('[media-storage] Could not set public image directory permissions'),
+        'permission denied'
+      );
+    } finally {
+      chmod.mockRestore();
+      errorLog.mockRestore();
+    }
+  });
+
   it('answers 404 (not an error) when the file has gone missing', async () => {
     process.env.MEDIA_DIR = dir;
     const id = String((await upload()).body.data.key).replace('media:', '');
@@ -113,6 +146,28 @@ describe('MEDIA_PUBLIC_URL set (files served from the media address)', () => {
     const res = await request(app).get(`/api/v1/media/${id}`).redirects(0);
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe(`https://media.example.com/${rec.fileName}`);
+  });
+
+  it('can serve the stored bytes directly when a CDN image request fails', async () => {
+    process.env.MEDIA_DIR = dir; process.env.MEDIA_PUBLIC_URL = 'https://media.example.com';
+    const id = String((await upload()).body.data.key).replace('media:', '');
+    const res = await request(app).get(`/api/v1/media/${id}?raw=1`).redirects(0);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/image\/png/);
+    expect((await sharp(res.body).metadata()).width).toBe(64);
+  });
+
+  it('makes stored files world-readable for the configured media server', async () => {
+    process.env.MEDIA_DIR = dir; process.env.MEDIA_PUBLIC_URL = 'https://media.example.com';
+    const id = String((await upload()).body.data.key).replace('media:', '');
+    const rec: any = await Media.findById(id).lean();
+    const filePath = path.join(dir, rec.fileName);
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(filePath).mode & 0o777).toBe(0o644);
+      fs.chmodSync(filePath, 0o640);
+    }
+    expect((await request(app).get(`/api/v1/media/${id}`).redirects(0)).status).toBe(302);
+    if (process.platform !== 'win32') expect(fs.statSync(filePath).mode & 0o777).toBe(0o644);
   });
 
   it('does not redirect to a file that is not there (404 instead of a dead link)', async () => {
