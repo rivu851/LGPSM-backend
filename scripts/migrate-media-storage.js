@@ -11,8 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const { Media } = require('../dist/models/Media');
-
-const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+const { writeMediaFile } = require('../dist/services/mediaStorage');
 
 (async () => {
   const direction = process.argv[2];
@@ -30,7 +29,6 @@ const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
   console.log(`${ids.length} image(s) kept ${from === 'DB' ? 'in the database' : 'as files'} (${(bytes / 1048576).toFixed(1)} MB).`);
   if (!apply) { console.log('Report only. Re-run with --apply to move them.'); await mongoose.disconnect(); return; }
 
-  if (direction === 'to-disk') await fs.promises.mkdir(dir, { recursive: true });
   let moved = 0, failed = 0;
   for (const { _id } of ids) {
     try {
@@ -38,9 +36,8 @@ const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
       if (!m) continue;
       if (direction === 'to-disk') {
         if (!m.data) { failed++; console.error(`${_id}: no bytes in the record, skipped`); continue; }
-        const name = `${_id}.${EXT[m.contentType] || 'bin'}`;
+        const name = await writeMediaFile(String(_id), m.contentType, m.data);
         const target = path.join(dir, name);
-        await fs.promises.writeFile(target + '.tmp', m.data); await fs.promises.rename(target + '.tmp', target);
         const check = await fs.promises.readFile(target);
         if (!check.equals(m.data)) { failed++; console.error(`${_id}: the copy does not match, left in the database`); continue; }
         await Media.updateOne({ _id }, { $set: { storage: 'DISK', fileName: name }, $unset: { data: '' } });

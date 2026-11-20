@@ -68,6 +68,39 @@ describe('MEDIA_DIR set', () => {
     expect((await sharp(got.body).metadata()).width).toBe(64);
   });
 
+  it('sets public image and directory permissions despite a restrictive umask', async () => {
+    if (process.platform === 'win32') return;
+    const mediaDirectory = path.join(dir, 'public');
+    process.env.MEDIA_DIR = mediaDirectory;
+    const res = await (async () => {
+      const previousUmask = process.umask(0o027);
+      try { return await upload(); } finally { process.umask(previousUmask); }
+    })();
+
+    expect(res.status).toBe(201);
+    const id = String(res.body.data.key).replace('media:', '');
+    const rec: any = await Media.findById(id).lean();
+    expect(fs.statSync(path.join(mediaDirectory, rec.fileName)).mode & 0o777).toBe(0o644);
+    expect(fs.statSync(mediaDirectory).mode & 0o777).toBe(0o755);
+  });
+
+  it('logs and fails the upload when public directory permissions cannot be set', async () => {
+    process.env.MEDIA_DIR = dir;
+    const chmod = jest.spyOn(fs.promises, 'chmod').mockRejectedValue(new Error('permission denied'));
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await upload();
+      expect(res.status).toBe(500);
+      expect(errorLog).toHaveBeenCalledWith(
+        expect.stringContaining('[media-storage] Could not set public image directory permissions'),
+        'permission denied'
+      );
+    } finally {
+      chmod.mockRestore();
+      errorLog.mockRestore();
+    }
+  });
+
   it('answers 404 (not an error) when the file has gone missing', async () => {
     process.env.MEDIA_DIR = dir;
     const id = String((await upload()).body.data.key).replace('media:', '');
