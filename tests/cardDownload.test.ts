@@ -36,45 +36,83 @@ beforeEach(async () => {
   cat = await Category.create({ name: 'Corporate', isActive: true });
 });
 
-describe('printable card download', () => {
-  it('plans the zips, then each part holds its own guests as PDFs with a pass printed on every card', async () => {
-    const ev: any = await mkEvent('PRINT');
-    await mkGuests(ev, 5);
-    const plan = await request(app).post(`/api/v1/events/${ev._id}/invitation-cards/plan`).set(auth(org)).send({ perZip: 2 });
-    expect(plan.body.data).toEqual({ total: 5, perZip: 2, zips: 3 });
+describe('zip sizes', () => {
+  const { zipSizes } = require('../src/services/cardDownload.service');
+  it('uses as few zips as the 100 limit allows and fills them evenly', () => {
+    expect(zipSizes(0)).toEqual([]);
+    expect(zipSizes(1)).toEqual([1]);
+    expect(zipSizes(100)).toEqual([100]);
+    expect(zipSizes(101)).toEqual([51, 50]);
+    expect(zipSizes(150)).toEqual([75, 75]);
+    expect(zipSizes(250)).toEqual([84, 83, 83]);
+    expect(zipSizes(1000)).toEqual(Array(10).fill(100));
+    for (const n of [1, 99, 100, 101, 199, 200, 201, 999, 1000, 1001, 5000]) {
+      const sizes: number[] = zipSizes(n);
+      expect(sizes.reduce((a, b) => a + b, 0)).toBe(n);
+      expect(Math.max(...sizes)).toBeLessThanOrEqual(100);
+      expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+    }
+  });
+});
 
-    const one = await request(app).post(`/api/v1/events/${ev._id}/invitation-cards/download`).set(auth(org)).send({ perZip: 2, part: 1 }).buffer(true).parse(binary);
+describe('printable card download', () => {
+  const plan = (ev: any, who: any, ids: string[]) => request(app).post(`/api/v1/events/${ev._id}/invitation-cards/plan`).set(auth(who)).send({ inviteeIds: ids });
+  const part = (ev: any, who: any, planId: string, n: number) => request(app).post(`/api/v1/events/${ev._id}/invitation-cards/download`).set(auth(who)).send({ planId, part: n }).buffer(true).parse(binary);
+
+  it('plans the selected guests, then each part holds its own guests as PDFs with a pass printed on every card', async () => {
+    const ev: any = await mkEvent('PRINT');
+    const guests: any[] = await mkGuests(ev, 5);
+    const ids = guests.map((g) => String(g._id));
+    const p = await plan(ev, org, ids);
+    expect(p.status).toBe(200);
+    expect(p.body.data).toMatchObject({ total: 5, zips: 1, sizes: [5] });
+
+    const one = await part(ev, org, p.body.data.planId, 1);
     expect(one.status).toBe(200);
     expect(one.headers['content-type']).toContain('application/zip');
-    expect(one.headers['content-disposition']).toContain('Gala-Night-cards-1-of-3.zip');
-    const names = entries(one.body as Buffer);
-    expect(names).toEqual(['0001-Guest-1.pdf', '0002-Guest-2.pdf']);
+    expect(one.headers['content-disposition']).toContain('Gala-Night-cards-1-of-1.zip');
+    expect(entries(one.body as Buffer)).toEqual(['0001-Guest-1.pdf', '0002-Guest-2.pdf', '0003-Guest-3.pdf', '0004-Guest-4.pdf', '0005-Guest-5.pdf']);
     expect((one.body as Buffer).includes(Buffer.from('%PDF-1.7'))).toBe(true);
 
-    const three = await request(app).post(`/api/v1/events/${ev._id}/invitation-cards/download`).set(auth(org)).send({ perZip: 2, part: 3 }).buffer(true).parse(binary);
-    expect(entries(three.body as Buffer)).toEqual(['0005-Guest-5.pdf']);
-
     // every guest got an entry pass, but nobody was marked as invited
-    const guests: any[] = await Invitee.find({ eventId: ev._id }).select('+qrTokenCipher');
-    expect(guests.filter((g) => g.qrTokenHash).length).toBe(3);
-    expect(guests.every((g) => g.invitationStatus === 'PENDING')).toBe(true);
-    // a second download of the same part reuses the passes (the QR on the card does not change)
-    const before = guests.find((g) => g.name === 'Guest 1').qrTokenHash;
-    await request(app).post(`/api/v1/events/${ev._id}/invitation-cards/download`).set(auth(org)).send({ perZip: 2, part: 1 }).buffer(true).parse(binary);
+    const after: any[] = await Invitee.find({ eventId: ev._id }).select('+qrTokenCipher');
+    expect(after.every((g) => g.qrTokenHash && g.invitationStatus === 'PENDING')).toBe(true);
+    // a second download reuses the passes (the QR on the card does not change)
+    const before = after.find((g) => g.name === 'Guest 1').qrTokenHash;
+    await part(ev, org, p.body.data.planId, 1);
     expect((await Invitee.findOne({ eventId: ev._id, name: 'Guest 1' }))!.qrTokenHash).toBe(before);
+    // only the ticked guests get cards
+    const some = await plan(ev, org, ids.slice(0, 2));
+    expect(some.body.data).toMatchObject({ total: 2, sizes: [2] });
   });
 
-  it('is refused for a digital-only event, for another organizer, and for more than 100 per zip', async () => {
+  it('splits a large selection evenly across zips of at most 100, with no guest in two zips', async () => {
+    const ev: any = await mkEvent('PRINT');
+    const guests: any[] = await mkGuests(ev, 101);
+    const p = await plan(ev, org, guests.map((g) => String(g._id)));
+    expect(p.body.data).toMatchObject({ total: 101, zips: 2, sizes: [51, 50] });
+    const second = await part(ev, org, p.body.data.planId, 2);
+    const names = entries(second.body as Buffer);
+    expect(names).toHaveLength(50);
+    expect(names[0]).toBe('0052-Guest-52.pdf');
+    const missing = await part(ev, org, p.body.data.planId, 3);
+    expect(missing.status).toBe(400);
+  });
+
+  it('needs selected guests, an event set to print, the owner, and a live plan', async () => {
     const digital: any = await mkEvent('DIGITAL');
     const print: any = await mkEvent('BOTH');
-    await mkGuests(print, 1);
-    const a = await request(app).post(`/api/v1/events/${digital._id}/invitation-cards/plan`).set(auth(org)).send({ perZip: 10 });
-    expect(a.status).toBe(409);
-    const b = await request(app).post(`/api/v1/events/${print._id}/invitation-cards/plan`).set(auth(other)).send({ perZip: 10 });
-    expect(b.status).toBe(404);
-    const c = await request(app).post(`/api/v1/events/${print._id}/invitation-cards/plan`).set(auth(org)).send({ perZip: 101 });
-    expect(c.status).toBe(400);
-    const d = await request(app).post(`/api/v1/events/${print._id}/invitation-cards/plan`).set(auth(org)).send({ perZip: 100 });
-    expect(d.body.data).toMatchObject({ total: 1, zips: 1 });
+    const g: any[] = await mkGuests(print, 1);
+    const ids = [String(g[0]._id)];
+    expect((await plan(print, org, [])).status).toBe(400);
+    expect((await plan(digital, org, ids)).status).toBe(409);
+    expect((await plan(print, other, ids)).status).toBe(404);
+    const p = await plan(print, org, ids);
+    // a plan belongs to the person who made it
+    const stolen = await request(app).post(`/api/v1/events/${print._id}/invitation-cards/download`).set(auth(other)).send({ planId: p.body.data.planId, part: 1 });
+    expect(stolen.status).toBe(404);
+    // the system decides the split: a number of guests per zip is not accepted as an input
+    const get = await request(app).get(`/api/v1/events/${print._id}/invitation-cards/download?planId=${p.body.data.planId}&part=1`).set(auth(org)).buffer(true).parse(binary);
+    expect(get.status).toBe(200);
   });
 });

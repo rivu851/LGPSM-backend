@@ -4,17 +4,14 @@ import { authenticate } from '../middlewares/authenticate';
 import { authorizeRoles } from '../middlewares/authorizeRoles';
 import { auditAction } from '../middlewares/auditAction';
 import { Role } from '../models/User';
-import { cardDownloadService, MAX_PER_ZIP } from '../services/cardDownload.service';
+import { cardDownloadService } from '../services/cardDownload.service';
 
 const router = Router({ mergeParams: true });
 router.use(authenticate);
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/);
-const body = z.object({
-  perZip: z.number().int().min(1).max(MAX_PER_ZIP),
-  part: z.number().int().min(1).optional(),
-  inviteeIds: z.array(objectId).max(20000).optional()
-});
+const planBody = z.object({ inviteeIds: z.array(objectId).min(1, 'Select at least one guest.').max(20000) });
+const partInput = z.object({ planId: objectId, part: z.number().int().min(1) });
 
 const handle = (res: Response, e: any) => {
   if (res.headersSent) { res.destroy(); return; }
@@ -23,37 +20,28 @@ const handle = (res: Response, e: any) => {
   res.status(status).json({ success: false, code: e?.code, message: status === 500 ? 'The cards could not be produced. Please try again.' : e.message });
 };
 
-// POST /api/v1/events/:eventId/invitation-cards/plan: how many guests and how many zip files
+// POST /api/v1/events/:eventId/invitation-cards/plan: keeps the selected guests and says how many zip files they make (the system splits
+// them evenly, at most 100 guests per zip)
 router.post('/plan', authorizeRoles(Role.ORGANIZER, Role.ADMIN), async (req: Request, res: Response) => {
-  const p = body.safeParse(req.body);
-  if (!p.success) return res.status(400).json({ success: false, message: `Guests per zip must be a whole number from 1 to ${MAX_PER_ZIP}.` });
+  const p = planBody.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ success: false, code: 'NO_GUESTS_SELECTED', message: p.error.issues[0]?.message || 'Select at least one guest.' });
   try {
-    res.json({ success: true, data: await cardDownloadService.plan((req as any).user, String(req.params.eventId), p.data.perZip, p.data.inviteeIds) });
+    res.json({ success: true, data: await cardDownloadService.plan((req as any).user, String(req.params.eventId), p.data.inviteeIds) });
   } catch (e) { handle(res, e); }
 });
 
-// POST /api/v1/events/:eventId/invitation-cards/download: one zip (part n) of printable PDFs, one PDF per guest
-router.post('/download', authorizeRoles(Role.ORGANIZER, Role.ADMIN),
-  auditAction({ action: 'INVITATION_CARDS_DOWNLOADED', entityType: 'Event', eventParam: 'eventId', describe: 'Printable invitation cards were downloaded' }),
-  async (req: Request, res: Response) => {
-    const p = body.safeParse(req.body);
-    if (!p.success) return res.status(400).json({ success: false, message: `Guests per zip must be a whole number from 1 to ${MAX_PER_ZIP}.` });
-    try {
-      await cardDownloadService.streamZip((req as any).user, String(req.params.eventId), { part: p.data.part ?? 1, perZip: p.data.perZip, inviteeIds: p.data.inviteeIds }, res);
-    } catch (e) { handle(res, e); }
-  });
+const stream = async (req: Request, res: Response, input: unknown) => {
+  const p = partInput.safeParse(input);
+  if (!p.success) return res.status(400).json({ success: false, message: 'A plan and a part number are required.' });
+  try {
+    await cardDownloadService.streamZip((req as any).user, String(req.params.eventId), p.data, res);
+  } catch (e) { handle(res, e); }
+};
+const audit = auditAction({ action: 'INVITATION_CARDS_DOWNLOADED', entityType: 'Event', eventParam: 'eventId', describe: 'Printable invitation cards were downloaded' });
 
-// GET /api/v1/events/:eventId/invitation-cards/download?perZip=&part=&inviteeIds=a,b: the same zip for clients that can only download with GET
-// (the mobile app saves files through the system downloader)
-router.get('/download', authorizeRoles(Role.ORGANIZER, Role.ADMIN),
-  auditAction({ action: 'INVITATION_CARDS_DOWNLOADED', entityType: 'Event', eventParam: 'eventId', describe: 'Printable invitation cards were downloaded' }),
-  async (req: Request, res: Response) => {
-    const ids = typeof req.query.inviteeIds === 'string' && req.query.inviteeIds ? req.query.inviteeIds.split(',') : undefined;
-    const p = body.safeParse({ perZip: Number(req.query.perZip), part: req.query.part ? Number(req.query.part) : undefined, inviteeIds: ids });
-    if (!p.success) return res.status(400).json({ success: false, message: `Guests per zip must be a whole number from 1 to ${MAX_PER_ZIP}.` });
-    try {
-      await cardDownloadService.streamZip((req as any).user, String(req.params.eventId), { part: p.data.part ?? 1, perZip: p.data.perZip, inviteeIds: p.data.inviteeIds }, res);
-    } catch (e) { handle(res, e); }
-  });
+// POST /api/v1/events/:eventId/invitation-cards/download { planId, part }: one zip of printable PDFs, one PDF per guest
+router.post('/download', authorizeRoles(Role.ORGANIZER, Role.ADMIN), audit, (req, res) => stream(req, res, req.body));
+// GET .../download?planId=&part=: the same for clients that can only download with GET (the mobile app's system downloader)
+router.get('/download', authorizeRoles(Role.ORGANIZER, Role.ADMIN), audit, (req, res) => stream(req, res, { planId: req.query.planId, part: Number(req.query.part) }));
 
 export default router;

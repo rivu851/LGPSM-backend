@@ -5,15 +5,13 @@ import { PDFDocument } from 'pdf-lib';
 import type { Response } from 'express';
 import { Event } from '../models/Event';
 import { Invitee } from '../models/Invitee';
+import { CardDownloadPlan } from '../models/CardDownloadPlan';
 import { Role } from '../models/User';
 import { generateSecureToken, hashToken } from '../utils/invitation.util';
 import { encryptToken } from '../utils/tokenCipher';
 import { readAdmissionToken } from '../utils/credentialTokens';
 import { invitationService, assertEventCanIssue } from './invitation.service';
 import { credentialService } from './credential.service';
-
-/** Most guests one zip holds. The organizer chooses a smaller number in the download window. */
-export const MAX_PER_ZIP = 100;
 
 // A card is drawn 1536 x 2048 px; on a 6 x 8 inch page that is 256 dpi, with the QR code and text kept sharp for print.
 const PAGE_W_PT = 6 * 72;
@@ -35,40 +33,57 @@ async function loadEvent(actor: Actor, eventId: string) {
   return event;
 }
 
-function guestFilter(eventId: string, inviteeIds?: string[]) {
-  const filter: any = { eventId };
-  if (inviteeIds && inviteeIds.length) {
-    const ids = inviteeIds.filter((i) => mongoose.Types.ObjectId.isValid(i));
-    filter._id = { $in: ids };
-  }
-  return filter;
+/** Most guests one zip holds. The split is the system's: nobody chooses it, so a large selection can never become a flood of tiny zips. */
+export const MAX_PER_ZIP = 100;
+const PLAN_MINUTES = 60;
+
+/**
+ * How many guests go in each zip: as few zips as the 100 limit allows, filled evenly (1000 guests: 10 zips of 100; 150: two of 75;
+ * 250: three of 84, 83 and 83), never a full zip followed by a small leftover.
+ */
+export function zipSizes(total: number): number[] {
+  if (total <= 0) return [];
+  const zips = Math.ceil(total / MAX_PER_ZIP);
+  const base = Math.floor(total / zips);
+  const extra = total % zips;
+  return Array.from({ length: zips }, (_, i) => base + (i < extra ? 1 : 0));
 }
 
 const safeName = (s: string) => String(s || 'guest').normalize('NFKD').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'guest';
 
 export const cardDownloadService = {
-  /** How many guests the cards are for and how many zip files that makes at `perZip` guests each. */
-  async plan(actor: Actor, eventId: string, perZip: number, inviteeIds?: string[]) {
+  /** Keeps the chosen guests under a plan id and says how many zip files they make. Only guests of this event are kept. */
+  async plan(actor: Actor, eventId: string, inviteeIds: string[]) {
     await loadEvent(actor, eventId);
-    const limit = Math.min(Math.max(Math.floor(perZip) || MAX_PER_ZIP, 1), MAX_PER_ZIP);
-    const total = await Invitee.countDocuments(guestFilter(eventId, inviteeIds));
-    return { total, perZip: limit, zips: Math.ceil(total / limit) };
+    const ids = [...new Set(inviteeIds.filter((i) => mongoose.Types.ObjectId.isValid(i)))];
+    if (ids.length === 0) throw fail(400, 'Select at least one guest to download cards for.', 'NO_GUESTS_SELECTED');
+    const found = await Invitee.find({ eventId, _id: { $in: ids } }).select('_id').sort({ createdAt: 1, _id: 1 }).lean();
+    if (found.length === 0) throw fail(400, 'None of the selected guests are on this event.', 'NO_GUESTS_SELECTED');
+    const plan = await CardDownloadPlan.create({
+      eventId, userId: actor.userId, inviteeIds: found.map((g: any) => g._id), expiresAt: new Date(Date.now() + PLAN_MINUTES * 60 * 1000)
+    });
+    const sizes = zipSizes(found.length);
+    return { planId: String(plan._id), total: found.length, zips: sizes.length, sizes };
   },
 
   /**
-   * Streams ONE zip: part `part` (1-based) of the guests, `perZip` per part, in a stable order (the order they were added). Each guest
-   * has their own PDF holding their personal card at print quality. Part 3 of 10 is always the same guests, so the parts can be
-   * fetched one after another to download every card of a large event.
+   * Streams ONE zip: part `part` (1-based) of a plan. Each guest has their own PDF holding their personal card at print quality.
+   * Part 3 of 10 is always the same guests, so the parts can be fetched one after another to download every card.
    */
-  async streamZip(actor: Actor, eventId: string, opts: { part: number; perZip: number; inviteeIds?: string[] }, res: Response) {
+  async streamZip(actor: Actor, eventId: string, opts: { planId: string; part: number }, res: Response) {
     const event = await loadEvent(actor, eventId);
-    const limit = Math.min(Math.max(Math.floor(opts.perZip) || MAX_PER_ZIP, 1), MAX_PER_ZIP);
-    const part = Math.max(Math.floor(opts.part) || 1, 1);
-    const filter = guestFilter(eventId, opts.inviteeIds);
-    const total = await Invitee.countDocuments(filter);
-    const zips = Math.max(Math.ceil(total / limit), 1);
-    if (part > zips) throw fail(400, 'That part does not exist.');
-    const guests = await Invitee.find(filter).select('+qrTokenCipher').sort({ createdAt: 1, _id: 1 }).skip((part - 1) * limit).limit(limit);
+    const plan: any = mongoose.Types.ObjectId.isValid(opts.planId) ? await CardDownloadPlan.findOne({ _id: opts.planId, eventId, userId: actor.userId }).lean() : null;
+    if (!plan) throw fail(404, 'This download has expired. Please start it again.', 'PLAN_EXPIRED');
+    const sizes = zipSizes(plan.inviteeIds.length);
+    const part = Math.floor(opts.part) || 1;
+    if (part < 1 || part > sizes.length) throw fail(400, 'That part does not exist.');
+    const zips = sizes.length;
+    const total = plan.inviteeIds.length;
+    const offset = sizes.slice(0, part - 1).reduce((a, b) => a + b, 0);
+    const wanted = plan.inviteeIds.slice(offset, offset + sizes[part - 1]);
+    const order = new Map<string, number>(wanted.map((id: any, i: number) => [String(id), i]));
+    const guests = (await Invitee.find({ eventId, _id: { $in: wanted } }).select('+qrTokenCipher')).sort((a, b) => (order.get(String(a._id)) ?? 0) - (order.get(String(b._id)) ?? 0));
+    const firstIndex = offset;
 
     const base = `${safeName(event.title)}-cards-${part}-of-${zips}`;
     res.status(200);
@@ -83,7 +98,6 @@ export const cardDownloadService = {
     zip.on('warning', (e: Error) => console.warn('Card zip warning:', e.message));
     zip.pipe(res);
     const skipped: string[] = [];
-    const firstIndex = (part - 1) * limit;
 
     // the pass printed on a card is the guest's entry credential: a guest who has none yet gets one now (nothing is sent to them).
     const passFor = async (g: any): Promise<string | null> => {
