@@ -177,7 +177,7 @@ export const userService = {
     if (!user) {
       throw { statusCode: 404, message: 'User not found' };
     }
-    return user;
+    return profileWithAvatarUrl(user);
   },
 
   async updateProfilePhoto(userId: string, buffer: Buffer, originalName?: string) {
