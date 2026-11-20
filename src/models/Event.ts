@@ -53,6 +53,8 @@ export interface IEvent extends Document {
   };
   templateId?: mongoose.Types.ObjectId;
   /** Which guest details the card prints on its two guest lines ("Additional Info"); unset = name, then company */
+  /** How guests get the card: DIGITAL (sent by email / WhatsApp), PRINT (downloaded as printable PDFs) or BOTH. Absent = DIGITAL. */
+  invitationType?: 'DIGITAL' | 'PRINT' | 'BOTH';
   cardInfo?: CardInfo;
   /** Which event details the cards print (see utils/cardDisplay.ts); absent = all */
   cardDisplay?: { title?: boolean; qr?: boolean; dateTime?: boolean; location?: boolean; inviteeName?: boolean; logo?: boolean };
@@ -132,6 +134,7 @@ const EventSchema: Schema = new Schema(
       // print the event's logo / picture; absent = yes
       logo: { type: Boolean }
     },
+    invitationType: { type: String, enum: ['DIGITAL', 'PRINT', 'BOTH'], default: 'DIGITAL' },
     cardInfo: {
       primary: { type: String, enum: [...CARD_INFO_FIELDS, null] },
       secondary: { type: String, enum: [...CARD_INFO_FIELDS, null] },

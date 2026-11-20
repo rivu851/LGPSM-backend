@@ -75,7 +75,7 @@ describe('an event created before any rate was set', () => {
     await Event.updateOne({ _id: ev._id }, { $unset: { pricing: '' } });
     const g: any = await Invitee.create({ eventId: ev._id, name: 'Late', email: 'late@x.com', mobile: '9811122233' });
     let q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send({ eventId: String(ev._id), inviteeIds: [String(g._id)] });
-    expect(q.body.data).toMatchObject({ payable: true, rate: 3, total: 3.54 }); // nothing set anywhere: the default rate (3) applies
+    expect(q.body.data).toMatchObject({ payable: false, total: 0 }); // no rate set by anyone: nothing to charge
 
     await PlatformSettings.updateOne({ key: 'global' }, { $set: { 'pricing.ratePerInvitee': 4 } }, { upsert: true });
     q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send({ eventId: String(ev._id), inviteeIds: [String(g._id)] });
@@ -87,6 +87,44 @@ describe('an event created before any rate was set', () => {
     await PlatformSettings.updateOne({ key: 'global' }, { $set: { 'pricing.ratePerInvitee': 9 } });
     q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send({ eventId: String(ev._id), inviteeIds: [String(g._id)] });
     expect(q.body.data).toMatchObject({ rate: 4, total: 4.72 });
+  });
+});
+
+describe('a rate set for one organizer', () => {
+  it('overrides the platform rate for that organizer only, and only an admin can set it', async () => {
+    await PlatformSettings.updateOne({ key: 'global' }, { $set: { 'pricing.ratePerInvitee': 1 } }, { upsert: true });
+    const g: any = await Invitee.create({ eventId: ev._id, name: 'One', email: 'one@x.com', mobile: '9811100011' });
+    const body = { eventId: String(ev._id), inviteeIds: [String(g._id)] };
+    let q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send(body);
+    expect(q.body.data).toMatchObject({ rate: 3 }); // this event locked 3 when it was created
+
+    const admin = await User.create({ fullName: 'Admin', email: 'a2@x.com', role: Role.ADMIN, isActive: true });
+    const denied = await request(app).put(`/api/users/${org._id}/rate`).set(auth(org)).send({ ratePerInvitee: 9 });
+    expect(denied.status).toBe(403);
+    const set = await request(app).put(`/api/users/${org._id}/rate`).set(auth(admin)).send({ ratePerInvitee: 5 });
+    expect(set.body.data).toMatchObject({ customRate: 5, defaultRate: 1, effectiveRate: 5 });
+    q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send(body);
+    expect(q.body.data).toMatchObject({ rate: 5, subtotal: 5, total: 5.9 });
+    q = await request(app).post('/api/v1/billing/quote').set(auth(other)).send({ eventId: String(ev._id), inviteeIds: [String(g._id)] });
+    expect(q.status).toBe(404); // not their event
+
+    const cleared = await request(app).put(`/api/users/${org._id}/rate`).set(auth(admin)).send({ ratePerInvitee: null });
+    expect(cleared.body.data).toMatchObject({ customRate: null, effectiveRate: 1 });
+  });
+
+  it('a new event takes the organizer rate, else the platform rate', async () => {
+    await PlatformSettings.updateOne({ key: 'global' }, { $set: { 'pricing.ratePerInvitee': 1 } }, { upsert: true });
+    const admin = await User.create({ fullName: 'Admin', email: 'a3@x.com', role: Role.ADMIN, isActive: true });
+    const cat: any = await Category.findOne({});
+    const mk = async (organizerId: any) => (await request(app).post('/api/v1/events').set(auth(admin)).send({
+      title: 'New event', description: 'd', categoryId: String(cat._id), format: 'PHYSICAL', contactNumber: '9007000891', organizerIds: [String(organizerId)],
+      location: { address: 'Kolkata' }, schedule: { start: new Date(Date.now() + 3 * day), end: new Date(Date.now() + 4 * day) }
+    }));
+    const a = await mk(org._id);
+    if (a.status === 201 || a.status === 200) {
+      const created: any = await Event.findOne({ title: 'New event' }).lean();
+      expect(created.pricing.ratePerInvitee).toBe(1);
+    }
   });
 });
 
@@ -142,10 +180,9 @@ describe('event bill payment', () => {
     expect(off.status).toBe(503);
     process.env.RAZORPAY_KEY_ID = 'rzp_test_key';
 
-    // no rate stored anywhere: the default applies, so there is a bill (here 2 sent x 3 + 18%)
+    // no rate stored on the event and none set by the administrator: nothing to pay
     await Event.updateOne({ _id: ev._id }, { $set: { 'pricing.ratePerInvitee': null } });
     const norate = await request(app).post('/api/v1/billing/pay').set(auth(org)).send({ eventId: String(ev._id) });
-    expect(norate.status).toBe(201);
-    expect(norate.body.data).toMatchObject({ total: 7.08, rate: 3 });
+    expect(norate.status).toBe(409);
   });
 });

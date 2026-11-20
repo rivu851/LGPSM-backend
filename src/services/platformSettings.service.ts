@@ -1,5 +1,6 @@
 import { PLATFORM_CURRENCY } from '../constants/currency';
 import mongoose from 'mongoose';
+import { User } from '../models/User';
 import { PlatformSettings, IEventFeatures, INotificationPreferences } from '../models/PlatformSettings';
 import { PriceRateChange } from '../models/PriceRateChange';
 
@@ -83,9 +84,30 @@ export const platformSettingsService = {
   },
 
   // Rate snapshot stored on a newly created event
-  async currentRateSnapshot() {
+  async currentRateSnapshot(organizerId?: unknown) {
     const settings = await load();
-    return { ratePerInvitee: settings.pricing?.ratePerInvitee ?? null, currency: PLATFORM_CURRENCY, lockedAt: new Date() };
+    const custom = organizerId ? await this.customRateOf(organizerId) : null;
+    return { ratePerInvitee: custom ?? settings.pricing?.ratePerInvitee ?? null, currency: PLATFORM_CURRENCY, lockedAt: new Date() };
+  },
+
+  /** The rate an administrator set for one organizer, or null when the platform rate applies to them */
+  async customRateOf(organizerId: unknown): Promise<number | null> {
+    if (!organizerId || !mongoose.Types.ObjectId.isValid(String(organizerId))) return null;
+    const u: any = await User.findById(String(organizerId)).select('customRatePerInvitee').lean();
+    const r = u?.customRatePerInvitee;
+    return typeof r === 'number' && Number.isFinite(r) && r >= 0 ? r : null;
+  },
+
+  /** What an organizer is charged per invitee: their own rate when an administrator set one, otherwise the platform rate (null = none set) */
+  async rateForOrganizer(organizerId: unknown) {
+    const settings = await load();
+    const custom = await this.customRateOf(organizerId);
+    return { customRate: custom, defaultRate: settings.pricing?.ratePerInvitee ?? null, effectiveRate: custom ?? settings.pricing?.ratePerInvitee ?? null, currency: PLATFORM_CURRENCY };
+  },
+
+  async setOrganizerRate(actorId: string, organizerId: string, rate: number | null) {
+    await User.updateOne({ _id: organizerId, role: 'ORGANIZER' }, { $set: { customRatePerInvitee: rate } });
+    return this.rateForOrganizer(organizerId);
   },
 
   // For events created before rates were locked on events: the rate that was in effect at that time

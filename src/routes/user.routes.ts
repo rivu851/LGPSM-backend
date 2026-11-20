@@ -1,4 +1,7 @@
 import { auditAction } from '../middlewares/auditAction';
+import { z } from 'zod';
+import { User } from '../models/User';
+import { platformSettingsService } from '../services/platformSettings.service';
 import { Router } from 'express';
 import { userController } from '../controllers/user.controller';
 import { authenticate } from '../middlewares/authenticate';
@@ -66,6 +69,26 @@ router.patch(
   validate(updateUserSchema),
   auditAction({ action: 'USER_UPDATE', entityType: 'User', entityParam: 'id' }),
   userController.updateUser
+);
+
+// The per-invitee rate for one organizer: their own rate when an administrator set one, otherwise the platform rate
+router.get('/:id/rate', authorizeRoles(Role.ADMIN), async (req, res, next) => {
+  try {
+    res.json({ success: true, data: await platformSettingsService.rateForOrganizer(req.params.id) });
+  } catch (e) { next(e); }
+});
+router.put(
+  '/:id/rate',
+  authorizeRoles(Role.ADMIN),
+  validate(z.object({ ratePerInvitee: z.number().finite().min(0, 'Rate cannot be negative').max(1000, 'Rate looks too high').nullable() }).strict()),
+  auditAction({ action: 'ORGANIZER_RATE_SET', entityType: 'User', entityParam: 'id' }),
+  async (req, res, next) => {
+    try {
+      const target = await User.findOne({ _id: req.params.id, role: Role.ORGANIZER }).select('_id').lean();
+      if (!target) return res.status(404).json({ success: false, message: 'Organizer not found' });
+      res.json({ success: true, data: await platformSettingsService.setOrganizerRate((req as any).user.userId, String(req.params.id), req.body.ratePerInvitee) });
+    } catch (e) { next(e); }
+  }
 );
 
 // Admin/organizer view of a staff member's event/session assignments

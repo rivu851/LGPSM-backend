@@ -67,6 +67,7 @@ const UserSchema = new mongoose_1.Schema({
     isEmailVerified: { type: Boolean, default: true },
     // the Google account an organizer signed in with (the "sub" of the verified ID token); never used to look people up by email alone
     googleId: { type: String, index: true, sparse: true },
+    customRatePerInvitee: { type: Number, default: null, min: 0 },
 }, {
     timestamps: true,
     toJSON: {

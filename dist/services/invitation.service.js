@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.invitationService = exports.SKIPPED_IN_PROGRESS = exports.SKIPPED_PASS_REVOKED = exports.SKIPPED_EVENT_CANCELLED = exports.SKIPPED_ALREADY_INVITED = exports.SKIPPED_NO_CONTACT = void 0;
 exports.buildFormalInvitationEmailHTML = buildFormalInvitationEmailHTML;
+exports.assertEventCanIssue = assertEventCanIssue;
 exports.channelsForInvitee = channelsForInvitee;
 const qrcode_1 = __importDefault(require("qrcode"));
 const invitationContent_1 = require("../utils/invitationContent");

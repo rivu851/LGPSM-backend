@@ -89,6 +89,7 @@ exports.createEventSchema = zod_1.z.object({
         attendeeSettings: zod_1.z.object({
             thresholdLimit: zod_1.z.number().positive().optional()
         }).optional(),
+        invitationType: zod_1.z.enum(['DIGITAL', 'PRINT', 'BOTH']).optional(),
         cardInfo: cardInfoSchema.optional(),
         cardDisplay: cardDisplaySchema.optional(),
         dietaryPreference: dietaryPreferenceCreateSchema.optional(),
@@ -138,6 +139,7 @@ exports.updateEventSchema = zod_1.z.object({
         attendeeSettings: zod_1.z.object({
             thresholdLimit: zod_1.z.number().positive().optional()
         }).optional(),
+        invitationType: zod_1.z.enum(['DIGITAL', 'PRINT', 'BOTH']).optional(),
         cardInfo: cardInfoSchema.optional(),
         cardDisplay: cardDisplaySchema.optional(),
         dietaryPreference: dietaryPreferenceUpdateSchema.optional(),

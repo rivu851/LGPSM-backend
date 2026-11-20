@@ -98,6 +98,7 @@ const EventSchema = new mongoose_1.Schema({
         // print the event's logo / picture; absent = yes
         logo: { type: Boolean }
     },
+    invitationType: { type: String, enum: ['DIGITAL', 'PRINT', 'BOTH'], default: 'DIGITAL' },
     cardInfo: {
         primary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] },
         secondary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] },

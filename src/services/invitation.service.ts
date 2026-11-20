@@ -77,7 +77,7 @@ export const SKIPPED_PASS_REVOKED = 'Pass revoked: use Replace Access Pass';
 export const SKIPPED_IN_PROGRESS = 'A delivery to this guest is already in progress';
 
 /** No pass is issued for an event that is over: it could not be used, and it is a message about the past. */
-function assertEventCanIssue(event: any) {
+export function assertEventCanIssue(event: any) {
   if (event.status === EventStatus.CANCELLED) throw new Error('EVENT_CANCELLED');
   const window = effectiveAdmission(event);
   if (event.status === EventStatus.COMPLETED || (window && admissionState(window, new Date()) === 'CLOSED')) throw new Error('EVENT_ENDED');

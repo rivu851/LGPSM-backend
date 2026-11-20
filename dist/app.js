@@ -51,6 +51,7 @@ const media_routes_1 = __importDefault(require("./routes/media.routes"));
 const session_routes_1 = require("./routes/session.routes");
 const invitee_routes_1 = require("./routes/invitee.routes");
 const invitation_routes_1 = __importDefault(require("./routes/invitation.routes"));
+const cardDownload_routes_1 = __importDefault(require("./routes/cardDownload.routes"));
 const publicInvitation_routes_1 = __importDefault(require("./routes/publicInvitation.routes"));
 const publicEmailAssets_routes_1 = __importDefault(require("./routes/publicEmailAssets.routes"));
 const contact_routes_1 = __importDefault(require("./routes/contact.routes"));
@@ -143,6 +144,7 @@ app.use('/api/v1/events/:eventId/invitees', invitee_routes_1.eventInviteeRoutes)
 app.use('/api/v1/invitees', invitee_routes_1.inviteeRoutes);
 app.use('/api/v1/events/:eventId/assignments', systemUserAssignment_routes_1.eventAssignmentRoutes);
 app.use('/api/v1/events/:eventId/invitations', invitation_routes_1.default);
+app.use('/api/v1/events/:eventId/invitation-cards', cardDownload_routes_1.default);
 app.use('/api/v1/public/invitations', publicInvitation_routes_1.default);
 app.use('/api/v1/public/email-assets', publicEmailAssets_routes_1.default);
 app.use('/api/v1/public/contact', contact_routes_1.default);

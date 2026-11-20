@@ -23,7 +23,10 @@ const round2 = (n) => Math.round(n * 100) / 100;
 // Invitations paid for but not sent yet are credit that the next send uses up (e.g. a send that partly failed).
 async function eventState(event) {
     const locked = event.pricing && event.pricing.lockedAt;
-    let rate = locked ? event.pricing.ratePerInvitee ?? null : await platformSettings_service_1.platformSettingsService.rateInEffectAt(new Date(event.createdAt));
+    // The charge per invitee: the rate an administrator set for this organizer when there is one; otherwise the rate locked on the event;
+    // and when the event has none, the platform rate the administrator has set (Settings > Price Rate), which is then kept on the event.
+    const custom = await platformSettings_service_1.platformSettingsService.customRateOf(event.organizerId);
+    let rate = custom ?? (locked ? event.pricing.ratePerInvitee ?? null : await platformSettings_service_1.platformSettingsService.rateInEffectAt(new Date(event.createdAt)));
     // An event created before the admin set a per-head rate has none stored. Billing then uses the admin's current rate and stores
     // it on the event (so the figure stays the same from now on and matches the earnings view); with no rate set anywhere it is free.
     if (!(rate && rate > 0)) {
@@ -33,9 +36,6 @@ async function eventState(event) {
             await Event_1.Event.updateOne({ _id: event._id, $or: [{ 'pricing.ratePerInvitee': null }, { 'pricing.ratePerInvitee': { $exists: false } }, { 'pricing.ratePerInvitee': 0 }] }, { $set: { pricing: current } });
         }
     }
-    // Nothing set anywhere yet: the platform default applies (not stored on the event, so a rate the admin sets later takes over)
-    if (!(rate && rate > 0))
-        rate = currency_1.DEFAULT_RATE_PER_INVITEE;
     const sent = await Invitee_1.Invitee.countDocuments({ eventId: event._id, invitationStatus: Invitee_1.InvitationStatus.SENT });
     const paid = await Order_1.Order.aggregate([
         { $match: { eventId: event._id, kind: 'EVENT_BILL', status: Order_1.OrderStatus.PAID } },
@@ -84,7 +84,7 @@ exports.billingService = {
     async listEventBills(organizerId) {
         const gst = await platformSettings_service_1.platformSettingsService.gstPercent();
         const events = await Event_1.Event.find({ organizerId, status: { $ne: 'CANCELLED' } })
-            .select('title schedule createdAt pricing')
+            .select('title schedule createdAt pricing organizerId')
             .sort({ 'schedule.start': -1 })
             .lean();
         const rows = [];

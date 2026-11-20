@@ -23,6 +23,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1134.0",
     "@google/stitch-sdk": "^0.3.5",
     "@types/sharp": "^0.31.1",
+    "archiver": "^7.0.1",
     "bcrypt": "^6.0.0",
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
@@ -36,6 +37,7 @@
     "morgan": "^1.12.1",
     "multer": "^2.4.0",
     "nodemailer": "^10.0.10",
+    "pdf-lib": "^1.17.1",
     "qrcode": "^1.5.4",
     "sharp": "^0.35.5",
     "tesseract.js": "^5.1.1",
@@ -44,6 +46,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@types/archiver": "^7.0.0",
     "@types/bcrypt": "^6.0.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

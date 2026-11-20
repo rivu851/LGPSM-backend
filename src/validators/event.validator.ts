@@ -92,6 +92,7 @@ export const createEventSchema = z.object({
     attendeeSettings: z.object({
       thresholdLimit: z.number().positive().optional()
     }).optional(),
+    invitationType: z.enum(['DIGITAL', 'PRINT', 'BOTH']).optional(),
     cardInfo: cardInfoSchema.optional(),
     cardDisplay: cardDisplaySchema.optional(),
     dietaryPreference: dietaryPreferenceCreateSchema.optional(),
@@ -142,6 +143,7 @@ export const updateEventSchema = z.object({
     attendeeSettings: z.object({
       thresholdLimit: z.number().positive().optional()
     }).optional(),
+    invitationType: z.enum(['DIGITAL', 'PRINT', 'BOTH']).optional(),
     cardInfo: cardInfoSchema.optional(),
     cardDisplay: cardDisplaySchema.optional(),
     dietaryPreference: dietaryPreferenceUpdateSchema.optional(),

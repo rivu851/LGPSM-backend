@@ -47,7 +47,7 @@ const Media_1 = require("../models/Media");
 // operationalDataCleared, pricing, ...) is server-controlled and is dropped before it reaches the database.
 const EVENT_WRITABLE_FIELDS = [
     'title', 'description', 'categoryId', 'subcategoryId', 'format', 'location', 'contactNumber',
-    'schedule', 'admission', 'rsvp', 'attendeeSettings', 'dietaryPreference', 'templateId', 'cardInfo', 'cardDisplay', 'media'
+    'schedule', 'admission', 'rsvp', 'attendeeSettings', 'dietaryPreference', 'templateId', 'invitationType', 'cardInfo', 'cardDisplay', 'media'
 ];
 /**
  * Clients send a pin as [longitude, latitude]; the database keeps a GeoJSON Point (which the 2dsphere index needs).
@@ -174,7 +174,7 @@ class EventService {
             organizerId: new mongoose_1.default.Types.ObjectId(targetOrganizer),
             status: 'PUBLISHED',
             // The per-invitee rate in force now is locked on the event; later rate changes do not affect it
-            pricing: await platformSettings_service_1.platformSettingsService.currentRateSnapshot()
+            pricing: await platformSettings_service_1.platformSettingsService.currentRateSnapshot(targetOrganizer)
         };
         const created = await event_repository_1.eventRepository.create(dataToCreate);
         await alert_service_1.alertService.notifyAdmins('newEventAdded', {

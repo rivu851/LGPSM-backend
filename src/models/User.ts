@@ -30,6 +30,8 @@ export interface IUser extends Document {
    */
   isEmailVerified: boolean;
   googleId?: string;
+  /** ORGANIZER: a per-invitee rate set by an administrator for this organizer; null/absent = the platform rate applies */
+  customRatePerInvitee?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -55,6 +57,7 @@ const UserSchema: Schema = new Schema(
     isEmailVerified: { type: Boolean, default: true },
     // the Google account an organizer signed in with (the "sub" of the verified ID token); never used to look people up by email alone
     googleId: { type: String, index: true, sparse: true },
+    customRatePerInvitee: { type: Number, default: null, min: 0 },
   },
   {
     timestamps: true,
