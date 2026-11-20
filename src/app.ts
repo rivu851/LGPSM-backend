@@ -27,6 +27,7 @@ import auditLogRoutes from './routes/auditLog.routes';
 import reportRoutes from './routes/report.routes';
 import { eventTicketTierRoutes, ticketTierRoutes } from './routes/ticketTier.routes';
 import paymentRoutes from './routes/payment.routes';
+import billingRoutes from './routes/billing.routes';
 import platformSettingsRoutes from './routes/platformSettings.routes';
 
 const app = express();
@@ -134,6 +135,7 @@ app.use('/api/v1/reports', reportRoutes);
 app.use('/api/v1/events/:eventId/tickets', eventTicketTierRoutes);
 app.use('/api/v1/tickets', ticketTierRoutes);
 app.use('/api/v1', paymentRoutes);
+app.use('/api/v1', billingRoutes);
 
 // Keep unmatched API requests in the same JSON error format as other failures.
 app.use(notFoundHandler);

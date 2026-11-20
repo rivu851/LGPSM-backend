@@ -10,7 +10,11 @@ export enum OrderStatus {
 export interface IOrder extends Document {
   userId: mongoose.Types.ObjectId;
   eventId: mongoose.Types.ObjectId;
-  ticketTierId: mongoose.Types.ObjectId;
+  /** TICKET: a guest buying a ticket tier. EVENT_BILL: an organizer paying for the invitations sent for an event. */
+  kind: 'TICKET' | 'EVENT_BILL';
+  ticketTierId?: mongoose.Types.ObjectId;
+  /** EVENT_BILL: how many invitations this payment covers */
+  invitees?: number;
   quantity: number;
   amount: number;
   currency: string;
@@ -24,8 +28,10 @@ const OrderSchema: Schema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
-    ticketTierId: { type: Schema.Types.ObjectId, ref: 'TicketTier', required: true },
-    quantity: { type: Number, required: true, min: 1 },
+    kind: { type: String, enum: ['TICKET', 'EVENT_BILL'], default: 'TICKET' },
+    ticketTierId: { type: Schema.Types.ObjectId, ref: 'TicketTier' },
+    invitees: { type: Number, min: 0 },
+    quantity: { type: Number, default: 1, min: 1 },
     amount: { type: Number, required: true, min: 0 },
     currency: { type: String, default: 'INR' },
     providerOrderId: { type: String },

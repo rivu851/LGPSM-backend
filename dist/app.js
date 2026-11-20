@@ -64,6 +64,7 @@ const auditLog_routes_1 = __importDefault(require("./routes/auditLog.routes"));
 const report_routes_1 = __importDefault(require("./routes/report.routes"));
 const ticketTier_routes_1 = require("./routes/ticketTier.routes");
 const payment_routes_1 = __importDefault(require("./routes/payment.routes"));
+const billing_routes_1 = __importDefault(require("./routes/billing.routes"));
 const platformSettings_routes_1 = __importDefault(require("./routes/platformSettings.routes"));
 const app = (0, express_1.default)();
 // Render forwards requests through one trusted proxy.
@@ -162,6 +163,7 @@ app.use('/api/v1/reports', report_routes_1.default);
 app.use('/api/v1/events/:eventId/tickets', ticketTier_routes_1.eventTicketTierRoutes);
 app.use('/api/v1/tickets', ticketTier_routes_1.ticketTierRoutes);
 app.use('/api/v1', payment_routes_1.default);
+app.use('/api/v1', billing_routes_1.default);
 // Keep unmatched API requests in the same JSON error format as other failures.
 app.use(errorHandler_1.notFoundHandler);
 // Global error handler should be the last middleware

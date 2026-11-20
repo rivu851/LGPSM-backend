@@ -4,6 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.paymentService = void 0;
+exports.getRazorpayCredentials = getRazorpayCredentials;
+exports.createRazorpayOrder = createRazorpayOrder;
 const currency_1 = require("../constants/currency");
 const crypto_1 = __importDefault(require("crypto"));
 const order_repository_1 = require("../repositories/order.repository");
@@ -51,7 +53,7 @@ async function settlePaid(providerOrderId, providerPaymentId) {
     if (!payment)
         return;
     const order = await order_repository_1.orderRepository.updateStatus(payment.orderId.toString(), Order_1.OrderStatus.PAID);
-    if (order) {
+    if (order && order.kind !== 'EVENT_BILL' && order.ticketTierId) {
         await TicketTier_1.TicketTier.findByIdAndUpdate(order.ticketTierId, { $inc: { sold: order.quantity } });
     }
     const existing = await invoice_repository_1.invoiceRepository.findByPaymentId(payment._id.toString());
@@ -61,6 +63,7 @@ async function settlePaid(providerOrderId, providerPaymentId) {
             paymentId: payment._id,
             userId: payment.userId,
             eventId: payment.eventId,
+            invitees: order?.kind === 'EVENT_BILL' ? order.invitees : undefined,
             subtotal: payment.amountBase,
             tax: payment.taxAmount,
             total: payment.totalAmount,

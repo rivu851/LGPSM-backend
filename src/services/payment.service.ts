@@ -9,7 +9,7 @@ import { OrderStatus } from '../models/Order';
 import { PaymentStatus } from '../models/Payment';
 
 // Payments fail closed: nothing is marked PAID unless Razorpay is configured and the signature verifies.
-function getRazorpayCredentials() {
+export function getRazorpayCredentials() {
   const keyId = process.env.RAZORPAY_KEY_ID;
   const keySecret = process.env.RAZORPAY_KEY_SECRET;
   if (!keyId || !keySecret) {
@@ -18,7 +18,7 @@ function getRazorpayCredentials() {
   return { keyId, keySecret };
 }
 
-async function createRazorpayOrder(amountInPaise: number, currency: string, receipt: string) {
+export async function createRazorpayOrder(amountInPaise: number, currency: string, receipt: string) {
   const { keyId, keySecret } = getRazorpayCredentials();
   const response = await fetch('https://api.razorpay.com/v1/orders', {
     method: 'POST',
@@ -49,7 +49,7 @@ async function settlePaid(providerOrderId: string, providerPaymentId: string): P
   if (!payment) return;
 
   const order = await orderRepository.updateStatus((payment.orderId as any).toString(), OrderStatus.PAID);
-  if (order) {
+  if (order && order.kind !== 'EVENT_BILL' && order.ticketTierId) {
     await TicketTier.findByIdAndUpdate(order.ticketTierId, { $inc: { sold: order.quantity } });
   }
 
@@ -60,6 +60,7 @@ async function settlePaid(providerOrderId: string, providerPaymentId: string): P
       paymentId: payment._id as any,
       userId: payment.userId as any,
       eventId: payment.eventId as any,
+      invitees: order?.kind === 'EVENT_BILL' ? order.invitees : undefined,
       subtotal: payment.amountBase,
       tax: payment.taxAmount,
       total: payment.totalAmount,

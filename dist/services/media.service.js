@@ -104,6 +104,12 @@ class MediaService {
         const image = await this.getImage(id);
         return image ? { contentType: image.contentType, data: image.data } : null;
     }
+    async getPublicUrl(id) {
+        if (!mongoose_1.default.Types.ObjectId.isValid(id))
+            return null;
+        const media = await Media_1.Media.findById(id).select('storage fileName');
+        return media?.storage === 'DISK' ? (0, mediaStorage_1.publicUrlFor)(media.fileName) : null;
+    }
     async getImage(id) {
         if (!mongoose_1.default.Types.ObjectId.isValid(id))
             return null;

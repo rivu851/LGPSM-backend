@@ -51,6 +51,10 @@ const token_repository_1 = require("../repositories/token.repository");
 const email_provider_1 = require("../utils/email.provider");
 const crypto_1 = __importDefault(require("crypto"));
 const html_1 = require("../utils/html");
+const Media_1 = require("../models/Media");
+const media_service_1 = require("./media.service");
+const mediaKey_1 = require("../utils/mediaKey");
+const publicUrl_1 = require("../utils/publicUrl");
 const PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 /** 12 random characters from an alphabet without look-alike characters (0/O, 1/l/I). */
 function generateTemporaryPassword() {
@@ -161,13 +165,26 @@ async function reactivateStaff(existing, data, ownerId) {
     }
     return user;
 }
+async function profileWithAvatarUrl(user) {
+    const result = user.toJSON();
+    const avatarKey = result.profile?.avatarKey;
+    const mediaId = (0, mediaKey_1.mediaIdFromKey)(avatarKey);
+    if (!mediaId)
+        return result;
+    const apiUrl = (0, publicUrl_1.publicApiUrl)();
+    const avatarUrl = await media_service_1.mediaService.getPublicUrl(mediaId)
+        || (apiUrl ? `${apiUrl}/api/v1/media/${mediaId}` : undefined);
+    if (avatarUrl)
+        result.profile.avatarUrl = avatarUrl;
+    return result;
+}
 exports.userService = {
     async getProfile(userId) {
         const user = await user_repository_1.userRepository.findById(userId);
         if (!user) {
             throw { statusCode: 404, message: 'User not found' };
         }
-        return user;
+        return profileWithAvatarUrl(user);
     },
     async updateProfile(userId, data) {
         const { organization, ...personal } = data || {};
@@ -195,7 +212,14 @@ exports.userService = {
         if (!user) {
             throw { statusCode: 404, message: 'User not found' };
         }
-        return user;
+        return profileWithAvatarUrl(user);
+    },
+    async updateProfilePhoto(userId, buffer, originalName) {
+        const stored = await media_service_1.mediaService.storeImage(userId, Media_1.MediaPurpose.AVATAR, buffer, originalName);
+        const user = await User_1.User.findByIdAndUpdate(userId, { $set: { 'profile.avatarKey': stored.key } }, { new: true, runValidators: true });
+        if (!user)
+            throw { statusCode: 404, message: 'User not found' };
+        return profileWithAvatarUrl(user);
     },
     async changePassword(userId, currentPassword, newPassword) {
         const user = await user_repository_1.userRepository.findById(userId);

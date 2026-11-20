@@ -27,6 +27,21 @@ exports.userController = {
             next(error);
         }
     },
+    async updateProfilePhoto(req, res, next) {
+        try {
+            if (!req.user)
+                throw { statusCode: 401, message: 'Unauthorized' };
+            const file = req.file;
+            if (!file) {
+                return res.status(400).json({ success: false, message: 'Attach an image file' });
+            }
+            const user = await user_service_1.userService.updateProfilePhoto(req.user.userId, file.buffer, file.originalname);
+            res.status(200).json({ success: true, data: user });
+        }
+        catch (error) {
+            next(error);
+        }
+    },
     async changePassword(req, res, next) {
         try {
             if (!req.user)

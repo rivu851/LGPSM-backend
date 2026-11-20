@@ -5,6 +5,8 @@ export interface IInvoice extends Document {
   paymentId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
   eventId: mongoose.Types.ObjectId;
+  /** invitations the payment covers (event bills) */
+  invitees?: number;
   subtotal: number;
   tax: number;
   total: number;
@@ -21,6 +23,7 @@ const InvoiceSchema: Schema = new Schema(
     paymentId: { type: Schema.Types.ObjectId, ref: 'Payment', required: true },
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
+    invitees: { type: Number },
     subtotal: { type: Number, required: true },
     tax: { type: Number, default: 0 },
     total: { type: Number, required: true },

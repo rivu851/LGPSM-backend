@@ -45,8 +45,10 @@ var OrderStatus;
 const OrderSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     eventId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Event', required: true },
-    ticketTierId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'TicketTier', required: true },
-    quantity: { type: Number, required: true, min: 1 },
+    kind: { type: String, enum: ['TICKET', 'EVENT_BILL'], default: 'TICKET' },
+    ticketTierId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'TicketTier' },
+    invitees: { type: Number, min: 0 },
+    quantity: { type: Number, default: 1, min: 1 },
     amount: { type: Number, required: true, min: 0 },
     currency: { type: String, default: 'INR' },
     providerOrderId: { type: String },

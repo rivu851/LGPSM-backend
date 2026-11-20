@@ -40,6 +40,7 @@ const InvoiceSchema = new mongoose_1.Schema({
     paymentId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Payment', required: true },
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     eventId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Event', required: true },
+    invitees: { type: Number },
     subtotal: { type: Number, required: true },
     tax: { type: Number, default: 0 },
     total: { type: Number, required: true },

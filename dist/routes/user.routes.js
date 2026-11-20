@@ -7,6 +7,8 @@ const authenticate_1 = require("../middlewares/authenticate");
 const user_validator_1 = require("../validators/user.validator");
 const authorizeRoles_1 = require("../middlewares/authorizeRoles");
 const User_1 = require("../models/User");
+const imageUpload_1 = require("../middlewares/imageUpload");
+const rateLimiter_1 = require("../middlewares/rateLimiter");
 const router = (0, express_1.Router)();
 const validate = (schema) => (req, res, next) => {
     const result = schema.safeParse(req.body);
@@ -20,6 +22,7 @@ const validate = (schema) => (req, res, next) => {
 router.use(authenticate_1.authenticate);
 router.get('/profile', user_controller_1.userController.getProfile);
 router.patch('/profile', validate(user_validator_1.updateProfileSchema), user_controller_1.userController.updateProfile);
+router.patch('/profile/photo', rateLimiter_1.mediaUploadLimiter, imageUpload_1.uploadImage, user_controller_1.userController.updateProfilePhoto);
 router.patch('/me/password', validate(user_validator_1.changePasswordSchema), (0, auditAction_1.auditAction)({ action: 'USER_PASSWORD_CHANGE', entityType: 'User' }), user_controller_1.userController.changePassword);
 // Endpoint for Admins and Organizers to list users (supports ?role=SYSTEM_USER)
 router.get('/', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), user_controller_1.userController.getUsers);
