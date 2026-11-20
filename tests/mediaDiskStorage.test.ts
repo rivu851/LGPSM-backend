@@ -21,15 +21,37 @@ beforeAll(async () => {
   mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri());
   png = await sharp({ create: { width: 64, height: 64, channels: 4, background: { r: 255, g: 101, b: 29, alpha: 0.5 } } }).png().toBuffer();
 });
-afterAll(async () => { delete process.env.MEDIA_DIR; await mongoose.disconnect(); await mongo.stop(); });
+afterAll(async () => { delete process.env.MEDIA_DIR; delete process.env.MEDIA_PUBLIC_URL; delete process.env.PUBLIC_API_URL; await mongoose.disconnect(); await mongo.stop(); });
 beforeEach(async () => {
   await Promise.all([User.deleteMany({}), Media.deleteMany({})]);
   org = await User.create({ fullName: 'Org', email: 'o@x.com', role: Role.ORGANIZER, isActive: true });
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lgpsm-media-'));
 });
-afterEach(() => { delete process.env.MEDIA_DIR; fs.rmSync(dir, { recursive: true, force: true }); });
+afterEach(() => { delete process.env.MEDIA_DIR; delete process.env.MEDIA_PUBLIC_URL; delete process.env.PUBLIC_API_URL; fs.rmSync(dir, { recursive: true, force: true }); });
 
 describe('MEDIA_DIR set', () => {
+  it('uploads a profile photo as multipart, persists its key, and returns it on profile reload', async () => {
+    process.env.MEDIA_DIR = dir;
+    process.env.MEDIA_PUBLIC_URL = 'https://media.example.com';
+    const uploaded = await request(app)
+      .patch('/api/users/profile/photo')
+      .set(auth())
+      .attach('file', png, { filename: 'avatar.png', contentType: 'image/png' });
+
+    expect(uploaded.status).toBe(200);
+    const key = uploaded.body.data.profile.avatarKey as string;
+    expect(key).toMatch(/^media:[0-9a-f]{24}$/);
+    expect(uploaded.body.data.profile.avatarUrl).toMatch(/^https:\/\/media\.example\.com\/[0-9a-f]{24}\.png$/);
+
+    const saved = await User.findById(org._id).lean() as any;
+    expect(saved.profile.avatarKey).toBe(key);
+
+    const profile = await request(app).get('/api/users/profile').set(auth());
+    expect(profile.status).toBe(200);
+    expect(profile.body.data.profile.avatarKey).toBe(key);
+    expect(profile.body.data.profile.avatarUrl).toBe(uploaded.body.data.profile.avatarUrl);
+  });
+
   it('keeps the bytes in a file, leaves them out of the database, and serves the image', async () => {
     process.env.MEDIA_DIR = dir;
     const res = await upload();

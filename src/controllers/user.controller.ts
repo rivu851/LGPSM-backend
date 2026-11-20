@@ -24,6 +24,20 @@ export const userController = {
     }
   },
 
+  async updateProfilePhoto(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw { statusCode: 401, message: 'Unauthorized' };
+      const file = (req as any).file as Express.Multer.File | undefined;
+      if (!file) {
+        return res.status(400).json({ success: false, message: 'Attach an image file' });
+      }
+      const user = await userService.updateProfilePhoto(req.user.userId, file.buffer, file.originalname);
+      res.status(200).json({ success: true, data: user });
+    } catch (error) {
+      next(error);
+    }
+  },
+
   async changePassword(req: Request, res: Response, next: NextFunction) {
     try {
       if (!req.user) throw { statusCode: 401, message: 'Unauthorized' };
