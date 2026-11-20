@@ -142,3 +142,19 @@ describe('lists follow the guests that are deleted', () => {
     expect(data.removedLists.map((r: any) => r.name)).toEqual(['Gamma']);
   });
 });
+
+describe('preview list shows each guest\'s dataset and sessions', () => {
+  it('labels hand-added guests "Manual" and lists the sessions each can enter', async () => {
+    const { Session } = require('../src/models/Session');
+    const s1: any = await Session.create({ eventId: ev._id, name: 'Lunch', schedule: { start: new Date(Date.now() + day), end: new Date(Date.now() + day + 36e5) }, accessControl: 'ONLY_ONCE' });
+    const s2: any = await Session.create({ eventId: ev._id, name: 'Dinner', schedule: { start: new Date(Date.now() + day + 72e5), end: new Date(Date.now() + day + 108e5) }, accessControl: 'ONLY_ONCE' });
+    await Invitee.create([
+      { eventId: ev._id, name: 'By Hand', email: 'hand@x.com', mobile: '9811110001' },
+      { eventId: ev._id, name: 'Lunch Only', email: 'lo@x.com', mobile: '9811110002', sessionAccess: [{ sessionId: s1._id, allowed: true }, { sessionId: s2._id, allowed: false }] },
+    ]);
+    const res = await request(app).get(`/api/v1/events/${ev._id}/invitees/sets/all/members`).set(auth(org));
+    const byName = Object.fromEntries(res.body.data.members.map((m: any) => [m.name, m]));
+    expect(byName['By Hand']).toMatchObject({ setName: 'Manual', sessions: ['Lunch', 'Dinner'], sessionCount: 2 });
+    expect(byName['Lunch Only']).toMatchObject({ setName: 'Manual', sessions: ['Lunch'], sessionCount: 2 });
+  });
+});

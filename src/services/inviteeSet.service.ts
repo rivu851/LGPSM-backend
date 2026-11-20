@@ -1,5 +1,5 @@
 import { Session } from '../models/Session';
-import { inviteesAllowedFilter } from '../utils/sessionAccess';
+import { inviteesAllowedFilter, inviteeAllowedInSession } from '../utils/sessionAccess';
 import mongoose from 'mongoose';
 import { Invitee, IInvitee, InvitationStatus, RsvpStatus } from '../models/Invitee';
 import { InviteeSet } from '../models/InviteeSet';
@@ -184,7 +184,7 @@ export const inviteeSetService = {
     const legacyAddedAt = legacyTimes.length ? new Date(Math.min(...legacyTimes)) : null;
     // set-aside guests are shown under Set-aside guests, not as a list: a list with nobody left in it is not displayed
     if (rows.has(LEGACY_SET)) {
-      out.unshift(shape(LEGACY_SET, { name: 'Earlier invitees', source: 'MANUAL', mode: 'APPEND', sessionId: null, createdAt: legacyAddedAt, uploadedBy: null, importedCount: null }));
+      out.unshift(shape(LEGACY_SET, { name: 'Manual', source: 'MANUAL', mode: 'APPEND', sessionId: null, createdAt: legacyAddedAt, uploadedBy: null, importedCount: null }));
     }
     const archivedCount = [...asideBySet.values()].reduce((a, b) => a + b, 0);
 
@@ -328,11 +328,14 @@ export const inviteeSetService = {
     }
     const lim = Math.min(Math.max(limit, 1), 100);
     const [guests, total] = await Promise.all([
-      Invitee.find(filter).select('name email mobile companyName company invitationStatus rsvpStatus qrTokenHash inviteeSetId').sort({ name: 1 }).skip((Math.max(page, 1) - 1) * lim).limit(lim).lean<IInvitee[]>(),
+      Invitee.find(filter).select('name email mobile companyName company invitationStatus rsvpStatus qrTokenHash inviteeSetId sessionAccess').sort({ name: 1 }).skip((Math.max(page, 1) - 1) * lim).limit(lim).lean<IInvitee[]>(),
       Invitee.countDocuments(filter)
     ]);
     const activity = await loadActivity(eid, guests);
-    // which uploaded list each guest came from (guests added by hand before lists existed are "Earlier invitees")
+    // the sessions each guest can enter (every session when the guest has no restriction)
+    const eventSessions = await Session.find({ eventId: eid }).sort({ 'schedule.start': 1 });
+    const sessionNamesOf = (g: any): string[] => eventSessions.filter((sess) => inviteeAllowedInSession(g, sess as any)).map((sess) => sess.name);
+    // which uploaded list each guest came from (guests added by hand have no list and are shown as "Manual")
     const listIds = [...new Set(guests.map((g) => g.inviteeSetId).filter(Boolean).map(String))];
     const lists = listIds.length ? await InviteeSet.find({ _id: { $in: listIds } }).select('name').lean() : [];
     const listName = new Map((lists as any[]).map((l) => [String(l._id), l.name as string]));
@@ -340,7 +343,7 @@ export const inviteeSetService = {
       total, page, limit: lim,
       members: guests.map((g) => {
         const a = activity.get(String(g._id))!;
-        return { id: String(g._id), name: g.name, email: g.email || null, mobile: g.mobile || null, company: g.companyName || g.company || null, delivery: deliveryStateOf(a), rsvpStatus: g.rsvpStatus, checkedIn: a.checkedIn, setId: setKeyOf(g), setName: g.inviteeSetId ? listName.get(String(g.inviteeSetId)) || 'Removed list' : 'Earlier invitees' };
+        return { id: String(g._id), name: g.name, email: g.email || null, mobile: g.mobile || null, company: g.companyName || g.company || null, delivery: deliveryStateOf(a), rsvpStatus: g.rsvpStatus, checkedIn: a.checkedIn, setId: setKeyOf(g), setName: g.inviteeSetId ? listName.get(String(g.inviteeSetId)) || 'Removed list' : 'Manual', sessions: sessionNamesOf(g), sessionCount: eventSessions.length };
       })
     };
   },
@@ -369,7 +372,7 @@ export const inviteeSetService = {
       total, page, limit,
       guests: guests.map((g) => ({
         id: String(g._id), name: g.name, email: g.email || null, mobile: g.mobile || null,
-        fromSet: { id: g.inviteeSetId ? String(g.inviteeSetId) : LEGACY_SET, name: g.inviteeSetId ? setName.get(String(g.inviteeSetId)) || 'Removed list' : 'Earlier invitees' },
+        fromSet: { id: g.inviteeSetId ? String(g.inviteeSetId) : LEGACY_SET, name: g.inviteeSetId ? setName.get(String(g.inviteeSetId)) || 'Removed list' : 'Manual' },
         setAsideAt: g.archivedAt, reason: g.archivedReason || null, reasonText: g.archivedReason ? REASON_TEXT[g.archivedReason] || g.archivedReason : null,
         replacedBy: g.supersededBySetId ? { id: String(g.supersededBySetId), name: setName.get(String(g.supersededBySetId)) || 'Removed list' } : null,
         setAsideBy: g.archivedBy ? people.get(String(g.archivedBy)) || null : null
