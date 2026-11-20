@@ -6,6 +6,8 @@ import { updateProfileSchema, createUserSchema, updateUserSchema, changePassword
 import { Request, Response, NextFunction } from 'express';
 import { authorizeRoles } from '../middlewares/authorizeRoles';
 import { Role } from '../models/User';
+import { uploadImage } from '../middlewares/imageUpload';
+import { mediaUploadLimiter } from '../middlewares/rateLimiter';
 
 const router = Router();
 
@@ -23,6 +25,7 @@ router.use(authenticate);
 
 router.get('/profile', userController.getProfile);
 router.patch('/profile', validate(updateProfileSchema), userController.updateProfile);
+router.patch('/profile/photo', mediaUploadLimiter, uploadImage, userController.updateProfilePhoto);
 router.patch('/me/password', validate(changePasswordSchema), auditAction({ action: 'USER_PASSWORD_CHANGE', entityType: 'User' }), userController.changePassword);
 
 // Endpoint for Admins and Organizers to list users (supports ?role=SYSTEM_USER)

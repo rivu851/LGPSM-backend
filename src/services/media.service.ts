@@ -102,6 +102,12 @@ export class MediaService {
     return image ? { contentType: image.contentType, data: image.data } : null;
   }
 
+  async getPublicUrl(id: string): Promise<string | null> {
+    if (!mongoose.Types.ObjectId.isValid(id)) return null;
+    const media = await Media.findById(id).select('storage fileName');
+    return media?.storage === 'DISK' ? publicUrlFor(media.fileName) : null;
+  }
+
   async getImage(id: string): Promise<{ contentType: string; updatedAt?: Date; data: Buffer } | null> {
     if (!mongoose.Types.ObjectId.isValid(id)) return null;
     const media = await Media.findById(id).select('+data contentType updatedAt storage fileName');

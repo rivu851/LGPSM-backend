@@ -11,6 +11,11 @@ import { tokenRepository } from '../repositories/token.repository';
 import { sendEmail } from '../utils/email.provider';
 import crypto from 'crypto';
 import { escapeHtml } from '../utils/html';
+import { MediaPurpose } from '../models/Media';
+import { IUser } from '../models/User';
+import { mediaService } from './media.service';
+import { mediaIdFromKey } from '../utils/mediaKey';
+import { publicApiUrl } from '../utils/publicUrl';
 
 const PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 
@@ -127,13 +132,26 @@ async function reactivateStaff(existing: any, data: any, ownerId: string) {
   return user;
 }
 
+async function profileWithAvatarUrl(user: IUser): Promise<Record<string, any>> {
+  const result = user.toJSON() as Record<string, any>;
+  const avatarKey = result.profile?.avatarKey;
+  const mediaId = mediaIdFromKey(avatarKey);
+  if (!mediaId) return result;
+
+  const apiUrl = publicApiUrl();
+  const avatarUrl = await mediaService.getPublicUrl(mediaId)
+    || (apiUrl ? `${apiUrl}/api/v1/media/${mediaId}` : undefined);
+  if (avatarUrl) result.profile.avatarUrl = avatarUrl;
+  return result;
+}
+
 export const userService = {
   async getProfile(userId: string) {
     const user = await userRepository.findById(userId);
     if (!user) {
       throw { statusCode: 404, message: 'User not found' };
     }
-    return user;
+    return profileWithAvatarUrl(user);
   },
 
   async updateProfile(userId: string, data: any) {
@@ -160,6 +178,13 @@ export const userService = {
       throw { statusCode: 404, message: 'User not found' };
     }
     return user;
+  },
+
+  async updateProfilePhoto(userId: string, buffer: Buffer, originalName?: string) {
+    const stored = await mediaService.storeImage(userId, MediaPurpose.AVATAR, buffer, originalName);
+    const user = await User.findByIdAndUpdate(userId, { $set: { 'profile.avatarKey': stored.key } }, { new: true, runValidators: true });
+    if (!user) throw { statusCode: 404, message: 'User not found' };
+    return profileWithAvatarUrl(user);
   },
 
   async changePassword(userId: string, currentPassword: string, newPassword: string) {

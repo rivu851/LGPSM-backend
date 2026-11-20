@@ -50,3 +50,17 @@ The migration requires `ATLAS_URL`, changes indexes only, and does not modify us
 
 ## Basic API Health-Check
 - **GET /api/health**: Confirms that the backend server is running.
+
+## Profile photo upload
+Use the authenticated **PATCH `/api/users/profile/photo`** endpoint with a multipart form field named `file`. The response and **GET `/api/users/profile`** include `profile.avatarKey` (`media:<id>`) and, when available, `profile.avatarUrl`. The key is persisted in the user profile; the URL is resolved from `MEDIA_PUBLIC_URL` or `PUBLIC_API_URL`.
+
+For browser clients, append the selected file to `FormData` and do not set the `Content-Type` header manually:
+```js
+const form = new FormData();
+form.append('file', selectedFile);
+await fetch(`${API_URL}/api/users/profile/photo`, {
+  method: 'PATCH',
+  headers: { Authorization: `Bearer ${accessToken}` },
+  body: form,
+});
+```
