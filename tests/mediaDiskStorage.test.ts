@@ -115,6 +115,15 @@ describe('MEDIA_PUBLIC_URL set (files served from the media address)', () => {
     expect(res.headers.location).toBe(`https://media.example.com/${rec.fileName}`);
   });
 
+  it('can serve the stored bytes directly when a CDN image request fails', async () => {
+    process.env.MEDIA_DIR = dir; process.env.MEDIA_PUBLIC_URL = 'https://media.example.com';
+    const id = String((await upload()).body.data.key).replace('media:', '');
+    const res = await request(app).get(`/api/v1/media/${id}?raw=1`).redirects(0);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/image\/png/);
+    expect((await sharp(res.body).metadata()).width).toBe(64);
+  });
+
   it('makes stored files world-readable for the configured media server', async () => {
     process.env.MEDIA_DIR = dir; process.env.MEDIA_PUBLIC_URL = 'https://media.example.com';
     const id = String((await upload()).body.data.key).replace('media:', '');
