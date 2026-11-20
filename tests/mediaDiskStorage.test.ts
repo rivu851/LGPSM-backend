@@ -115,6 +115,19 @@ describe('MEDIA_PUBLIC_URL set (files served from the media address)', () => {
     expect(res.headers.location).toBe(`https://media.example.com/${rec.fileName}`);
   });
 
+  it('makes stored files world-readable for the configured media server', async () => {
+    process.env.MEDIA_DIR = dir; process.env.MEDIA_PUBLIC_URL = 'https://media.example.com';
+    const id = String((await upload()).body.data.key).replace('media:', '');
+    const rec: any = await Media.findById(id).lean();
+    const filePath = path.join(dir, rec.fileName);
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(filePath).mode & 0o777).toBe(0o644);
+      fs.chmodSync(filePath, 0o640);
+    }
+    expect((await request(app).get(`/api/v1/media/${id}`).redirects(0)).status).toBe(302);
+    if (process.platform !== 'win32') expect(fs.statSync(filePath).mode & 0o777).toBe(0o644);
+  });
+
   it('does not redirect to a file that is not there (404 instead of a dead link)', async () => {
     process.env.MEDIA_DIR = dir; process.env.MEDIA_PUBLIC_URL = 'https://media.example.com';
     const id = String((await upload()).body.data.key).replace('media:', '');

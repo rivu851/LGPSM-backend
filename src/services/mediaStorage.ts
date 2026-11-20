@@ -28,7 +28,7 @@ export async function writeMediaFile(id: string, contentType: string, data: Buff
   const target = path.join(dir, name);
   const temp = `${target}.${process.pid}.tmp`;
   // written beside the final name and renamed, so a half-written file is never served
-  await fs.promises.writeFile(temp, data, { mode: 0o640 });
+  await fs.promises.writeFile(temp, data, { mode: 0o644 });
   await fs.promises.rename(temp, target);
   return name;
 }
@@ -46,7 +46,11 @@ export async function publicUrlFor(fileName?: string | null): Promise<string | n
   const dir = mediaDir();
   const name = fileName ? safeName(fileName) : null;
   if (!base || !/^https:\/\//i.test(base) || !dir || !name) return null;
-  try { await fs.promises.access(path.join(dir, name), fs.constants.R_OK); } catch { return null; }
+  const filePath = path.join(dir, name);
+  try {
+    await fs.promises.chmod(filePath, 0o644);
+    await fs.promises.access(filePath, fs.constants.R_OK);
+  } catch { return null; }
   return `${base}/${name}`;
 }
 
