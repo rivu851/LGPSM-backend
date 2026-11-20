@@ -78,7 +78,15 @@ export class MediaService {
       media = await Media.create({ ...record, storage: 'DB', data });
     }
 
-    return { key: `media:${media._id}`, contentType: media.contentType, width: info.width, height: info.height, size: info.size };
+    const publicUrl = media.storage === 'DISK' ? await publicUrlFor(media.fileName) : null;
+    return {
+      key: `media:${media._id}`,
+      ...(publicUrl ? { publicUrl } : {}),
+      contentType: media.contentType,
+      width: info.width,
+      height: info.height,
+      size: info.size
+    };
   }
 
   // The image's bytes wherever they are kept (database or file); null when there is no such image or its file is gone

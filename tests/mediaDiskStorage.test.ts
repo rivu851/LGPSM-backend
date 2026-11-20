@@ -84,8 +84,10 @@ describe('MEDIA_PUBLIC_URL set (files served from the media address)', () => {
 
   it('sends the browser to the file on the media address, and keeps the old address working', async () => {
     process.env.MEDIA_DIR = dir; process.env.MEDIA_PUBLIC_URL = 'https://media.example.com/';
-    const id = String((await upload()).body.data.key).replace('media:', '');
+    const uploaded = await upload();
+    const id = String(uploaded.body.data.key).replace('media:', '');
     const rec: any = await Media.findById(id).lean();
+    expect(uploaded.body.data.publicUrl).toBe(`https://media.example.com/${rec.fileName}`);
     const res = await request(app).get(`/api/v1/media/${id}`).redirects(0);
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe(`https://media.example.com/${rec.fileName}`);
