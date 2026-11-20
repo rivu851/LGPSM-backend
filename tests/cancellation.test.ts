@@ -19,6 +19,9 @@ import { clock } from '../src/utils/clock';
 import { generateAccessToken } from '../src/utils/token';
 import { generateSecureToken, hashToken } from '../src/utils/invitation.util';
 
+// the in-memory MongoDB can take a while to start on a busy machine (CI runners, parallel jobs); the default 5 s hook limit made the whole suite fail then
+jest.setTimeout(60000);
+
 // every guest of an event has their own phone number (the database allows one active guest per number)
 let mobileSeq = 0;
 const uniqueMobile = () => `98765${String(43210 + ++mobileSeq)}`;

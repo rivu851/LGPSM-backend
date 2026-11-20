@@ -13,6 +13,9 @@ import { InviteeSet } from '../src/models/InviteeSet';
 import { Session } from '../src/models/Session';
 import { generateAccessToken } from '../src/utils/token';
 
+// the in-memory MongoDB can take a while to start on a busy machine (CI runners, parallel jobs); the default 5 s hook limit made the whole suite fail then
+jest.setTimeout(60000);
+
 let mongo: MongoMemoryServer;
 let org: any, tok: string, event: any;
 const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
