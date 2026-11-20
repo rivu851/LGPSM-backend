@@ -70,6 +70,26 @@ describe('bill for sending to chosen guests', () => {
   });
 });
 
+describe('an event created before any rate was set', () => {
+  it('is billed at the admin\'s current rate, which is then kept on the event', async () => {
+    await Event.updateOne({ _id: ev._id }, { $unset: { pricing: '' } });
+    const g: any = await Invitee.create({ eventId: ev._id, name: 'Late', email: 'late@x.com', mobile: '9811122233' });
+    let q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send({ eventId: String(ev._id), inviteeIds: [String(g._id)] });
+    expect(q.body.data).toMatchObject({ payable: false, total: 0 }); // no rate set anywhere: free
+
+    await PlatformSettings.updateOne({ key: 'global' }, { $set: { 'pricing.ratePerInvitee': 3 } }, { upsert: true });
+    q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send({ eventId: String(ev._id), inviteeIds: [String(g._id)] });
+    expect(q.body.data).toMatchObject({ payable: true, rate: 3, subtotal: 3, total: 3.54 });
+    const stored: any = await Event.findById(ev._id).lean();
+    expect(stored.pricing.ratePerInvitee).toBe(3);
+
+    // a later change of the platform rate does not move this event
+    await PlatformSettings.updateOne({ key: 'global' }, { $set: { 'pricing.ratePerInvitee': 9 } });
+    q = await request(app).post('/api/v1/billing/quote').set(auth(org)).send({ eventId: String(ev._id), inviteeIds: [String(g._id)] });
+    expect(q.body.data).toMatchObject({ rate: 3, total: 3.54 });
+  });
+});
+
 describe('event bill payment', () => {
   it('lists what is due, pays it, issues an invoice, and only the new invitations are due afterwards', async () => {
     await sendTo(4);

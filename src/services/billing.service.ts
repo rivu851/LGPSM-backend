@@ -18,7 +18,16 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 // Invitations paid for but not sent yet are credit that the next send uses up (e.g. a send that partly failed).
 async function eventState(event: any) {
   const locked = event.pricing && event.pricing.lockedAt;
-  const rate: number | null = locked ? event.pricing.ratePerInvitee ?? null : await platformSettingsService.rateInEffectAt(new Date(event.createdAt));
+  let rate: number | null = locked ? event.pricing.ratePerInvitee ?? null : await platformSettingsService.rateInEffectAt(new Date(event.createdAt));
+  // An event created before the admin set a per-head rate has none stored. Billing then uses the admin's current rate and stores
+  // it on the event (so the figure stays the same from now on and matches the earnings view); with no rate set anywhere it is free.
+  if (!(rate && rate > 0)) {
+    const current = await platformSettingsService.currentRateSnapshot();
+    if (current.ratePerInvitee && current.ratePerInvitee > 0) {
+      rate = current.ratePerInvitee;
+      await Event.updateOne({ _id: event._id, $or: [{ 'pricing.ratePerInvitee': null }, { 'pricing.ratePerInvitee': { $exists: false } }, { 'pricing.ratePerInvitee': 0 }] }, { $set: { pricing: current } });
+    }
+  }
   const sent = await Invitee.countDocuments({ eventId: event._id, invitationStatus: InvitationStatus.SENT });
   const paid = await Order.aggregate([
     { $match: { eventId: event._id, kind: 'EVENT_BILL', status: OrderStatus.PAID } },
