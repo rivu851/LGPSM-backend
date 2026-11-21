@@ -10,7 +10,7 @@ const cardDownload_service_1 = require("../services/cardDownload.service");
 const router = (0, express_1.Router)({ mergeParams: true });
 router.use(authenticate_1.authenticate);
 const objectId = zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/);
-const planBody = zod_1.z.object({ inviteeIds: zod_1.z.array(objectId).min(1, 'Select at least one guest.').max(20000) });
+const planBody = zod_1.z.object({ inviteeIds: zod_1.z.array(objectId).min(1, 'Select at least one guest.').max(20000), sessionId: objectId.nullish() });
 const partInput = zod_1.z.object({ planId: objectId, part: zod_1.z.number().int().min(1) });
 const handle = (res, e) => {
     if (res.headersSent) {
@@ -29,7 +29,7 @@ router.post('/plan', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER,
     if (!p.success)
         return res.status(400).json({ success: false, code: 'NO_GUESTS_SELECTED', message: p.error.issues[0]?.message || 'Select at least one guest.' });
     try {
-        res.json({ success: true, data: await cardDownload_service_1.cardDownloadService.plan(req.user, String(req.params.eventId), p.data.inviteeIds) });
+        res.json({ success: true, data: await cardDownload_service_1.cardDownloadService.plan(req.user, String(req.params.eventId), p.data.inviteeIds, p.data.sessionId) });
     }
     catch (e) {
         handle(res, e);

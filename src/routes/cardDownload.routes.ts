@@ -10,7 +10,7 @@ const router = Router({ mergeParams: true });
 router.use(authenticate);
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/);
-const planBody = z.object({ inviteeIds: z.array(objectId).min(1, 'Select at least one guest.').max(20000) });
+const planBody = z.object({ inviteeIds: z.array(objectId).min(1, 'Select at least one guest.').max(20000), sessionId: objectId.nullish() });
 const partInput = z.object({ planId: objectId, part: z.number().int().min(1) });
 
 const handle = (res: Response, e: any) => {
@@ -26,7 +26,7 @@ router.post('/plan', authorizeRoles(Role.ORGANIZER, Role.ADMIN), async (req: Req
   const p = planBody.safeParse(req.body);
   if (!p.success) return res.status(400).json({ success: false, code: 'NO_GUESTS_SELECTED', message: p.error.issues[0]?.message || 'Select at least one guest.' });
   try {
-    res.json({ success: true, data: await cardDownloadService.plan((req as any).user, String(req.params.eventId), p.data.inviteeIds) });
+    res.json({ success: true, data: await cardDownloadService.plan((req as any).user, String(req.params.eventId), p.data.inviteeIds, p.data.sessionId) });
   } catch (e) { handle(res, e); }
 });
 

@@ -55,6 +55,18 @@ describe('zip sizes', () => {
   });
 });
 
+describe('zip file names', () => {
+  const { zipFileNames } = require('../src/services/cardDownload.service');
+  it('names a zip Event_Session, just the event for all sessions, and numbers several', () => {
+    expect(zipFileNames('Product Launch Event 2026', null, 1)).toEqual(['Product Launch Event 2026.zip']);
+    expect(zipFileNames('Product Launch Event 2026', 'Entry Session', 1)).toEqual(['Product Launch Event 2026_Entry Session.zip']);
+    expect(zipFileNames('Gala', 'Lunch', 3)).toEqual(['Gala_Lunch_1.zip', 'Gala_Lunch_2.zip', 'Gala_Lunch_3.zip']);
+    expect(zipFileNames('Gala', null, 2)).toEqual(['Gala_1.zip', 'Gala_2.zip']);
+    // characters a file name cannot hold are removed; the rest is kept as the person wrote it
+    expect(zipFileNames('A/B: "Big" Show?', 'Day <1>', 1)).toEqual(['AB Big Show_Day 1.zip']);
+  });
+});
+
 describe('printable card download', () => {
   const plan = (ev: any, who: any, ids: string[]) => request(app).post(`/api/v1/events/${ev._id}/invitation-cards/plan`).set(auth(who)).send({ inviteeIds: ids });
   const part = (ev: any, who: any, planId: string, n: number) => request(app).post(`/api/v1/events/${ev._id}/invitation-cards/download`).set(auth(who)).send({ planId, part: n }).buffer(true).parse(binary);
@@ -70,7 +82,8 @@ describe('printable card download', () => {
     const one = await part(ev, org, p.body.data.planId, 1);
     expect(one.status).toBe(200);
     expect(one.headers['content-type']).toContain('application/zip');
-    expect(one.headers['content-disposition']).toContain('Gala-Night-cards-1-of-1.zip');
+    expect(one.headers['content-disposition']).toContain('filename="Gala Night.zip"');
+    expect(p.body.data.fileNames).toEqual(['Gala Night.zip']);
     expect(entries(one.body as Buffer)).toEqual(['0001-Guest-1.pdf', '0002-Guest-2.pdf', '0003-Guest-3.pdf', '0004-Guest-4.pdf', '0005-Guest-5.pdf']);
     expect((one.body as Buffer).includes(Buffer.from('%PDF-1.7'))).toBe(true);
 
@@ -84,6 +97,26 @@ describe('printable card download', () => {
     // only the ticked guests get cards
     const some = await plan(ev, org, ids.slice(0, 2));
     expect(some.body.data).toMatchObject({ total: 2, sizes: [2] });
+  });
+
+  it('names the zip after the event and the chosen session, and only the event for all sessions', async () => {
+    const { Session } = require('../src/models/Session');
+    const ev: any = await mkEvent('PRINT');
+    const sess: any = await Session.create({ eventId: ev._id, name: 'Lunch', schedule: { start: new Date(Date.now() + day), end: new Date(Date.now() + day + 36e5) }, accessControl: 'ONLY_ONCE' });
+    const guests: any[] = await mkGuests(ev, 2);
+    const ids = guests.map((g) => String(g._id));
+    const all = await plan(ev, org, ids);
+    expect(all.body.data.fileNames).toEqual(['Gala Night.zip']);
+    const one = await request(app).post(`/api/v1/events/${ev._id}/invitation-cards/plan`).set(auth(org)).send({ inviteeIds: ids, sessionId: String(sess._id) });
+    expect(one.body.data.fileNames).toEqual(['Gala Night_Lunch.zip']);
+    const dl = await part(ev, org, one.body.data.planId, 1);
+    expect(dl.headers['content-disposition']).toContain('filename="Gala Night_Lunch.zip"');
+    expect(dl.headers['content-disposition']).toContain("filename*=UTF-8''Gala%20Night_Lunch.zip");
+    // a session of another event is refused
+    const other2: any = await mkEvent('PRINT');
+    const foreign: any = await Session.create({ eventId: other2._id, name: 'Elsewhere', schedule: { start: new Date(Date.now() + day), end: new Date(Date.now() + day + 36e5) }, accessControl: 'ONLY_ONCE' });
+    const bad = await request(app).post(`/api/v1/events/${ev._id}/invitation-cards/plan`).set(auth(org)).send({ inviteeIds: ids, sessionId: String(foreign._id) });
+    expect(bad.status).toBe(400);
   });
 
   it('splits a large selection evenly across zips of at most 100, with no guest in two zips', async () => {

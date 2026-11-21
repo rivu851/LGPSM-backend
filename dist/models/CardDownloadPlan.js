@@ -39,6 +39,7 @@ const CardDownloadPlanSchema = new mongoose_1.Schema({
     eventId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Event', required: true },
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     inviteeIds: [{ type: mongoose_1.Schema.Types.ObjectId }],
+    sessionId: { type: mongoose_1.Schema.Types.ObjectId, default: null },
     expiresAt: { type: Date, required: true, index: { expires: 0 } }
 });
 exports.CardDownloadPlan = mongoose_1.default.model('CardDownloadPlan', CardDownloadPlanSchema);

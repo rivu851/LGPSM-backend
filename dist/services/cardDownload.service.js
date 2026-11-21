@@ -5,12 +5,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.cardDownloadService = exports.MAX_PER_ZIP = void 0;
 exports.zipSizes = zipSizes;
+exports.zipFileNames = zipFileNames;
 const mongoose_1 = __importDefault(require("mongoose"));
 const archiver_1 = __importDefault(require("archiver"));
 const sharp_1 = __importDefault(require("sharp"));
 const pdf_lib_1 = require("pdf-lib");
 const Event_1 = require("../models/Event");
 const Invitee_1 = require("../models/Invitee");
+const Session_1 = require("../models/Session");
 const CardDownloadPlan_1 = require("../models/CardDownloadPlan");
 const User_1 = require("../models/User");
 const invitation_util_1 = require("../utils/invitation.util");
@@ -56,11 +58,29 @@ function zipSizes(total) {
     const extra = total % zips;
     return Array.from({ length: zips }, (_, i) => base + (i < extra ? 1 : 0));
 }
+/**
+ * The zip's name: "Event name_Session name.zip", or just "Event name.zip" when the cards are not for one particular session. A selection
+ * that needs several zips numbers them ("Event name_Session name_1.zip", "_2" ...). The names are the person's own words, with only the
+ * characters a file name cannot hold taken out.
+ */
+const fileSafe = (s) => String(s || '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80);
+function zipFileNames(eventTitle, sessionName, zips) {
+    const base = [fileSafe(eventTitle) || 'Event', sessionName ? fileSafe(sessionName) : ''].filter(Boolean).join('_');
+    return Array.from({ length: zips }, (_, i) => `${base}${zips > 1 ? `_${i + 1}` : ''}.zip`);
+}
+const asciiName = (n) => n.normalize('NFKD').replace(/[^\x20-\x7e]/g, '').replace(/"/g, '') || 'cards.zip';
 const safeName = (s) => String(s || 'guest').normalize('NFKD').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'guest';
 exports.cardDownloadService = {
     /** Keeps the chosen guests under a plan id and says how many zip files they make. Only guests of this event are kept. */
-    async plan(actor, eventId, inviteeIds) {
-        await loadEvent(actor, eventId);
+    async plan(actor, eventId, inviteeIds, sessionId) {
+        const event = await loadEvent(actor, eventId);
+        // the session the list was filtered to (it names the zips); it must be one of this event's
+        let session = null;
+        if (sessionId) {
+            session = mongoose_1.default.Types.ObjectId.isValid(sessionId) ? await Session_1.Session.findOne({ _id: sessionId, eventId }).select('name').lean() : null;
+            if (!session)
+                throw fail(400, 'That session is not part of this event.');
+        }
         const ids = [...new Set(inviteeIds.filter((i) => mongoose_1.default.Types.ObjectId.isValid(i)))];
         if (ids.length === 0)
             throw fail(400, 'Select at least one guest to download cards for.', 'NO_GUESTS_SELECTED');
@@ -68,10 +88,10 @@ exports.cardDownloadService = {
         if (found.length === 0)
             throw fail(400, 'None of the selected guests are on this event.', 'NO_GUESTS_SELECTED');
         const plan = await CardDownloadPlan_1.CardDownloadPlan.create({
-            eventId, userId: actor.userId, inviteeIds: found.map((g) => g._id), expiresAt: new Date(Date.now() + PLAN_MINUTES * 60 * 1000)
+            eventId, userId: actor.userId, inviteeIds: found.map((g) => g._id), sessionId: session ? session._id : null, expiresAt: new Date(Date.now() + PLAN_MINUTES * 60 * 1000)
         });
         const sizes = zipSizes(found.length);
-        return { planId: String(plan._id), total: found.length, zips: sizes.length, sizes };
+        return { planId: String(plan._id), total: found.length, zips: sizes.length, sizes, fileNames: zipFileNames(event.title, session ? session.name : null, sizes.length) };
     },
     /**
      * Streams ONE zip: part `part` (1-based) of a plan. Each guest has their own PDF holding their personal card at print quality.
@@ -93,10 +113,11 @@ exports.cardDownloadService = {
         const order = new Map(wanted.map((id, i) => [String(id), i]));
         const guests = (await Invitee_1.Invitee.find({ eventId, _id: { $in: wanted } }).select('+qrTokenCipher')).sort((a, b) => (order.get(String(a._id)) ?? 0) - (order.get(String(b._id)) ?? 0));
         const firstIndex = offset;
-        const base = `${safeName(event.title)}-cards-${part}-of-${zips}`;
+        const sess = plan.sessionId ? await Session_1.Session.findOne({ _id: plan.sessionId, eventId }).select('name').lean() : null;
+        const fileName = zipFileNames(event.title, sess ? sess.name : null, zips)[part - 1];
         res.status(200);
         res.setHeader('Content-Type', 'application/zip');
-        res.setHeader('Content-Disposition', `attachment; filename="${base}.zip"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${asciiName(fileName)}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
         res.setHeader('X-Zip-Part', String(part));
         res.setHeader('X-Zip-Count', String(zips));
         res.setHeader('X-Guests-Total', String(total));
