@@ -110,6 +110,7 @@ async function withInvitationCounts(events) {
         if (category)
             delete category.subcategories;
         json.invitationsSent = byEvent.get(String(e._id)) || 0;
+        json.cardsDownloaded = !!e.cardsDownloadedAt;
         json.sessionNames = sessionsByEvent.get(String(e._id)) || [];
         json.inviteesCount = inviteesByEvent.get(String(e._id)) || 0;
         return json;

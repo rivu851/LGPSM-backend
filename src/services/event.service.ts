@@ -92,8 +92,9 @@ async function assertTemplateFitsInvitationType(templateId: unknown, invitationT
 }
 
 export class EventService {
-  /** True once any invitation for the event was sent or attempted (the event is locked from then on). */
+  /** True once any invitation for the event was sent or attempted, or its print-ready cards were made (the event is locked from then on). */
   async invitationsStarted(eventId: string | mongoose.Types.ObjectId): Promise<boolean> {
+    if (await Event.exists({ _id: eventId, cardsDownloadedAt: { $ne: null } })) return true;
     return !!(await Invitation.exists({ eventId, status: { $in: [InvitationDeliveryStatus.SENT, InvitationDeliveryStatus.FAILED] } }));
   }
 

@@ -116,6 +116,12 @@ export async function writePartZip(actor: Actor, event: any, guests: any[], firs
     return Buffer.from(await pdf.save());
   };
 
+  // Making the cards locks the event (like sending an invitation): the guests will hold cards made from its details.
+  // Marked before the first card is drawn, and without touching updatedAt so an open editor is not told the event changed.
+  if (!event.cardsDownloadedAt) {
+    await Event.updateOne({ _id: event._id, cardsDownloadedAt: { $in: [null, undefined] } }, { $set: { cardsDownloadedAt: new Date() } }, { timestamps: false });
+    event.cardsDownloadedAt = new Date();
+  }
   try {
     for (let i = 0; i < guests.length; i += RENDER_AT_A_TIME) {
       const slice = guests.slice(i, i + RENDER_AT_A_TIME);

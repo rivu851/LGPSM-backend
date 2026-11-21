@@ -100,8 +100,10 @@ async function assertTemplateFitsInvitationType(templateId, invitationType) {
     }
 }
 class EventService {
-    /** True once any invitation for the event was sent or attempted (the event is locked from then on). */
+    /** True once any invitation for the event was sent or attempted, or its print-ready cards were made (the event is locked from then on). */
     async invitationsStarted(eventId) {
+        if (await Event_1.Event.exists({ _id: eventId, cardsDownloadedAt: { $ne: null } }))
+            return true;
         return !!(await Invitation_1.Invitation.exists({ eventId, status: { $in: [Invitation_1.InvitationDeliveryStatus.SENT, Invitation_1.InvitationDeliveryStatus.FAILED] } }));
     }
     /**

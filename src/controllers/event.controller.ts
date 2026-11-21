@@ -150,7 +150,7 @@ export const eventController = {
       } else if ((error as Error).message === 'EVENT_ENDED') {
         res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_ENDED', message: 'This event is over, so it can no longer be edited.' });
       } else if ((error as Error).message === 'EVENT_LOCKED') {
-        res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_LOCKED', message: 'This event can’t be edited after invitations have been sent.', details: [] });
+        res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_LOCKED', message: 'This event can’t be edited after invitations have been sent or cards have been downloaded.', details: [] });
       } else if ((error as Error).message === 'CATEGORY_NOT_FOUND' || (error as Error).message === 'TEMPLATE_NOT_FOUND') {
         res.status(400).json({ success: false, error: 'Bad Request', message: (error as Error).message === 'CATEGORY_NOT_FOUND' ? 'Selected category does not exist' : 'Selected template does not exist', details: [] });
       } else {

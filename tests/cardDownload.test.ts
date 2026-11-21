@@ -99,6 +99,19 @@ describe('printable card download', () => {
     expect(some.body.data).toMatchObject({ total: 2, sizes: [2] });
   });
 
+  it('locks the event against editing once its cards are made, like sending an invitation', async () => {
+    const ev: any = await mkEvent('PRINT');
+    const guests: any[] = await mkGuests(ev, 2);
+    const edit = () => request(app).patch(`/api/v1/events/${ev._id}`).set(auth(org)).send({ title: 'Renamed Gala' });
+    const p = await plan(ev, org, guests.map((g) => String(g._id)));
+    // planning alone changes nothing
+    expect((await edit()).status).toBe(200);
+    await part(ev, org, p.body.data.planId, 1);
+    const locked = await edit();
+    expect(locked.status).toBe(409);
+    expect(locked.body.code).toBe('EVENT_LOCKED');
+  });
+
   it('names the zip after the event and the chosen session, and only the event for all sessions', async () => {
     const { Session } = require('../src/models/Session');
     const ev: any = await mkEvent('PRINT');

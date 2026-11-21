@@ -99,6 +99,7 @@ const EventSchema = new mongoose_1.Schema({
         logo: { type: Boolean }
     },
     invitationType: { type: String, enum: ['DIGITAL', 'PRINT', 'BOTH'], default: 'DIGITAL' },
+    cardsDownloadedAt: { type: Date },
     cardInfo: {
         primary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] },
         secondary: { type: String, enum: [...cardInfo_1.CARD_INFO_FIELDS, null] },

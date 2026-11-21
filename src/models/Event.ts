@@ -65,6 +65,8 @@ export interface IEvent extends Document {
   status: EventStatus;
   // Per-invitee rate locked when the event was created (null when no rate was configured then)
   pricing?: { ratePerInvitee: number | null; currency: string; lockedAt: Date };
+  /** Set the first time the event's print-ready cards are made; from then on the event cannot be edited, just as after an invitation is sent */
+  cardsDownloadedAt?: Date;
   operationalDataCleared?: boolean;
   // Set by the non-destructive close operation; the event and all its history are kept
   closedAt?: Date;
@@ -135,6 +137,7 @@ const EventSchema: Schema = new Schema(
       logo: { type: Boolean }
     },
     invitationType: { type: String, enum: ['DIGITAL', 'PRINT', 'BOTH'], default: 'DIGITAL' },
+    cardsDownloadedAt: { type: Date },
     cardInfo: {
       primary: { type: String, enum: [...CARD_INFO_FIELDS, null] },
       secondary: { type: String, enum: [...CARD_INFO_FIELDS, null] },
