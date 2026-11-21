@@ -78,6 +78,19 @@ async function assertTitleFitsTemplate(templateId: unknown, title: unknown): Pro
   }
 }
 
+/**
+ * An uploaded card (a static design) is the card exactly as it was uploaded, so it can only be sent: print-ready cards are drawn from a live
+ * template. An event set to Print only or Print and Digital both therefore cannot use one.
+ */
+async function assertTemplateFitsInvitationType(templateId: unknown, invitationType: unknown): Promise<void> {
+  if (invitationType !== 'PRINT' && invitationType !== 'BOTH') return;
+  if (!templateId || !mongoose.Types.ObjectId.isValid(String(templateId))) return;
+  const t: any = await Template.findById(String(templateId)).select('templateData').lean();
+  if (t?.templateData?.uploaded === true && t?.templateData?.dynamicDetails !== true) {
+    throw { statusCode: 400, code: 'STATIC_CARD_NOT_ALLOWED', message: 'An uploaded card can only be used when the invitation type is Digital only. For Print only or Print and Digital both, please choose a ready template.' };
+  }
+}
+
 export class EventService {
   /** True once any invitation for the event was sent or attempted (the event is locked from then on). */
   async invitationsStarted(eventId: string | mongoose.Types.ObjectId): Promise<boolean> {
@@ -140,6 +153,7 @@ export class EventService {
       if (masterId) eventData.templateId = masterId;
     }
     await assertTitleFitsTemplate(eventData.templateId, eventData.title);
+    await assertTemplateFitsInvitationType(eventData.templateId, eventData.invitationType);
 
     const now = new Date();
     const tomorrow = new Date(now.getTime() + 86400000);
@@ -300,6 +314,10 @@ export class EventService {
     // a new title or a new template: the title must fit the template's design (older events are left as they are until one of them changes)
     if (updateData.title !== undefined || updateData.templateId) {
       await assertTitleFitsTemplate(updateData.templateId ?? (existingEvent.templateId as any)?._id ?? existingEvent.templateId, updateData.title ?? existingEvent.title);
+    }
+    // a new type or a new template: an uploaded card cannot go with Print only or Print and Digital both
+    if (updateData.invitationType !== undefined || updateData.templateId) {
+      await assertTemplateFitsInvitationType(updateData.templateId ?? (existingEvent.templateId as any)?._id ?? existingEvent.templateId, updateData.invitationType ?? (existingEvent as any).invitationType);
     }
 
     // The check-in window is validated against the schedule that will be in force after this update
