@@ -14,9 +14,9 @@ import { readAdmissionToken } from '../utils/credentialTokens';
 import { invitationService, assertEventCanIssue } from './invitation.service';
 import { credentialService } from './credential.service';
 
-// A card is drawn 1536 x 2048 px; on a 6 x 8 inch page that is 256 dpi, with the QR code and text kept sharp for print.
-const PAGE_W_PT = 6 * 72;
-const PAGE_H_PT = 8 * 72;
+// The page takes the card's own shape and pixel size (never a fixed paper size, which would stretch it): 1 px = 72/256 pt, i.e. 256 dpi,
+// so the QR code and text stay sharp for print.
+const PT_PER_PX = 72 / 256;
 const RENDER_AT_A_TIME = 3;
 
 export const fail = (statusCode: number, message: string, code?: string) => Object.assign(new Error(message), { statusCode, code, message });
@@ -100,13 +100,19 @@ export async function writePartZip(actor: Actor, event: any, guests: any[], firs
     const token = await passFor(g);
     if (!token) return null;
     const png = await invitationService.renderPassCard(event, g, token);
-    const jpg = await sharp(png).flatten({ background: '#ffffff' }).jpeg({ quality: 95, chromaSubsampling: '4:4:4' }).toBuffer();
+    const flat = sharp(png).flatten({ background: '#ffffff' });
+    const meta = await sharp(png).metadata();
+    const pxW = meta.width || 1536;
+    const pxH = meta.height || 2048;
+    const jpg = await flat.jpeg({ quality: 95, chromaSubsampling: '4:4:4' }).toBuffer();
     const pdf = await PDFDocument.create();
     pdf.setTitle(`${event.title}: ${g.name}`);
     pdf.setCreator('EventQRapp');
     const img = await pdf.embedJpg(jpg);
-    const page = pdf.addPage([PAGE_W_PT, PAGE_H_PT]);
-    page.drawImage(img, { x: 0, y: 0, width: PAGE_W_PT, height: PAGE_H_PT });
+    const pageW = pxW * PT_PER_PX;
+    const pageH = pxH * PT_PER_PX;
+    const page = pdf.addPage([pageW, pageH]);
+    page.drawImage(img, { x: 0, y: 0, width: pageW, height: pageH });
     return Buffer.from(await pdf.save());
   };
 
