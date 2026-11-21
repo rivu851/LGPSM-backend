@@ -1,5 +1,6 @@
 import rateLimit, { Options, ipKeyGenerator } from 'express-rate-limit';
 import { securityEvent } from '../utils/securityLog';
+import { KvRateLimitStore } from '../infra/kv/rateLimitStore';
 
 // Records every throttled request as a security event, then answers exactly as the default handler would
 const logged = (limiter: string) => (req: any, res: any, _next: any, options: Options) => {
@@ -15,6 +16,7 @@ const skipInTest = () => process.env.NODE_ENV === 'test' && process.env.ENABLE_R
  */
 export const authRateLimiter = rateLimit({
   handler: logged('authRateLimiter'),
+  store: new KvRateLimitStore('authRateLimiter'),
   windowMs: 15 * 60 * 1000,
   max: 20,
   message: { success: false, message: 'Too many requests from this IP, please try again after 15 minutes' },
@@ -26,6 +28,7 @@ export const authRateLimiter = rateLimit({
 /** Sign-in, per network: generous, because a whole staff team may sign in from one venue connection at once. */
 export const loginIpLimiter = rateLimit({
   handler: logged('loginIpLimiter'),
+  store: new KvRateLimitStore('loginIpLimiter'),
   windowMs: 15 * 60 * 1000,
   max: 150,
   message: { success: false, message: 'Too many sign-in attempts from this network. Please try again in 15 minutes.' },
@@ -39,6 +42,7 @@ const loginIdentifier = (req: any) => String(req.body?.email || req.body?.phone 
 /** Failed sign-ins for one account from one address: stops password guessing without letting a stranger lock the person out everywhere. */
 export const loginAccountLimiter = rateLimit({
   handler: logged('loginAccountLimiter'),
+  store: new KvRateLimitStore('loginAccountLimiter'),
   windowMs: 15 * 60 * 1000,
   max: 10,
   keyGenerator: (req: any) => `${loginIdentifier(req)}|${ipKeyGenerator(req.ip)}`,
@@ -52,6 +56,7 @@ export const loginAccountLimiter = rateLimit({
 /** Token refresh: every signed-in device does this every few minutes, so the ceiling only stops floods. */
 export const refreshRateLimiter = rateLimit({
   handler: logged('refreshRateLimiter'),
+  store: new KvRateLimitStore('refreshRateLimiter'),
   windowMs: 15 * 60 * 1000,
   max: 1000,
   message: { success: false, message: 'Too many requests from this network. Please try again shortly.' },
@@ -66,6 +71,7 @@ export const refreshRateLimiter = rateLimit({
  */
 export const verifyEmailRateLimiter = rateLimit({
   handler: logged('verifyEmailRateLimiter'),
+  store: new KvRateLimitStore('verifyEmailRateLimiter'),
   windowMs: 10 * 60 * 1000,
   max: 10,
   message: { success: false, message: 'Too many verification attempts. Please try again in 10 minutes.' },
@@ -80,6 +86,7 @@ export const verifyEmailRateLimiter = rateLimit({
  */
 export const resendVerificationRateLimiter = rateLimit({
   handler: logged('resendVerificationRateLimiter'),
+  store: new KvRateLimitStore('resendVerificationRateLimiter'),
   windowMs: 10 * 60 * 1000,
   max: 5,
   message: { success: false, message: 'Too many resend requests. Please try again in 10 minutes.' },
@@ -91,6 +98,7 @@ export const resendVerificationRateLimiter = rateLimit({
 /** Changing the address of a pending sign-up: it sends mail and takes a password, so it is limited like a resend */
 export const changePendingEmailRateLimiter = rateLimit({
   handler: logged('changePendingEmailRateLimiter'),
+  store: new KvRateLimitStore('changePendingEmailRateLimiter'),
   windowMs: 10 * 60 * 1000,
   max: 8,
   message: { success: false, message: 'Too many attempts. Please try again in 10 minutes.' },
@@ -110,6 +118,7 @@ export const changePendingEmailRateLimiter = rateLimit({
  */
 export const contactAttemptLimiter = rateLimit({
   handler: logged('contactAttemptLimiter'),
+  store: new KvRateLimitStore('contactAttemptLimiter'),
   windowMs: 15 * 60 * 1000,
   max: 30,
   message: { success: false, message: 'Too many requests from this network. Please try again in 15 minutes.' },
@@ -120,6 +129,7 @@ export const contactAttemptLimiter = rateLimit({
 
 export const contactRateLimiter = rateLimit({
   handler: logged('contactRateLimiter'),
+  store: new KvRateLimitStore('contactRateLimiter'),
   windowMs: 15 * 60 * 1000,
   max: 5,
   message: { success: false, message: 'Too many messages sent from this network. Please try again in 15 minutes.' },
@@ -136,6 +146,7 @@ export const contactRateLimiter = rateLimit({
  */
 export const publicInvitationLimiter = rateLimit({
   handler: logged('publicInvitationLimiter'),
+  store: new KvRateLimitStore('publicInvitationLimiter'),
   windowMs: 15 * 60 * 1000,
   max: 300,
   message: { success: false, message: 'Too many requests from this network. Please try again later.' },
@@ -150,6 +161,7 @@ export const publicInvitationLimiter = rateLimit({
  */
 export const cardPreviewLimiter = rateLimit({
   handler: logged('cardPreviewLimiter'),
+  store: new KvRateLimitStore('cardPreviewLimiter'),
   windowMs: 60 * 1000,
   max: 60,
   message: { success: false, message: 'Too many preview requests. Please wait a moment.' },
@@ -164,6 +176,7 @@ const perUser = (req: any) => req.user?.userId || ipKeyGenerator(req.ip);
 /** Starting a generation costs real provider quota: 10 requests per hour per user (the per-day quota is enforced by the service). */
 export const templateGenerationLimiter = rateLimit({
   handler: logged('templateGenerationLimiter'),
+  store: new KvRateLimitStore('templateGenerationLimiter'),
   windowMs: 60 * 60 * 1000,
   max: 10,
   keyGenerator: perUser,
@@ -176,6 +189,7 @@ export const templateGenerationLimiter = rateLimit({
 /** Status polling and previews: generous, because the apps poll while a design is being made. */
 export const templateGenerationReadLimiter = rateLimit({
   handler: logged('templateGenerationReadLimiter'),
+  store: new KvRateLimitStore('templateGenerationReadLimiter'),
   windowMs: 60 * 1000,
   max: 120,
   keyGenerator: perUser,
@@ -188,6 +202,7 @@ export const templateGenerationReadLimiter = rateLimit({
 /** Full-size renders are heavier than previews. */
 export const templateRenderLimiter = rateLimit({
   handler: logged('templateRenderLimiter'),
+  store: new KvRateLimitStore('templateRenderLimiter'),
   windowMs: 60 * 1000,
   max: 20,
   keyGenerator: perUser,

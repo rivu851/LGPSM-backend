@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.platformSettingsService = void 0;
 const currency_1 = require("../constants/currency");
+const cache_1 = require("../infra/cache");
 const mongoose_1 = __importDefault(require("mongoose"));
 const User_1 = require("../models/User");
 const PlatformSettings_1 = require("../models/PlatformSettings");
@@ -13,6 +14,11 @@ const KEY = 'global';
 async function load() {
     // Upsert so the defaults exist without a separate seeding step
     return PlatformSettings_1.PlatformSettings.findOneAndUpdate({ key: KEY }, { $setOnInsert: { key: KEY } }, { new: true, upsert: true, setDefaultsOnInsert: true });
+}
+// The platform settings are read on almost every bill, notification and event, and change only when an administrator saves them (any write
+// clears this cache: see models/PlatformSettings.ts). Readers use the cached copy (a plain object); anything that decides a write reads fresh.
+async function loadCached() {
+    return (0, cache_1.cached)('settings', 'global', 60, async () => JSON.parse(JSON.stringify(await load())));
 }
 const featureKeys = ['allowEventRSVP', 'acceptInvitedAttendees', 'chooseNotRespondedInvitees', 'chooseRSVPDeclinedInvitees', 'askFoodPreference'];
 const notificationKeys = [
@@ -23,7 +29,7 @@ const notificationKeys = [
 const pick = (src, keys) => Object.fromEntries(keys.map((k) => [k, !!src?.[k]]));
 exports.platformSettingsService = {
     async getEventFeatures() {
-        return pick((await load()).eventFeatures, featureKeys);
+        return pick((await loadCached()).eventFeatures, featureKeys);
     },
     async updateEventFeatures(features) {
         const set = Object.fromEntries(Object.entries(features).filter(([k]) => featureKeys.includes(k)).map(([k, v]) => [`eventFeatures.${k}`, !!v]));
@@ -31,7 +37,7 @@ exports.platformSettingsService = {
         return pick(doc.eventFeatures, featureKeys);
     },
     async getNotificationPreferences() {
-        return pick((await load()).notificationPreferences, notificationKeys);
+        return pick((await loadCached()).notificationPreferences, notificationKeys);
     },
     async updateNotificationPreferences(prefs) {
         const set = Object.fromEntries(Object.entries(prefs).filter(([k]) => notificationKeys.includes(k)).map(([k, v]) => [`notificationPreferences.${k}`, !!v]));
@@ -39,7 +45,7 @@ exports.platformSettingsService = {
         return pick(doc.notificationPreferences, notificationKeys);
     },
     async getPricing() {
-        const settings = await load();
+        const settings = await loadCached();
         const history = await PriceRateChange_1.PriceRateChange.find().sort({ createdAt: -1 }).limit(100).populate('changedBy', 'fullName email').lean();
         return {
             ratePerInvitee: settings.pricing?.ratePerInvitee ?? null,
@@ -63,7 +69,7 @@ exports.platformSettingsService = {
     },
     /** GST (%) added to every bill; the current value applies to bills made from now on */
     async gstPercent() {
-        const settings = await load();
+        const settings = await loadCached();
         const g = Number(settings.pricing?.gstPercent);
         return Number.isFinite(g) && g >= 0 ? g : 18;
     },
@@ -73,7 +79,7 @@ exports.platformSettingsService = {
     },
     // Rate snapshot stored on a newly created event
     async currentRateSnapshot(organizerId) {
-        const settings = await load();
+        const settings = await loadCached();
         const custom = organizerId ? await this.customRateOf(organizerId) : null;
         return { ratePerInvitee: custom ?? settings.pricing?.ratePerInvitee ?? null, currency: currency_1.PLATFORM_CURRENCY, lockedAt: new Date() };
     },
@@ -87,7 +93,7 @@ exports.platformSettingsService = {
     },
     /** What an organizer is charged per invitee: their own rate when an administrator set one, otherwise the platform rate (null = none set) */
     async rateForOrganizer(organizerId) {
-        const settings = await load();
+        const settings = await loadCached();
         const custom = await this.customRateOf(organizerId);
         return { customRate: custom, defaultRate: settings.pricing?.ratePerInvitee ?? null, effectiveRate: custom ?? settings.pricing?.ratePerInvitee ?? null, currency: currency_1.PLATFORM_CURRENCY };
     },

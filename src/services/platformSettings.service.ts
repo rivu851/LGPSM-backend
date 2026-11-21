@@ -1,4 +1,5 @@
 import { PLATFORM_CURRENCY } from '../constants/currency';
+import { cached } from '../infra/cache';
 import mongoose from 'mongoose';
 import { User } from '../models/User';
 import { PlatformSettings, IEventFeatures, INotificationPreferences } from '../models/PlatformSettings';
@@ -11,6 +12,12 @@ async function load() {
   return PlatformSettings.findOneAndUpdate({ key: KEY }, { $setOnInsert: { key: KEY } }, { new: true, upsert: true, setDefaultsOnInsert: true });
 }
 
+// The platform settings are read on almost every bill, notification and event, and change only when an administrator saves them (any write
+// clears this cache: see models/PlatformSettings.ts). Readers use the cached copy (a plain object); anything that decides a write reads fresh.
+async function loadCached(): Promise<any> {
+  return cached('settings', 'global', 60, async () => JSON.parse(JSON.stringify(await load())));
+}
+
 const featureKeys: (keyof IEventFeatures)[] = ['allowEventRSVP', 'acceptInvitedAttendees', 'chooseNotRespondedInvitees', 'chooseRSVPDeclinedInvitees', 'askFoodPreference'];
 const notificationKeys: (keyof INotificationPreferences)[] = [
   'newOrganizerRegistration', 'newEventAdded', 'deactivatedOrganizerBySuperAdmin', 'changeInPrice',
@@ -21,7 +28,7 @@ const pick = <K extends string>(src: any, keys: K[]) => Object.fromEntries(keys.
 
 export const platformSettingsService = {
   async getEventFeatures(): Promise<IEventFeatures> {
-    return pick((await load()).eventFeatures, featureKeys);
+    return pick((await loadCached()).eventFeatures, featureKeys);
   },
 
   async updateEventFeatures(features: Partial<IEventFeatures>): Promise<IEventFeatures> {
@@ -31,7 +38,7 @@ export const platformSettingsService = {
   },
 
   async getNotificationPreferences(): Promise<INotificationPreferences> {
-    return pick((await load()).notificationPreferences, notificationKeys);
+    return pick((await loadCached()).notificationPreferences, notificationKeys);
   },
 
   async updateNotificationPreferences(prefs: Partial<INotificationPreferences>): Promise<INotificationPreferences> {
@@ -41,7 +48,7 @@ export const platformSettingsService = {
   },
 
   async getPricing() {
-    const settings = await load();
+    const settings = await loadCached();
     const history = await PriceRateChange.find().sort({ createdAt: -1 }).limit(100).populate('changedBy', 'fullName email').lean();
     return {
       ratePerInvitee: settings.pricing?.ratePerInvitee ?? null,
@@ -70,7 +77,7 @@ export const platformSettingsService = {
 
   /** GST (%) added to every bill; the current value applies to bills made from now on */
   async gstPercent(): Promise<number> {
-    const settings = await load();
+    const settings = await loadCached();
     const g = Number(settings.pricing?.gstPercent);
     return Number.isFinite(g) && g >= 0 ? g : 18;
   },
@@ -85,7 +92,7 @@ export const platformSettingsService = {
 
   // Rate snapshot stored on a newly created event
   async currentRateSnapshot(organizerId?: unknown) {
-    const settings = await load();
+    const settings = await loadCached();
     const custom = organizerId ? await this.customRateOf(organizerId) : null;
     return { ratePerInvitee: custom ?? settings.pricing?.ratePerInvitee ?? null, currency: PLATFORM_CURRENCY, lockedAt: new Date() };
   },
@@ -100,7 +107,7 @@ export const platformSettingsService = {
 
   /** What an organizer is charged per invitee: their own rate when an administrator set one, otherwise the platform rate (null = none set) */
   async rateForOrganizer(organizerId: unknown) {
-    const settings = await load();
+    const settings = await loadCached();
     const custom = await this.customRateOf(organizerId);
     return { customRate: custom, defaultRate: settings.pricing?.ratePerInvitee ?? null, effectiveRate: custom ?? settings.pricing?.ratePerInvitee ?? null, currency: PLATFORM_CURRENCY };
   },

@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.categoryService = void 0;
 exports.viewFor = viewFor;
 exports.canUseCategory = canUseCategory;
+const cache_1 = require("../infra/cache");
 const category_repository_1 = require("../repositories/category.repository");
 const mongoose_1 = __importDefault(require("mongoose"));
 const Category_1 = require("../models/Category");
@@ -160,8 +161,12 @@ exports.categoryService = {
         return category;
     },
     async getCategories(activeOnly = true, viewerId) {
-        const all = await category_repository_1.categoryRepository.findAll(activeOnly);
-        return all.filter((c) => !c.ownerId || isMine(c.ownerId, viewerId)).map((c) => viewFor(c, viewerId));
+        // The list is read by every screen that has a category picker, and changes only when an administrator or organizer edits categories
+        // (any such write clears this cache: see models/Category.ts), so it is kept for two minutes per viewer.
+        return (0, cache_1.cached)('categories', `list:${activeOnly}:${viewerId || '-'}`, 120, async () => {
+            const all = await category_repository_1.categoryRepository.findAll(activeOnly);
+            return all.filter((c) => !c.ownerId || isMine(c.ownerId, viewerId)).map((c) => viewFor(c, viewerId));
+        });
     },
     async getCategoryById(id, viewerId) {
         const category = await category_repository_1.categoryRepository.findById(id);

@@ -1,3 +1,4 @@
+import { clearCacheOnWrite } from '../infra/cacheHooks';
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface ISubcategory {
@@ -45,5 +46,7 @@ const CategorySchema: Schema = new Schema(
 // among themselves, and each organizer's custom ones are unique among that organizer's.
 // (Databases from before custom categories hold a plain unique index on name: scripts/migrate-category-uniqueness.js replaces it.)
 CategorySchema.index({ ownerId: 1, name: 1 }, { unique: true, name: 'owner_scoped_name_unique' });
+
+clearCacheOnWrite(CategorySchema, 'categories');
 
 export const Category = mongoose.model<ICategory>('Category', CategorySchema);

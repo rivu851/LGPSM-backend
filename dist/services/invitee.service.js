@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.inviteeService = exports.MAX_IMPORT_ROWS = void 0;
+exports.inviteeService = exports.IMPORT_SET_SIZE = exports.MAX_IMPORT_ROWS = void 0;
 const sessionAccess_1 = require("../utils/sessionAccess");
 const columnMeaning_1 = require("../utils/columnMeaning");
 const Invitation_1 = require("../models/Invitation");
@@ -79,7 +79,10 @@ async function assertSessionsOfEvent(eventId, sessionAccess) {
         throw invalid();
 }
 // Upper bound for one spreadsheet import (header row excluded)
+/** Most guests one Excel upload can hold. More than this is arranged with us (the contact page), not uploaded in parts. */
 exports.MAX_IMPORT_ROWS = 5000;
+/** An upload is stored as lists of at most this many guests each: 1200 guests become three lists (500, 500, 200). */
+exports.IMPORT_SET_SIZE = 500;
 /** One identity per phone number regardless of formatting or a missing +91 (same normalisation WhatsApp uses). */
 const mobileIdentity = (mobile) => whatsapp_service_1.whatsappService.normalizePhoneNumber(mobile);
 /** Adds each guest's CURRENT access-pass status (separate from delivery and RSVP) and, when revoked, the reason category. */
@@ -404,7 +407,7 @@ exports.inviteeService = {
             return digits.length >= 7 && digits.length <= 15;
         };
         if (rowsRaw.length > exports.MAX_IMPORT_ROWS + 1) {
-            throw { statusCode: 400, message: `A sheet can contain at most ${exports.MAX_IMPORT_ROWS} invitees. Split the file and import it in parts.` };
+            throw { statusCode: 413, code: 'IMPORT_TOO_LARGE', limit: exports.MAX_IMPORT_ROWS, message: `One upload can hold up to ${exports.MAX_IMPORT_ROWS.toLocaleString('en-IN')} invitees. For a larger guest list, please contact us and we will help you set it up.` };
         }
         const nonBlankRows = rowsRaw.filter(r => Array.isArray(r) && r.some(cell => cleanCellValue(cell) !== ''));
         const results = {
@@ -421,6 +424,9 @@ exports.inviteeService = {
             unknownKept: 0,
             preservedSets: 0,
             setId: null,
+            /** every list this upload made (a large file is split into lists of at most 500 guests) */
+            setIds: [],
+            setsToCreate: 0,
             mode,
             rejected: 0,
             duplicateCount: 0,
@@ -668,33 +674,47 @@ exports.inviteeService = {
         if (matchedIds.size === 0 && toInsert.length === 0) {
             return results;
         }
-        // The upload becomes its own list; guests already in the event are never copied into it
-        let newSetId = null;
+        // The upload becomes lists of at most IMPORT_SET_SIZE guests each (one list when it is small); guests already in the event are never
+        // copied into them. A failed insert takes every list made by this upload back out, so the event looks exactly as before.
+        let newSetId = null; // the first list: the one a Replace names as what superseded the older guests
+        const newSetIds = [];
+        const baseName = (options.fileName || 'Uploaded list').slice(0, 190);
         if (dryRun) {
             results.imported = toInsert.length;
+            results.setsToCreate = Math.ceil(toInsert.length / exports.IMPORT_SET_SIZE);
         }
         else if (toInsert.length > 0) {
-            const created = await InviteeSet_1.InviteeSet.create({
-                eventId: new mongoose_1.default.Types.ObjectId(eventId),
-                sessionId: targetSession ? targetSession._id : null,
-                name: (options.fileName || 'Uploaded list').slice(0, 200),
-                mode,
-                createdBy: new mongoose_1.default.Types.ObjectId(organizerId),
-                createdByRole: options.role,
-                importedCount: toInsert.length
-            });
-            newSetId = created._id;
-            results.setId = String(newSetId);
-            toInsert.forEach((row) => { row.inviteeSetId = newSetId; });
+            const parts = Math.ceil(toInsert.length / exports.IMPORT_SET_SIZE);
+            const takeBack = async () => {
+                if (!newSetIds.length)
+                    return;
+                await Invitee_1.Invitee.deleteMany({ inviteeSetId: { $in: newSetIds }, invitationStatus: Invitee_2.InvitationStatus.PENDING, rsvpStatus: Invitee_2.RsvpStatus.PENDING }).setOptions({ includeArchived: true });
+                await InviteeSet_1.InviteeSet.deleteMany({ _id: { $in: newSetIds } });
+            };
             try {
-                await invitee_repository_1.inviteeRepository.insertMany(toInsert);
+                for (let part = 0; part < parts; part++) {
+                    const chunk = toInsert.slice(part * exports.IMPORT_SET_SIZE, (part + 1) * exports.IMPORT_SET_SIZE);
+                    const created = await InviteeSet_1.InviteeSet.create({
+                        eventId: new mongoose_1.default.Types.ObjectId(eventId),
+                        sessionId: targetSession ? targetSession._id : null,
+                        name: parts > 1 ? `${baseName} (${part + 1} of ${parts})` : baseName,
+                        mode,
+                        createdBy: new mongoose_1.default.Types.ObjectId(organizerId),
+                        createdByRole: options.role,
+                        importedCount: chunk.length
+                    });
+                    newSetIds.push(created._id);
+                    chunk.forEach((row) => { row.inviteeSetId = created._id; });
+                    await invitee_repository_1.inviteeRepository.insertMany(chunk);
+                }
             }
             catch (err) {
-                // nothing was archived yet; take the half-made list back out so the event looks exactly as before the upload
-                await Invitee_1.Invitee.deleteMany({ inviteeSetId: newSetId, invitationStatus: Invitee_2.InvitationStatus.PENDING, rsvpStatus: Invitee_2.RsvpStatus.PENDING }).setOptions({ includeArchived: true });
-                await InviteeSet_1.InviteeSet.deleteOne({ _id: newSetId });
+                await takeBack();
                 throw err;
             }
+            newSetId = newSetIds[0];
+            results.setId = String(newSetId);
+            results.setIds = newSetIds.map(String);
             results.imported = toInsert.length;
         }
         // Replace: only never-invited guests of unlocked lists can be superseded, and they are archived, not deleted.
@@ -731,9 +751,9 @@ exports.inviteeService = {
                 catch (err) {
                     // undo whatever part was applied and take the new list back out, so a failed Replace changes nothing
                     await Invitee_1.Invitee.updateMany({ supersededBySetId: newSetId, archivedBy: actorId }, { $set: { archivedAt: null, supersededBySetId: null, archivedBy: null, archivedByRole: null }, $unset: { archivedReason: '' } });
-                    if (newSetId) {
-                        await Invitee_1.Invitee.deleteMany({ inviteeSetId: newSetId, invitationStatus: Invitee_2.InvitationStatus.PENDING, rsvpStatus: Invitee_2.RsvpStatus.PENDING });
-                        await InviteeSet_1.InviteeSet.deleteOne({ _id: newSetId });
+                    if (newSetIds.length) {
+                        await Invitee_1.Invitee.deleteMany({ inviteeSetId: { $in: newSetIds }, invitationStatus: Invitee_2.InvitationStatus.PENDING, rsvpStatus: Invitee_2.RsvpStatus.PENDING });
+                        await InviteeSet_1.InviteeSet.deleteMany({ _id: { $in: newSetIds } });
                     }
                     throw err;
                 }

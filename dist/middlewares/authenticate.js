@@ -5,6 +5,7 @@ const token_1 = require("../utils/token");
 const User_1 = require("../models/User");
 const securityLog_1 = require("../utils/securityLog");
 const userAuthCache_1 = require("../utils/userAuthCache");
+const userRateLimit_1 = require("./userRateLimit");
 const authenticate = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
@@ -42,6 +43,9 @@ const authenticate = async (req, res, next) => {
         // The role is read from the database, not the token, so demotions apply immediately instead of
         // surviving until the access token expires.
         req.user = { ...payload, role: account.role };
+        // one generous ceiling per person for the whole API (see userRateLimit.ts); a refusal is answered there
+        if (!(await (0, userRateLimit_1.consumeUserLimit)(req, res, 'general', userRateLimit_1.GENERAL_USER_LIMIT)))
+            return;
         next();
     }
     catch (error) {

@@ -19,10 +19,10 @@ const PAGE_W_PT = 6 * 72;
 const PAGE_H_PT = 8 * 72;
 const RENDER_AT_A_TIME = 3;
 
-const fail = (statusCode: number, message: string, code?: string) => Object.assign(new Error(message), { statusCode, code, message });
-type Actor = { userId: string; role: string };
+export const fail = (statusCode: number, message: string, code?: string) => Object.assign(new Error(message), { statusCode, code, message });
+export type Actor = { userId: string; role: string };
 
-async function loadEvent(actor: Actor, eventId: string) {
+export async function loadEvent(actor: Actor, eventId: string) {
   if (!mongoose.Types.ObjectId.isValid(eventId)) throw fail(400, 'Invalid event id');
   const event: any = actor.role === Role.ADMIN ? await Event.findById(eventId) : await Event.findOne({ _id: eventId, organizerId: actor.userId });
   if (!event) throw fail(404, 'Event not found or inaccessible');
@@ -36,6 +36,11 @@ async function loadEvent(actor: Actor, eventId: string) {
 
 /** Most guests one zip holds. The split is the system's: nobody chooses it, so a large selection can never become a flood of tiny zips. */
 export const MAX_PER_ZIP = 100;
+/** The limit in force: CARD_ZIP_MAX_GUESTS (1 to 100) lets a slow server use smaller zips, which are quicker to prepare one by one */
+export function maxPerZip(): number {
+  const n = Math.floor(Number(process.env.CARD_ZIP_MAX_GUESTS));
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, MAX_PER_ZIP) : MAX_PER_ZIP;
+}
 const PLAN_MINUTES = 60;
 
 /**
@@ -44,7 +49,7 @@ const PLAN_MINUTES = 60;
  */
 export function zipSizes(total: number): number[] {
   if (total <= 0) return [];
-  const zips = Math.ceil(total / MAX_PER_ZIP);
+  const zips = Math.ceil(total / maxPerZip());
   const base = Math.floor(total / zips);
   const extra = total % zips;
   return Array.from({ length: zips }, (_, i) => base + (i < extra ? 1 : 0));
@@ -64,6 +69,69 @@ const asciiName = (n: string) => n.normalize('NFKD').replace(/[^\x20-\x7e]/g, ''
 
 const safeName = (s: string) => String(s || 'guest').normalize('NFKD').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'guest';
 
+/**
+ * Writes ONE zip of printable PDFs (one per guest, in order) to `out`. A guest with no pass yet gets one (nothing is sent to them).
+ * `onGuest` is called after each guest so a caller can show progress.
+ */
+export async function writePartZip(actor: Actor, event: any, guests: any[], firstIndex: number, out: NodeJS.WritableStream, onGuest?: () => void): Promise<void> {
+  const zip = archiver('zip', { store: true }); // the PDFs are already compressed
+  zip.on('warning', (e: Error) => console.warn('Card zip warning:', e.message));
+  const written = new Promise<void>((resolve, reject) => { out.on('finish', () => resolve()); out.on('error', reject); });
+  zip.pipe(out);
+  const skipped: string[] = [];
+
+  // the pass printed on a card is the guest's entry credential: a guest who has none yet gets one now (nothing is sent to them).
+  const passFor = async (g: any): Promise<string | null> => {
+    const existing = readAdmissionToken(g);
+    if (existing) return existing;
+    // a pass exists but its secret cannot be recovered (an old invitation): never replace it, that would break the card they already hold
+    if (g.qrTokenHash) return null;
+    const raw = generateSecureToken();
+    const upd = await Invitee.updateOne({ _id: g._id, qrTokenHash: { $in: [null, undefined, ''] } }, { $set: { qrTokenHash: hashToken(raw), qrTokenCipher: encryptToken(raw) } });
+    if (upd.modifiedCount !== 1) return readAdmissionToken((await Invitee.findById(g._id).select('+qrTokenCipher')) as any);
+    g.qrTokenHash = hashToken(raw);
+    g.qrTokenCipher = encryptToken(raw);
+    await credentialService.recordIssuance({ invitee: g, tokenHash: hashToken(raw), source: 'SEND', actorId: actor.userId, actorRole: actor.role, organizerId: event.organizerId })
+      .catch((e) => console.error('Credential history not recorded:', e?.message));
+    return raw;
+  };
+
+  const makePdf = async (g: any): Promise<Buffer | null> => {
+    const token = await passFor(g);
+    if (!token) return null;
+    const png = await invitationService.renderPassCard(event, g, token);
+    const jpg = await sharp(png).flatten({ background: '#ffffff' }).jpeg({ quality: 95, chromaSubsampling: '4:4:4' }).toBuffer();
+    const pdf = await PDFDocument.create();
+    pdf.setTitle(`${event.title}: ${g.name}`);
+    pdf.setCreator('EventQRapp');
+    const img = await pdf.embedJpg(jpg);
+    const page = pdf.addPage([PAGE_W_PT, PAGE_H_PT]);
+    page.drawImage(img, { x: 0, y: 0, width: PAGE_W_PT, height: PAGE_H_PT });
+    return Buffer.from(await pdf.save());
+  };
+
+  try {
+    for (let i = 0; i < guests.length; i += RENDER_AT_A_TIME) {
+      const slice = guests.slice(i, i + RENDER_AT_A_TIME);
+      const pdfs = await Promise.all(slice.map((g) => makePdf(g).catch((e) => { console.error('Card not drawn:', e?.message); return null; })));
+      slice.forEach((g, k) => {
+        const pdf = pdfs[k];
+        if (!pdf) { skipped.push(g.name); return; }
+        zip.append(pdf, { name: `${String(firstIndex + i + k + 1).padStart(4, '0')}-${safeName(g.name)}.pdf` });
+      });
+      slice.forEach(() => onGuest?.());
+    }
+    if (skipped.length) {
+      zip.append(`These guests have no card in this file:\n${skipped.map((n) => `- ${n}`).join('\n')}\n\nA guest whose earlier invitation cannot be redrawn keeps the card they already have; the others could not be drawn (try again).\n`, { name: '_not-included.txt' });
+    }
+    await zip.finalize();
+    await written; // everything has reached `out` (a file is complete only now)
+  } catch (err) {
+    zip.abort();
+    throw err;
+  }
+}
+
 export const cardDownloadService = {
   /** Keeps the chosen guests under a plan id and says how many zip files they make. Only guests of this event are kept. */
   async plan(actor: Actor, eventId: string, inviteeIds: string[], sessionId?: string | null) {
@@ -82,7 +150,8 @@ export const cardDownloadService = {
       eventId, userId: actor.userId, inviteeIds: found.map((g: any) => g._id), sessionId: session ? session._id : null, expiresAt: new Date(Date.now() + PLAN_MINUTES * 60 * 1000)
     });
     const sizes = zipSizes(found.length);
-    return { planId: String(plan._id), total: found.length, zips: sizes.length, sizes, fileNames: zipFileNames(event.title, session ? session.name : null, sizes.length) };
+    const outer = zipFileNames(event.title, session ? session.name : null, 1)[0];
+    return { planId: String(plan._id), total: found.length, zips: sizes.length, sizes, fileNames: zipFileNames(event.title, session ? session.name : null, sizes.length), /** the one file the person downloads */ fileName: outer, /** true when it holds smaller zips (more than 100 guests); false when it holds the PDFs directly */ nested: sizes.length > 1 };
   },
 
   /**
@@ -114,58 +183,6 @@ export const cardDownloadService = {
     res.setHeader('X-Guests-Total', String(total));
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Zip-Part, X-Zip-Count, X-Guests-Total');
 
-    const zip = archiver('zip', { store: true }); // the PDFs are already compressed
-    zip.on('warning', (e: Error) => console.warn('Card zip warning:', e.message));
-    zip.pipe(res);
-    const skipped: string[] = [];
-
-    // the pass printed on a card is the guest's entry credential: a guest who has none yet gets one now (nothing is sent to them).
-    const passFor = async (g: any): Promise<string | null> => {
-      const existing = readAdmissionToken(g);
-      if (existing) return existing;
-      // a pass exists but its secret cannot be recovered (an old invitation): never replace it, that would break the card they already hold
-      if (g.qrTokenHash) return null;
-      const raw = generateSecureToken();
-      const upd = await Invitee.updateOne({ _id: g._id, qrTokenHash: { $in: [null, undefined, ''] } }, { $set: { qrTokenHash: hashToken(raw), qrTokenCipher: encryptToken(raw) } });
-      if (upd.modifiedCount !== 1) return readAdmissionToken((await Invitee.findById(g._id).select('+qrTokenCipher')) as any);
-      g.qrTokenHash = hashToken(raw);
-      g.qrTokenCipher = encryptToken(raw);
-      await credentialService.recordIssuance({ invitee: g, tokenHash: hashToken(raw), source: 'SEND', actorId: actor.userId, actorRole: actor.role, organizerId: event.organizerId })
-        .catch((e) => console.error('Credential history not recorded:', e?.message));
-      return raw;
-    };
-
-    const makePdf = async (g: any): Promise<Buffer | null> => {
-      const token = await passFor(g);
-      if (!token) return null;
-      const png = await invitationService.renderPassCard(event, g, token);
-      const jpg = await sharp(png).flatten({ background: '#ffffff' }).jpeg({ quality: 95, chromaSubsampling: '4:4:4' }).toBuffer();
-      const pdf = await PDFDocument.create();
-      pdf.setTitle(`${event.title}: ${g.name}`);
-      pdf.setCreator('EventQRapp');
-      const img = await pdf.embedJpg(jpg);
-      const page = pdf.addPage([PAGE_W_PT, PAGE_H_PT]);
-      page.drawImage(img, { x: 0, y: 0, width: PAGE_W_PT, height: PAGE_H_PT });
-      return Buffer.from(await pdf.save());
-    };
-
-    try {
-      for (let i = 0; i < guests.length; i += RENDER_AT_A_TIME) {
-        const slice = guests.slice(i, i + RENDER_AT_A_TIME);
-        const pdfs = await Promise.all(slice.map((g) => makePdf(g).catch((e) => { console.error('Card not drawn:', e?.message); return null; })));
-        slice.forEach((g, k) => {
-          const pdf = pdfs[k];
-          if (!pdf) { skipped.push(g.name); return; }
-          zip.append(pdf, { name: `${String(firstIndex + i + k + 1).padStart(4, '0')}-${safeName(g.name)}.pdf` });
-        });
-      }
-      if (skipped.length) {
-        zip.append(`These guests have no card in this file:\n${skipped.map((n) => `- ${n}`).join('\n')}\n\nA guest whose earlier invitation cannot be redrawn keeps the card they already have; the others could not be drawn (try again).\n`, { name: '_not-included.txt' });
-      }
-      await zip.finalize();
-    } catch (err) {
-      zip.abort();
-      throw err;
-    }
+    await writePartZip(actor, event, guests, firstIndex, res);
   }
 };

@@ -213,6 +213,8 @@ export const invitationService = {
     if (!event) throw new Error('EVENT_NOT_FOUND');
     // A cancelled or finished event never issues, sends or re-sends an invitation (and so never mints a pass that could be scanned)
     assertEventCanIssue(event);
+    // a print-only event's cards are downloaded, never sent
+    if ((event as any).invitationType === 'PRINT') throw new Error('PRINT_ONLY_EVENT');
 
     // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
     const cardContext = await loadCardContext(event);
@@ -549,6 +551,8 @@ export const invitationService = {
     if (!event) throw new Error('EVENT_NOT_FOUND');
     // A cancelled or finished event never issues, sends or re-sends an invitation (and so never mints a pass that could be scanned)
     assertEventCanIssue(event);
+    // a print-only event's cards are downloaded, never sent
+    if ((event as any).invitationType === 'PRINT') throw new Error('PRINT_ONLY_EVENT');
     // The design follows the organizer's template, or the event's type when none was chosen (see cardTemplates/designs.ts)
     const cardContext = await loadCardContext(event);
     const cardDesign = cardContext.cardDesign;

@@ -40,6 +40,8 @@ exports.invitationController = {
         catch (error) {
             if (error.message === 'EVENT_NOT_FOUND')
                 return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
+            if (error.message === 'PRINT_ONLY_EVENT')
+                return res.status(409).json({ success: false, error: 'Conflict', code: 'PRINT_ONLY_EVENT', message: 'This event is set to print only, so its cards are downloaded, not sent. Use Download Invitee Cards.' });
             if (error.message === 'EVENT_CANCELLED')
                 return res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_CANCELLED', message: 'This event has been cancelled. Invitations can no longer be sent.' });
             if (error.message === 'EVENT_ENDED')
@@ -64,6 +66,8 @@ exports.invitationController = {
         catch (error) {
             if (error.message === 'EVENT_NOT_FOUND')
                 return res.status(404).json({ error: 'Not Found', message: 'Event not found or access denied' });
+            if (error.message === 'PRINT_ONLY_EVENT')
+                return res.status(409).json({ success: false, error: 'Conflict', code: 'PRINT_ONLY_EVENT', message: 'This event is set to print only, so its cards are downloaded, not sent. Use Download Invitee Cards.' });
             if (error.message === 'EVENT_CANCELLED')
                 return res.status(409).json({ success: false, error: 'Conflict', code: 'EVENT_CANCELLED', message: 'This event has been cancelled. Invitations can no longer be sent.' });
             if (error.message === 'EVENT_ENDED')

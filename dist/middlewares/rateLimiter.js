@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.mediaUploadLimiter = exports.importLimiter = exports.credentialActionLimiter = exports.invitationSendLimiter = exports.checkInLimiter = exports.templateRenderLimiter = exports.templateGenerationReadLimiter = exports.templateGenerationLimiter = exports.cardPreviewLimiter = exports.publicInvitationLimiter = exports.contactRateLimiter = exports.contactAttemptLimiter = exports.changePendingEmailRateLimiter = exports.resendVerificationRateLimiter = exports.verifyEmailRateLimiter = exports.refreshRateLimiter = exports.loginAccountLimiter = exports.loginIpLimiter = exports.authRateLimiter = void 0;
 const express_rate_limit_1 = __importStar(require("express-rate-limit"));
 const securityLog_1 = require("../utils/securityLog");
+const rateLimitStore_1 = require("../infra/kv/rateLimitStore");
 // Records every throttled request as a security event, then answers exactly as the default handler would
 const logged = (limiter) => (req, res, _next, options) => {
     (0, securityLog_1.securityEvent)('RATE_LIMITED', req, { limiter });
@@ -48,6 +49,7 @@ const skipInTest = () => process.env.NODE_ENV === 'test' && process.env.ENABLE_R
  */
 exports.authRateLimiter = (0, express_rate_limit_1.default)({
     handler: logged('authRateLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('authRateLimiter'),
     windowMs: 15 * 60 * 1000,
     max: 20,
     message: { success: false, message: 'Too many requests from this IP, please try again after 15 minutes' },
@@ -58,6 +60,7 @@ exports.authRateLimiter = (0, express_rate_limit_1.default)({
 /** Sign-in, per network: generous, because a whole staff team may sign in from one venue connection at once. */
 exports.loginIpLimiter = (0, express_rate_limit_1.default)({
     handler: logged('loginIpLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('loginIpLimiter'),
     windowMs: 15 * 60 * 1000,
     max: 150,
     message: { success: false, message: 'Too many sign-in attempts from this network. Please try again in 15 minutes.' },
@@ -69,6 +72,7 @@ const loginIdentifier = (req) => String(req.body?.email || req.body?.phone || ''
 /** Failed sign-ins for one account from one address: stops password guessing without letting a stranger lock the person out everywhere. */
 exports.loginAccountLimiter = (0, express_rate_limit_1.default)({
     handler: logged('loginAccountLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('loginAccountLimiter'),
     windowMs: 15 * 60 * 1000,
     max: 10,
     keyGenerator: (req) => `${loginIdentifier(req)}|${(0, express_rate_limit_1.ipKeyGenerator)(req.ip)}`,
@@ -81,6 +85,7 @@ exports.loginAccountLimiter = (0, express_rate_limit_1.default)({
 /** Token refresh: every signed-in device does this every few minutes, so the ceiling only stops floods. */
 exports.refreshRateLimiter = (0, express_rate_limit_1.default)({
     handler: logged('refreshRateLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('refreshRateLimiter'),
     windowMs: 15 * 60 * 1000,
     max: 1000,
     message: { success: false, message: 'Too many requests from this network. Please try again shortly.' },
@@ -94,6 +99,7 @@ exports.refreshRateLimiter = (0, express_rate_limit_1.default)({
  */
 exports.verifyEmailRateLimiter = (0, express_rate_limit_1.default)({
     handler: logged('verifyEmailRateLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('verifyEmailRateLimiter'),
     windowMs: 10 * 60 * 1000,
     max: 10,
     message: { success: false, message: 'Too many verification attempts. Please try again in 10 minutes.' },
@@ -107,6 +113,7 @@ exports.verifyEmailRateLimiter = (0, express_rate_limit_1.default)({
  */
 exports.resendVerificationRateLimiter = (0, express_rate_limit_1.default)({
     handler: logged('resendVerificationRateLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('resendVerificationRateLimiter'),
     windowMs: 10 * 60 * 1000,
     max: 5,
     message: { success: false, message: 'Too many resend requests. Please try again in 10 minutes.' },
@@ -117,6 +124,7 @@ exports.resendVerificationRateLimiter = (0, express_rate_limit_1.default)({
 /** Changing the address of a pending sign-up: it sends mail and takes a password, so it is limited like a resend */
 exports.changePendingEmailRateLimiter = (0, express_rate_limit_1.default)({
     handler: logged('changePendingEmailRateLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('changePendingEmailRateLimiter'),
     windowMs: 10 * 60 * 1000,
     max: 8,
     message: { success: false, message: 'Too many attempts. Please try again in 10 minutes.' },
@@ -135,6 +143,7 @@ exports.changePendingEmailRateLimiter = (0, express_rate_limit_1.default)({
  */
 exports.contactAttemptLimiter = (0, express_rate_limit_1.default)({
     handler: logged('contactAttemptLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('contactAttemptLimiter'),
     windowMs: 15 * 60 * 1000,
     max: 30,
     message: { success: false, message: 'Too many requests from this network. Please try again in 15 minutes.' },
@@ -144,6 +153,7 @@ exports.contactAttemptLimiter = (0, express_rate_limit_1.default)({
 });
 exports.contactRateLimiter = (0, express_rate_limit_1.default)({
     handler: logged('contactRateLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('contactRateLimiter'),
     windowMs: 15 * 60 * 1000,
     max: 5,
     message: { success: false, message: 'Too many messages sent from this network. Please try again in 15 minutes.' },
@@ -159,6 +169,7 @@ exports.contactRateLimiter = (0, express_rate_limit_1.default)({
  */
 exports.publicInvitationLimiter = (0, express_rate_limit_1.default)({
     handler: logged('publicInvitationLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('publicInvitationLimiter'),
     windowMs: 15 * 60 * 1000,
     max: 300,
     message: { success: false, message: 'Too many requests from this network. Please try again later.' },
@@ -172,6 +183,7 @@ exports.publicInvitationLimiter = (0, express_rate_limit_1.default)({
  */
 exports.cardPreviewLimiter = (0, express_rate_limit_1.default)({
     handler: logged('cardPreviewLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('cardPreviewLimiter'),
     windowMs: 60 * 1000,
     max: 60,
     message: { success: false, message: 'Too many preview requests. Please wait a moment.' },
@@ -184,6 +196,7 @@ const perUser = (req) => req.user?.userId || (0, express_rate_limit_1.ipKeyGener
 /** Starting a generation costs real provider quota: 10 requests per hour per user (the per-day quota is enforced by the service). */
 exports.templateGenerationLimiter = (0, express_rate_limit_1.default)({
     handler: logged('templateGenerationLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('templateGenerationLimiter'),
     windowMs: 60 * 60 * 1000,
     max: 10,
     keyGenerator: perUser,
@@ -195,6 +208,7 @@ exports.templateGenerationLimiter = (0, express_rate_limit_1.default)({
 /** Status polling and previews: generous, because the apps poll while a design is being made. */
 exports.templateGenerationReadLimiter = (0, express_rate_limit_1.default)({
     handler: logged('templateGenerationReadLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('templateGenerationReadLimiter'),
     windowMs: 60 * 1000,
     max: 120,
     keyGenerator: perUser,
@@ -206,6 +220,7 @@ exports.templateGenerationReadLimiter = (0, express_rate_limit_1.default)({
 /** Full-size renders are heavier than previews. */
 exports.templateRenderLimiter = (0, express_rate_limit_1.default)({
     handler: logged('templateRenderLimiter'),
+    store: new rateLimitStore_1.KvRateLimitStore('templateRenderLimiter'),
     windowMs: 60 * 1000,
     max: 20,
     keyGenerator: perUser,

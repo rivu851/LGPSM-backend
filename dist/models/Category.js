@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Category = void 0;
+const cacheHooks_1 = require("../infra/cacheHooks");
 const mongoose_1 = __importStar(require("mongoose"));
 const SubcategorySchema = new mongoose_1.Schema({
     name: { type: String, required: true },
@@ -53,4 +54,5 @@ const CategorySchema = new mongoose_1.Schema({
 // among themselves, and each organizer's custom ones are unique among that organizer's.
 // (Databases from before custom categories hold a plain unique index on name: scripts/migrate-category-uniqueness.js replaces it.)
 CategorySchema.index({ ownerId: 1, name: 1 }, { unique: true, name: 'owner_scoped_name_unique' });
+(0, cacheHooks_1.clearCacheOnWrite)(CategorySchema, 'categories');
 exports.Category = mongoose_1.default.model('Category', CategorySchema);

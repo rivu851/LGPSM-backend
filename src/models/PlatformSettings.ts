@@ -1,4 +1,5 @@
 import { PLATFORM_CURRENCY } from '../constants/currency';
+import { clearCacheOnWrite } from '../infra/cacheHooks';
 import mongoose, { Document, Schema } from 'mongoose';
 
 // Platform-wide settings managed by the Super Admin. Stored as a single document (key: 'global').
@@ -80,5 +81,7 @@ const PlatformSettingsSchema = new Schema<IPlatformSettings>(
   },
   { timestamps: true }
 );
+
+clearCacheOnWrite(PlatformSettingsSchema, 'settings');
 
 export const PlatformSettings = mongoose.model<IPlatformSettings>('PlatformSettings', PlatformSettingsSchema);

@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PlatformSettings = void 0;
 const currency_1 = require("../constants/currency");
+const cacheHooks_1 = require("../infra/cacheHooks");
 const mongoose_1 = __importStar(require("mongoose"));
 const on = { type: Boolean, default: true };
 const off = { type: Boolean, default: false };
@@ -69,4 +70,5 @@ const PlatformSettingsSchema = new mongoose_1.Schema({
         updatedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }
     }
 }, { timestamps: true });
+(0, cacheHooks_1.clearCacheOnWrite)(PlatformSettingsSchema, 'settings');
 exports.PlatformSettings = mongoose_1.default.model('PlatformSettings', PlatformSettingsSchema);

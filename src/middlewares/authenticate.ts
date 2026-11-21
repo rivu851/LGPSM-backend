@@ -3,6 +3,7 @@ import { verifyAccessToken, TokenPayload } from '../utils/token';
 import { User } from '../models/User';
 import { securityEvent } from '../utils/securityLog';
 import { userAuthCache } from '../utils/userAuthCache';
+import { consumeUserLimit, GENERAL_USER_LIMIT } from './userRateLimit';
 
 declare global {
   namespace Express {
@@ -51,6 +52,8 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     // The role is read from the database, not the token, so demotions apply immediately instead of
     // surviving until the access token expires.
     req.user = { ...payload, role: account.role as TokenPayload['role'] };
+    // one generous ceiling per person for the whole API (see userRateLimit.ts); a refusal is answered there
+    if (!(await consumeUserLimit(req, res, 'general', GENERAL_USER_LIMIT))) return;
     next();
   } catch (error) {
     next(error);

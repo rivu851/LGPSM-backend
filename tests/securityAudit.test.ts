@@ -423,7 +423,7 @@ describe('SEC-010: spreadsheet imports are bounded', () => {
     const rows: unknown[][] = [['Name', 'Email', 'Mobile']];
     for (let i = 0; i < MAX_IMPORT_ROWS + 50; i++) rows.push([`Guest ${i}`, `guest${i}@example.com`, '']);
 
-    await expect(inviteeService.processExcelImport(String(event._id), String(owner._id), sheet(rows), { role: Role.ORGANIZER })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(inviteeService.processExcelImport(String(event._id), String(owner._id), sheet(rows), { role: Role.ORGANIZER })).rejects.toMatchObject({ statusCode: 413, code: 'IMPORT_TOO_LARGE' });
     expect(await Invitee.countDocuments({ eventId: event._id })).toBe(0);
   });
 

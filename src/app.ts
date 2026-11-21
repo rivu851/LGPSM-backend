@@ -3,6 +3,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import { requestLogger } from './middlewares/requestLogger';
 import { env } from './config/env';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler';
@@ -14,7 +15,7 @@ import mediaRoutes from './routes/media.routes';
 import { eventSessionRoutes, sessionRoutes } from './routes/session.routes';
 import { eventInviteeRoutes, inviteeRoutes } from './routes/invitee.routes';
 import invitationRoutes from './routes/invitation.routes';
-import cardDownloadRoutes from './routes/cardDownload.routes';
+import cardDownloadRoutes, { cardFileRoutes } from './routes/cardDownload.routes';
 import publicInvitationRoutes from './routes/publicInvitation.routes';
 import publicEmailAssetsRoutes from './routes/publicEmailAssets.routes';
 import contactRoutes from './routes/contact.routes';
@@ -38,6 +39,9 @@ app.set('trust proxy', 1);
 
 // Security and Middleware
 app.use(helmet());
+// JSON lists compress to a fraction of their size: less to send, so faster on a slow connection and less for the host to carry. Files that are
+// already compressed (the card zips) are left alone by the middleware's own content-type check.
+app.use(compression({ threshold: 1024 }));
 app.use(requestId);
 // Per-request logging (method, path, status, response time). Silenced during
 // the test suite so Jest output stays readable.
@@ -116,6 +120,7 @@ app.use('/api/v1/invitees', inviteeRoutes);
 app.use('/api/v1/events/:eventId/assignments', eventAssignmentRoutes);
 app.use('/api/v1/events/:eventId/invitations', invitationRoutes);
 app.use('/api/v1/events/:eventId/invitation-cards', cardDownloadRoutes);
+app.use('/api/v1/card-files', cardFileRoutes);
 app.use('/api/v1/public/invitations', publicInvitationRoutes);
 app.use('/api/v1/public/email-assets', publicEmailAssetsRoutes);
 app.use('/api/v1/public/contact', contactRoutes);

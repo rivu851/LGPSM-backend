@@ -4,6 +4,7 @@ import { authorizeRoles } from '../middlewares/authorizeRoles';
 import { Role } from '../models/User';
 import { billingService } from '../services/billing.service';
 import { z } from 'zod';
+import { perUserLimit, dedupeWindow } from '../middlewares/userRateLimit';
 
 const router = Router();
 // applied per route (not router-wide): this router is mounted at /api/v1, so a blanket guard would also answer 401/403 for unknown paths
@@ -34,7 +35,7 @@ router.get('/billing/events', organizerOnly, async (req: Request, res: Response)
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/);
 const payBody = z.object({ eventId: objectId, inviteeIds: z.array(objectId).max(5000).optional() });
 
-router.post('/billing/quote', organizerOnly, async (req: Request, res: Response) => {
+router.post('/billing/quote', organizerOnly, perUserLimit('billing-quote', { windowMs: 60_000, max: 30 }), async (req: Request, res: Response) => {
   const parsed = payBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ success: false, message: 'A valid eventId is required.' });
   try {
@@ -42,7 +43,7 @@ router.post('/billing/quote', organizerOnly, async (req: Request, res: Response)
   } catch (e) { return fail(res, e); }
 });
 
-router.post('/billing/pay', organizerOnly, async (req: Request, res: Response) => {
+router.post('/billing/pay', organizerOnly, perUserLimit('billing-pay', { windowMs: 60_000, max: 10, message: 'Too many payment attempts. Please wait a minute and try again.' }), dedupeWindow('billing-pay', 3_000), async (req: Request, res: Response) => {
   const parsed = payBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ success: false, message: 'A valid eventId is required.' });
   try {

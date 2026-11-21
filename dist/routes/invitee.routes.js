@@ -13,6 +13,7 @@ const authorizeRoles_1 = require("../middlewares/authorizeRoles");
 const User_1 = require("../models/User");
 const invitee_validator_1 = require("../validators/invitee.validator");
 const multer_1 = __importDefault(require("multer"));
+const importGuard_1 = require("../middlewares/importGuard");
 const upload = (0, multer_1.default)({
     storage: multer_1.default.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
@@ -72,7 +73,7 @@ exports.eventInviteeRoutes.post('/import', (0, authorizeRoles_1.authorizeRoles)(
         }
         next();
     });
-}, skipWhenDryRun((0, auditAction_1.auditAction)({ action: 'INVITEE_IMPORT', entityType: 'Invitee', eventParam: 'eventId', describe: 'Invitee list imported', meta: (_req, body) => { const d = body?.data || {}; return { mode: d.mode, setId: d.setId, imported: d.imported, archived: d.archived, alreadyInvited: d.alreadyInvited, preservedSets: d.preservedSets, rejected: d.rejected }; } })), invitee_controller_1.inviteeController.importExcel);
+}, importGuard_1.importGuard, skipWhenDryRun((0, auditAction_1.auditAction)({ action: 'INVITEE_IMPORT', entityType: 'Invitee', eventParam: 'eventId', describe: 'Invitee list imported', meta: (_req, body) => { const d = body?.data || {}; return { mode: d.mode, setId: d.setId, imported: d.imported, archived: d.archived, alreadyInvited: d.alreadyInvited, preservedSets: d.preservedSets, rejected: d.rejected }; } })), invitee_controller_1.inviteeController.importExcel);
 exports.inviteeRoutes = (0, express_1.Router)();
 exports.inviteeRoutes.use(authenticate_1.authenticate);
 exports.inviteeRoutes.get('/:inviteeId', (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ADMIN, User_1.Role.ORGANIZER), invitee_controller_1.inviteeController.getInviteeById);

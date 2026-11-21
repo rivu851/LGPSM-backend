@@ -6,6 +6,7 @@ const authorizeRoles_1 = require("../middlewares/authorizeRoles");
 const User_1 = require("../models/User");
 const billing_service_1 = require("../services/billing.service");
 const zod_1 = require("zod");
+const userRateLimit_1 = require("../middlewares/userRateLimit");
 const router = (0, express_1.Router)();
 // applied per route (not router-wide): this router is mounted at /api/v1, so a blanket guard would also answer 401/403 for unknown paths
 const organizerOnly = [authenticate_1.authenticate, (0, authorizeRoles_1.authorizeRoles)(User_1.Role.ORGANIZER)];
@@ -35,7 +36,7 @@ router.get('/billing/events', organizerOnly, async (req, res) => {
 // Starts a Razorpay payment for what is due on one event; the client then confirms it through POST /payments/verify
 const objectId = zod_1.z.string().regex(/^[0-9a-fA-F]{24}$/);
 const payBody = zod_1.z.object({ eventId: objectId, inviteeIds: zod_1.z.array(objectId).max(5000).optional() });
-router.post('/billing/quote', organizerOnly, async (req, res) => {
+router.post('/billing/quote', organizerOnly, (0, userRateLimit_1.perUserLimit)('billing-quote', { windowMs: 60_000, max: 30 }), async (req, res) => {
     const parsed = payBody.safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ success: false, message: 'A valid eventId is required.' });
@@ -46,7 +47,7 @@ router.post('/billing/quote', organizerOnly, async (req, res) => {
         return fail(res, e);
     }
 });
-router.post('/billing/pay', organizerOnly, async (req, res) => {
+router.post('/billing/pay', organizerOnly, (0, userRateLimit_1.perUserLimit)('billing-pay', { windowMs: 60_000, max: 10, message: 'Too many payment attempts. Please wait a minute and try again.' }), (0, userRateLimit_1.dedupeWindow)('billing-pay', 3_000), async (req, res) => {
     const parsed = payBody.safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ success: false, message: 'A valid eventId is required.' });

@@ -41,6 +41,7 @@ const express_1 = __importDefault(require("express"));
 const mongoose_1 = __importDefault(require("mongoose"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
+const compression_1 = __importDefault(require("compression"));
 const requestLogger_1 = require("./middlewares/requestLogger");
 const env_1 = require("./config/env");
 const errorHandler_1 = require("./middlewares/errorHandler");
@@ -51,7 +52,7 @@ const media_routes_1 = __importDefault(require("./routes/media.routes"));
 const session_routes_1 = require("./routes/session.routes");
 const invitee_routes_1 = require("./routes/invitee.routes");
 const invitation_routes_1 = __importDefault(require("./routes/invitation.routes"));
-const cardDownload_routes_1 = __importDefault(require("./routes/cardDownload.routes"));
+const cardDownload_routes_1 = __importStar(require("./routes/cardDownload.routes"));
 const publicInvitation_routes_1 = __importDefault(require("./routes/publicInvitation.routes"));
 const publicEmailAssets_routes_1 = __importDefault(require("./routes/publicEmailAssets.routes"));
 const contact_routes_1 = __importDefault(require("./routes/contact.routes"));
@@ -72,6 +73,9 @@ const app = (0, express_1.default)();
 app.set('trust proxy', 1);
 // Security and Middleware
 app.use((0, helmet_1.default)());
+// JSON lists compress to a fraction of their size: less to send, so faster on a slow connection and less for the host to carry. Files that are
+// already compressed (the card zips) are left alone by the middleware's own content-type check.
+app.use((0, compression_1.default)({ threshold: 1024 }));
 app.use(requestId_1.requestId);
 // Per-request logging (method, path, status, response time). Silenced during
 // the test suite so Jest output stays readable.
@@ -145,6 +149,7 @@ app.use('/api/v1/invitees', invitee_routes_1.inviteeRoutes);
 app.use('/api/v1/events/:eventId/assignments', systemUserAssignment_routes_1.eventAssignmentRoutes);
 app.use('/api/v1/events/:eventId/invitations', invitation_routes_1.default);
 app.use('/api/v1/events/:eventId/invitation-cards', cardDownload_routes_1.default);
+app.use('/api/v1/card-files', cardDownload_routes_1.cardFileRoutes);
 app.use('/api/v1/public/invitations', publicInvitation_routes_1.default);
 app.use('/api/v1/public/email-assets', publicEmailAssets_routes_1.default);
 app.use('/api/v1/public/contact', contact_routes_1.default);

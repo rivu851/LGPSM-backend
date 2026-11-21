@@ -1,3 +1,4 @@
+import { cached } from '../infra/cache';
 import { categoryRepository } from '../repositories/category.repository';
 import mongoose from 'mongoose';
 import { Category, ICategory } from '../models/Category';
@@ -145,8 +146,12 @@ export const categoryService = {
   },
 
   async getCategories(activeOnly: boolean = true, viewerId?: string): Promise<any[]> {
-    const all = await categoryRepository.findAll(activeOnly);
-    return all.filter((c: any) => !c.ownerId || isMine(c.ownerId, viewerId)).map((c) => viewFor(c, viewerId));
+    // The list is read by every screen that has a category picker, and changes only when an administrator or organizer edits categories
+    // (any such write clears this cache: see models/Category.ts), so it is kept for two minutes per viewer.
+    return cached('categories', `list:${activeOnly}:${viewerId || '-'}`, 120, async () => {
+      const all = await categoryRepository.findAll(activeOnly);
+      return all.filter((c: any) => !c.ownerId || isMine(c.ownerId, viewerId)).map((c) => viewFor(c, viewerId));
+    });
   },
 
   async getCategoryById(id: string, viewerId?: string): Promise<any> {

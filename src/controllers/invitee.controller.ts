@@ -331,6 +331,8 @@ export const inviteeController = {
     } catch (error: any) {
       if (error.message === 'EVENT_NOT_FOUND') {
         res.status(404).json({ error: 'Not Found', message: 'Event not found or inaccessible', details: [] });
+      } else if (error?.code === 'IMPORT_TOO_LARGE') {
+        res.status(413).json({ success: false, code: 'IMPORT_TOO_LARGE', limit: error.limit, message: error.message });
       } else if (error?.code === 11000) {
         // The database's one-active-guest-per-email/phone rule refused a row (another change added the same person during
         // this import). The import has been rolled back as a whole.

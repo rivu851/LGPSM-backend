@@ -8,6 +8,7 @@ import { Role } from '../models/User';
 import { createInviteeSchema, updateInviteeSchema, updateSessionAccessSchema, bulkUpdateSessionAccessSchema } from '../validators/invitee.validator';
 import { ZodSchema } from 'zod';
 import multer from 'multer';
+import { importGuard } from '../middlewares/importGuard';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -71,7 +72,7 @@ eventInviteeRoutes.post('/import', authorizeRoles(Role.ADMIN, Role.ORGANIZER), i
     }
     next();
   });
-}, skipWhenDryRun(auditAction({ action: 'INVITEE_IMPORT', entityType: 'Invitee', eventParam: 'eventId', describe: 'Invitee list imported', meta: (_req, body) => { const d = body?.data || {}; return { mode: d.mode, setId: d.setId, imported: d.imported, archived: d.archived, alreadyInvited: d.alreadyInvited, preservedSets: d.preservedSets, rejected: d.rejected }; } })), inviteeController.importExcel);
+}, importGuard, skipWhenDryRun(auditAction({ action: 'INVITEE_IMPORT', entityType: 'Invitee', eventParam: 'eventId', describe: 'Invitee list imported', meta: (_req, body) => { const d = body?.data || {}; return { mode: d.mode, setId: d.setId, imported: d.imported, archived: d.archived, alreadyInvited: d.alreadyInvited, preservedSets: d.preservedSets, rejected: d.rejected }; } })), inviteeController.importExcel);
 
 export const inviteeRoutes = Router();
 inviteeRoutes.use(authenticate);
